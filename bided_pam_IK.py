@@ -184,17 +184,17 @@ class PAMIKBipedEnv(gym.Env):
             return True
             
         # Terminar si la inclinación es excesiva  
-        if abs(euler[1]) > math.pi/2 + 0.2:
+        if abs(euler[1]) > math.pi/3 + 0.2:
             print("rotated", euler)
             return True
         
         # Velocidad hacia atrás prolongada
-        if lin_vel[0] < -0.3 and self.step_count > 100:
-            print("marcha atrás")
+        if lin_vel[0] < -0.3 and self.step_count > 1000:
+            print("marcha atrás", lin_vel)
             return True
             
         # Terminar si se sale del área
-        if pos[0] > 100 or pos[0] < -2.0 or abs(pos[1]) > 20:
+        if pos[0] > 1000 or pos[0] < -2.0 or abs(pos[1]) > 20:
             print("Fuera del area")
             return True
         
@@ -209,7 +209,7 @@ class PAMIKBipedEnv(gym.Env):
                 return True
             
         # Límite de tiempo
-        if self.step_count > 3000:
+        if self.step_count > 30000:
             print("fuera de t")
             return True
             
@@ -218,24 +218,8 @@ class PAMIKBipedEnv(gym.Env):
     def reset(self, seed=None, options=None):
         """Reset unificado para ambos entornos (base e híbrido PAM)."""
         super().reset(seed=seed)
-        p.resetSimulation()
-        p.setGravity(0, 0, -9.81)
-        p.setTimeStep(self.time_step)
-        p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
         
-        # Esperar a que la simulación se estabilice
-        for _ in range(10):
-            p.stepSimulation()
-
-        # Cargar entorno
-        correction_quaternion = p.getQuaternionFromEuler([math.pi, 0, 0])
-        self.plane_id = p.loadURDF("plane.urdf")
-        self.robot_id = p.loadURDF(
-            self.urdf_path,
-            [0, 0, 1.2],
-            correction_quaternion,
-            useFixedBase=False
-        )
+        self.setup_reset_simulation
 
         # Dentro de PAMIKBipedEnv.reset()
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
@@ -251,7 +235,7 @@ class PAMIKBipedEnv(gym.Env):
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
         # Configurar propiedades físicas
-        self.setup_physics_properties()
+        
 
         # Configurar posición inicial de articulaciones para caminar
         initial_joint_positions = [
@@ -331,8 +315,7 @@ class PAMIKBipedEnv(gym.Env):
         p.changeDynamics(self.robot_id, self.right_foot_id,
                         lateralFriction=1.0,
                         restitution=0.0)
-        # Configurar fricción del plano
-        p.changeDynamics(self.plane_id, -1, lateralFriction=1.0)
+        
 
     def set_walking_cycle(self, enabled=True):
         """Activar/desactivar el ciclo de paso"""
@@ -340,8 +323,9 @@ class PAMIKBipedEnv(gym.Env):
         if not enabled:
             self.walking_controller = None
         
-
-#########################################Sección PAM###################################################################
+########################################################################################################################
+#########################################Sección PAM####################################################################
+########################################################################################################################
 
     def _apply_joint_forces(self, forces):
         """
@@ -710,3 +694,36 @@ class PAMIKBipedEnv(gym.Env):
         # Añadir al final:
         self.walking_controller = None
         self.use_walking_cycle = True
+
+########################################################################################################################
+###########################Preparacion params simulacion y PAM##########################################################
+########################################################################################################################
+    @property
+    def setup_reset_simulation(self):
+        p.resetSimulation()
+        p.setGravity(0, 0, -9.81)
+        p.setTimeStep(self.time_step)
+        p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
+        
+        # Esperar a que la simulación se estabilice
+        for _ in range(10):
+            p.stepSimulation()
+
+        # Cargar entorno con fricción random
+        random_friction = np.random.uniform(0.5, 1.5)
+        correction_quaternion = p.getQuaternionFromEuler([math.pi, 0, 0])
+        self.plane_id = p.loadURDF("plane.urdf")
+        p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
+        self.robot_id = p.loadURDF(
+            self.urdf_path,
+            [0, 0, 1.2],
+            correction_quaternion,
+            useFixedBase=False
+        )
+        self.setup_physics_properties()
+
+        # Randomización de masa en links
+        for link_id in range(p.getNumJoints(self.robot_id)):
+            orig_mass = p.getDynamicsInfo(self.robot_id, link_id)[0]
+            rand_mass = orig_mass * np.random.uniform(0.8, 1.2)
+            p.changeDynamics(self.robot_id, link_id, mass=rand_mass)

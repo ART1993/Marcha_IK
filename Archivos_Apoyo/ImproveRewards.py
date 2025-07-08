@@ -10,40 +10,13 @@ class ImprovedRewardSystem:
     """
     
     def __init__(self, left_foot_id, right_foot_id, num_joints):
-        # Parámetros de recompensa calibrados
-        self.target_forward_velocity = 0.8  # m/s - velocidad objetivo
-        self.max_forward_velocity = 2.0     # m/s - velocidad máxima permitida
-        self.target_height = 1.0            # m - altura objetivo
-        self.max_angular_velocity = 2.0     # rad/s
-
-        # NUEVO: Parámetros para control de altura de pies
-        self.target_foot_height = 0.05  # Altura mínima deseada durante swing
-        self.max_foot_height = 0.15     # Altura máxima recomendada
-        self.ground_clearance = 0.02    # Clearance mínimo del suelo
-        
-        # Pesos de recompensas (suman a 1.0 para normalización)
-        self.weights = {
-            'survival': 0.10,        # Recompensa base por estar vivo
-            'progress': 0.20,        # Progreso controlado hacia adelante
-            'stability': 0.15,       # Estabilidad postural
-            'velocity_control': 0.10, # Control de velocidad
-            'pam_efficiency': 0.10,  # Eficiencia de músculos PAM
-            'gait_quality': 0.15,     # Calidad de la marcha
-            'foot_clearance': 0.20  # NUEVO: Control de altura de pies
-        }
 
         self.left_foot_id=left_foot_id
         self.right_foot_id=right_foot_id
         self.num_joints=num_joints
 
-        # Variables para suavizado de recompensas
-        self.reward_history = deque(maxlen=10)
-        self.smoothing_factor = 0.7
+        self.parametros_adicionales
         
-        # Tracking mejorado
-        self.step_count = 0
-        self.previous_foot_positions = None
-        self.foot_trajectory_history = deque(maxlen=20)
 
     def reset_tracking(self):
         """Resetear variables de seguimiento"""
@@ -130,6 +103,11 @@ class ImprovedRewardSystem:
         else:
             pam_reward = 0.0
         rewards['pam_efficiency'] = pam_reward
+
+        #if hasattr(self, 'previous_action') and self.previous_action is not None:
+        #    action_delta = np.linalg.norm(action - self.previous_action)
+        #    total_reward -= 0.1 * action_delta  # Ajusta el peso según tus pruebas
+        self.previous_action = np.copy(action)
         
         # 6. CALIDAD DE MARCHA
         gait_reward = self._calculate_gait_quality_reward()
@@ -192,6 +170,7 @@ class ImprovedRewardSystem:
             pressure_changes = np.abs(action - self.previous_action)
             smoothness = max(0, 1.0 - np.mean(pressure_changes) * 2.0)
             pam_reward += smoothness
+        self.previous_action = np.copy(action)
         
         return max(0, pam_reward)
 
@@ -360,6 +339,42 @@ class ImprovedRewardSystem:
         self.step_count = 0
         self.velocity_history = []
         self.position_history = []
+
+##############################################################################################################################
+##############################################Atributos adicionales para el entorno###########################################
+##############################################################################################################################
+    @property
+    def parametros_adicionales(self):
+        # Parámetros de recompensa calibrados
+        self.target_forward_velocity = 0.8  # m/s - velocidad objetivo
+        self.max_forward_velocity = 2.0     # m/s - velocidad máxima permitida
+        self.target_height = 1.0            # m - altura objetivo
+        self.max_angular_velocity = 2.0     # rad/s
+
+        # NUEVO: Parámetros para control de altura de pies
+        self.target_foot_height = 0.05  # Altura mínima deseada durante swing
+        self.max_foot_height = 0.15     # Altura máxima recomendada
+        self.ground_clearance = 0.02    # Clearance mínimo del suelo
+        
+        # Pesos de recompensas (suman a 1.0 para normalización)
+        self.weights = {
+            'survival': 0.10,        # Recompensa base por estar vivo
+            'progress': 0.20,        # Progreso controlado hacia adelante
+            'stability': 0.15,       # Estabilidad postural
+            'velocity_control': 0.10, # Control de velocidad
+            'pam_efficiency': 0.10,  # Eficiencia de músculos PAM
+            'gait_quality': 0.15,     # Calidad de la marcha
+            'foot_clearance': 0.20  # NUEVO: Control de altura de pies
+        }
+
+        # Variables para suavizado de recompensas
+        self.reward_history = deque(maxlen=10)
+        self.smoothing_factor = 0.7
+        
+        # Tracking mejorado
+        self.step_count = 0
+        self.previous_foot_positions = None
+        self.foot_trajectory_history = deque(maxlen=20)
     
 # Parámetros adicionales para el entorno
 class PAMTrainingConfig:
