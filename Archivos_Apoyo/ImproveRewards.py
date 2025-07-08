@@ -5,8 +5,8 @@ import pybullet as p
 
 class ImprovedRewardSystem:
     """
-    Sistema de recompensas mejorado que integra la dinámica PAM
-    y controla la velocidad para evitar comportamientos erráticos
+        Sistema de recompensas mejorado que integra la dinámica PAM
+        y controla la velocidad para evitar comportamientos erráticos
     """
     
     def __init__(self, left_foot_id, right_foot_id, num_joints):
@@ -231,7 +231,7 @@ class ImprovedRewardSystem:
         elif abs(euler[0]) <math.pi -1.5:
             penalty -=20.0
         # Inclinación excesiva
-        if abs(euler[1]) > math.pi/6:
+        if abs(euler[1]) > math.pi/3:
             penalty -= 3.0
         
         # Velocidad lateral excesiva

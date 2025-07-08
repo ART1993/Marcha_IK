@@ -7,8 +7,10 @@ class SimplifiedWalkingController:
     Controlador simplificado que integra el ciclo de paso con el entorno
     """
     
-    def __init__(self, env):
+    def __init__(self, env, mode="trajectory", blend_factor=0.0):
         self.env = env
+        self.mode = mode
+        self.blend_factor = blend_factor
         self.walking_cycle = SimpleWalkingCycle(robot_id=env.robot_id)
         self.is_initialized = False
         self.init_sequence = None
@@ -21,8 +23,25 @@ class SimplifiedWalkingController:
         if not self.is_initialized:
             return self._get_initialization_action()
         else:
-            return self.walking_cycle.get_simple_walking_actions(self.env.time_step)
-    
+            if self.mode == "trajectory":
+                # Usa la trayectoria de pie (IK)
+                return self.walking_cycle.get_trajectory_walking_actions(
+                    self.env.time_step,
+                    self.env.left_foot_id,
+                    self.env.right_foot_id
+                )
+            elif self.mode == "pressure":
+                # Acciones sinusoidales en presión PAM
+                return self.walking_cycle.get_simple_walking_actions(self.env.time_step)
+            elif self.mode == "blend":
+                traj = self.walking_cycle.get_trajectory_walking_actions(
+                    self.env.time_step, self.env.left_foot_id, self.env.right_foot_id
+                )
+                press = self.walking_cycle.get_simple_walking_actions(self.env.time_step)
+                return (1-self.blend_factor) * traj + self.blend_factor * press
+            else:
+                raise ValueError(f"Modo de walking controller no válido: {self.mode}")
+            
     def _get_initialization_action(self):
         """
         Maneja la secuencia de inicialización
@@ -36,7 +55,7 @@ class SimplifiedWalkingController:
             return action
         else:
             self.is_initialized = True
-            return self.walking_cycle.get_simple_walking_actions(self.env.time_step)
+            return self.get_next_action()
     
     def reset(self):
         """
@@ -46,15 +65,12 @@ class SimplifiedWalkingController:
         self.init_sequence = None
         self.init_step = 0
         self.walking_cycle.phase = 0.0
-        #com, _ = self.robot_data.get_center_of_mass
-        #height = com[2]
-        #self.walking_cycle.step_length = 0.25 + 0.05 * (height - 0.5)
 
-        #stability = self.robot_data.get_stability_metrics()
-        #if not stability['is_stable']:
-            # Disminuir amplitud del paso si es inestable
-        #    for joint in self.walking_cycle.modulation_amplitudes:
-        #        self.walking_cycle.modulation_amplitudes[joint] *= 0.8
+    def get_expert_action(self):
+        # Útil para reward shaping por imitación (fase 1)
+        return self.walking_cycle.get_trajectory_walking_actions(
+            self.env.time_step, self.env.left_foot_id, self.env.right_foot_id
+        )
 
 
 # Ejemplo de uso en tu entorno
@@ -68,7 +84,7 @@ def integrate_walking_cycle_in_env(env):
     obs, info = env.reset()
     controller.reset()
     
-    for step in range(1000):
+    for step in range(10000):
         # Obtener acción del ciclo de paso
         walking_action = controller.get_next_action()
         

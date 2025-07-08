@@ -86,15 +86,17 @@ class PAMIKBipedEnv(gym.Env):
         # NUEVO: Combinar acción del ciclo con RL
         if self.walking_controller and self.use_walking_cycle:
             base_action = self.walking_controller.get_next_action()
-            #action = self._blend_with_rl(action, base_action)
-
-            # El agente RL modifica la acción base
-            if len(action) == 6:  # Control PAM simple
-                modulation_factor = 0.3  # Ajustar según necesites
-                final_action = base_action + modulation_factor * action
-                final_action = np.clip(final_action, -1.0, 1.0)
-            else:
-                final_action = action  # Usar acción RL directamente para control híbrido
+            modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
+            final_action=_safe_blend_actions(base_action, action, modulation_factor)
+            #if base_action.shape[0] == 6 and action.shape[0] == 12:
+            #    base_action_12=np.zeros_like(action)
+            #    base_action_12[6:]=base_action
+            #    # Puedes hacer blending o suma directa (modulación)
+            #    final_action = base_action_12 + modulation_factor * action
+                #final_action = np.clip(final_action, -1.0, 1.0)
+            #else:
+            #    final_action = base_action_12 + modulation_factor * action
+                #final_action = np.clip(final_action, -1.0, 1.0)
         else:
             final_action = action
         
@@ -115,13 +117,25 @@ class PAMIKBipedEnv(gym.Env):
             print("PAM_SIMPLE")
             pam_forces = self._apply_simplified_control(action)
 
-        
         # 3. Simular
         p.stepSimulation()
         
         # Obtener observación y recompensa
         observation = self._stable_observation()
         reward, _ = self.sistema_recompensas._calculate_balanced_reward(action=action, pam_forces=pam_forces)
+
+        # --------- REWARD SHAPING POR IMITACIÓN ---------
+        if self.imitation_weight > 0 and self.walking_controller:
+            expert_action = self.walking_controller.get_expert_action()
+            expert_action = np.asarray(expert_action)
+            action = np.asarray(action)
+            if expert_action.shape[0] != action.shape[0]:
+                print(f"Corrigiendo dimensiones: action {action.shape}, expert {expert_action.shape}")
+                # Por ejemplo, compara solo PAM:
+                imitation_penalty = np.linalg.norm(action[-expert_action.shape[0]:] - expert_action)
+            else:
+                imitation_penalty = np.linalg.norm(action - expert_action)
+            reward -= self.imitation_weight * imitation_penalty
         
         # 5. ACTUALIZAR TRACKING IK (si aplica)
         if self.control_mode == "hybrid" and len(action) >= 12:
@@ -184,7 +198,7 @@ class PAMIKBipedEnv(gym.Env):
             return True
             
         # Terminar si la inclinación es excesiva  
-        if abs(euler[1]) > math.pi/3 + 0.2:
+        if abs(euler[1]) > math.pi/2 + 0.2:
             print("rotated", euler)
             return True
         
@@ -239,10 +253,10 @@ class PAMIKBipedEnv(gym.Env):
 
         # Configurar posición inicial de articulaciones para caminar
         initial_joint_positions = [
-            0.05,   # left_hip - ligeramente flexionado
+            0.0,   # left_hip - ligeramente flexionado
             0.0,  # left_knee - flexionado
             0.0,  # left_ankle - neutro
-            0.05,  # right_hip - extendido
+            0.0,  # right_hip - extendido
             0.0,  # right_knee - ligeramente flexionado
             0.0    # right_ankle - neutro
         ]
@@ -510,15 +524,6 @@ class PAMIKBipedEnv(gym.Env):
          # Combinar con fuerzas PAM si hay ajustes adicionales
         total_forces = np.array(ik_forces)
         
-        # Control de posición hacia objetivos IK
-        # ¿por qué no p.TORQUE_CONTROL?
-        #for i, target in enumerate(target_positions):
-        #    p.setJointMotorControl2(
-        #        self.robot_id, i,
-        #        p.POSITION_CONTROL,
-        #        targetPosition=target,
-        #        force=self.joint_force_array[i]
-        #    )
         if len(action)>6:
             pam_adjustments = (action[6:12] + 1.0) / 2.0 * self.max_pressure  # Ajustes finos PAM
             #joint_states = p.getJointStates(self.robot_id, range(6))
@@ -661,6 +666,7 @@ class PAMIKBipedEnv(gym.Env):
             'right_ankle_joint': 100
         }
         self.joint_force_array = [150, 120, 100, 150, 120, 100]
+        self.imitation_weight = 1.0
 
     @property
     def variables_seguimiento(self):
@@ -727,3 +733,46 @@ class PAMIKBipedEnv(gym.Env):
             orig_mass = p.getDynamicsInfo(self.robot_id, link_id)[0]
             rand_mass = orig_mass * np.random.uniform(0.8, 1.2)
             p.changeDynamics(self.robot_id, link_id, mass=rand_mass)
+
+    def set_training_phase(self, phase):
+        # Por ejemplo:
+        if phase == 1:
+            self.use_walking_cycle = True
+            self.walking_controller = SimplifiedWalkingController(self, mode="trajectory")
+            self.imitation_weight = 1.0
+        elif phase == 2:
+            self.use_walking_cycle = True
+            self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
+            self.imitation_weight = 0.2
+        else:
+            self.use_walking_cycle = False
+            self.walking_controller = None
+            self.imitation_weight = 0.0
+
+######################################################################################################################
+##################################Ajuste de base_action para control híbrido##############################################
+#######################################################################################################################
+
+def _safe_blend_actions(base_action, action, modulation_factor=1.0):
+    base_action = np.asarray(base_action)
+    action = np.asarray(action)
+
+    # Si shapes ya coinciden, suma directa
+    if base_action.shape == action.shape:
+        return base_action + modulation_factor * action
+
+    # Si base_action tiene menos dimensiones (ejemplo: 6 y action es 12)
+    if base_action.size < action.size:
+        # Asumimos que base_action son los últimos elementos (por ejemplo, PAM)
+        new_base = np.zeros_like(action)
+        new_base[-base_action.size:] = base_action
+        return new_base + modulation_factor * action
+
+    # Si base_action tiene más dimensiones (raro, pero prevenimos)
+    if base_action.size > action.size:
+        # Usamos solo las últimas dimensiones de base_action
+        base_trimmed = base_action[-action.size:]
+        return base_trimmed + modulation_factor * action
+
+    # Fallback, por si acaso
+    raise ValueError(f"No compatible shapes for blending: {base_action.shape}, {action.shape}")

@@ -139,7 +139,7 @@ class SimpleWalkingCycle:
             end = [right_start[0] + step_length, right_start[1], right_start[2]]
             ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
             ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
-            target_pos = self.foot_bezier_parabola(
+            target_pos = foot_bezier_parabola(
                 start=start,end=end,
                 ctrl1=ctrl1,ctrl2=ctrl2,
                 alpha=swing_alpha,height=step_height
@@ -152,7 +152,7 @@ class SimpleWalkingCycle:
             end = [left_start[0] + step_length, left_start[1], left_start[2]]
             ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
             ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
-            target_pos = self.foot_bezier_parabola(
+            target_pos = foot_bezier_parabola(
                 start=start,end=end,
                 ctrl1=ctrl1,ctrl2=ctrl2,
                 alpha=swing_alpha,height=step_height
@@ -160,28 +160,6 @@ class SimpleWalkingCycle:
             joint_positions = p.calculateInverseKinematics(self.robot_id, left_foot_index, target_pos)
 
         return joint_positions  # posición deseada de las articulaciones
-    
-    def foot_bezier_parabola(start, end, ctrl1, ctrl2, alpha, height):
-        """
-        Trayectoria mixta: curva Bézier para (x, y), parábola para z.
-        - start, end: posiciones 3D (inicio y fin del swing)
-        - ctrl1, ctrl2: puntos de control Bézier (3D)
-        - alpha: progreso de swing [0, 1]
-        - height: altura máxima de swing (aplica a z)
-        """
-        # Bézier para X e Y (puedes usarlo también para Z base si quieres)
-        def bezier(p0, p1, p2, p3, t):
-            return ((1 - t)**3) * p0 + 3 * (1 - t)**2 * t * p1 + 3 * (1 - t) * t**2 * p2 + t**3 * p3
-
-        # Bézier en x, y (z puede quedarse lineal o usar solo inicio y fin)
-        x = bezier(start[0], ctrl1[0], ctrl2[0], end[0], alpha)
-        y = bezier(start[1], ctrl1[1], ctrl2[1], end[1], alpha)
-
-        # Parábola para z
-        z_base = (1 - alpha) * start[2] + alpha * end[2]
-        z = z_base + height * 4 * alpha * (1 - alpha)
-
-        return [x, y, z]
     
 
 ############################################################################################################################
@@ -216,3 +194,25 @@ class SimpleWalkingCycle:
             'right_knee': 0.6,
             'right_ankle': 0.3
         }
+
+def foot_bezier_parabola(start, end, ctrl1, ctrl2, alpha, height):
+    """
+        Trayectoria mixta: curva Bézier para (x, y), parábola para z.
+        - start, end: posiciones 3D (inicio y fin del swing)
+        - ctrl1, ctrl2: puntos de control Bézier (3D)
+        - alpha: progreso de swing [0, 1]
+        - height: altura máxima de swing (aplica a z)
+    """
+    # Bézier para X e Y (puedes usarlo también para Z base si quieres)
+    def bezier(p0, p1, p2, p3, t):
+        return ((1 - t)**3) * p0 + 3 * (1 - t)**2 * t * p1 + 3 * (1 - t) * t**2 * p2 + t**3 * p3
+
+    # Bézier en x, y (z puede quedarse lineal o usar solo inicio y fin)
+    x = bezier(start[0], ctrl1[0], ctrl2[0], end[0], alpha)
+    y = bezier(start[1], ctrl1[1], ctrl2[1], end[1], alpha)
+
+    # Parábola para z
+    z_base = (1 - alpha) * start[2] + alpha * end[2]
+    z = z_base + height * 4 * alpha * (1 - alpha)
+
+    return [x, y, z]
