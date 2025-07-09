@@ -10,10 +10,10 @@ class PAMMcKibben:
     """
     def __init__(self, L0=0.3, r0=0.02, alpha0=np.pi/4):
         """
-        L0: longitud inicial del músculo (m)
-        r0: radio inicial (m)
-        n_threads: número de hilos de refuerzo
-        alpha0: ángulo inicial de los hilos rad
+            L0: longitud inicial del músculo (m)
+            r0: radio inicial (m)
+            n_threads: número de hilos de refuerzo
+            alpha0: ángulo inicial de los hilos rad
         """
         self.L0 = L0
         self.r0 = r0
@@ -83,17 +83,15 @@ class PAMMcKibben:
 
     def force_model_new(self, pressure, contraction_ratio):
         """
-        Modela matemáticamente fuerza genrada
-        Modelo de fuerza del actuador PAM
-        pressure: presión interna (Pa)
-        contraction_ratio: ε = (L0 - L) / L0
+            Modela matemáticamente fuerza genrada
+            Modelo de fuerza del actuador PAM
+            pressure: presión interna (Pa)
+            contraction_ratio: ε = (L0 - L) / L0
         """
         if contraction_ratio >= self.epsilon_max or contraction_ratio < 0:
             return 0.0
             
         epsilon = contraction_ratio
-
-        
 
         force_factor = ((1-epsilon**2)*self.a - self.b)
         
@@ -104,10 +102,10 @@ class PAMMcKibben:
         
     def force_model(self, pressure, contraction_ratio):
         """
-        Modela matemáticamente fuerza genrada
-        Modelo de fuerza del actuador PAM
-        pressure: presión interna (Pa)
-        contraction_ratio: ε = (L0 - L) / L0
+            Modela matemáticamente fuerza genrada
+            Modelo de fuerza del actuador PAM
+            pressure: presión interna (Pa)
+            contraction_ratio: ε = (L0 - L) / L0
         """
         if contraction_ratio >= 1.0 or contraction_ratio < 0:
             return 0.0
@@ -124,9 +122,6 @@ class PAMMcKibben:
         )
         
         return max(0.0, Function)
-    
-
-
     
     def stiffness_model(self, pressure, contraction_ratio):
         """Rigidez variable del actuador"""
@@ -165,7 +160,7 @@ class PAMMcKibben:
         print(f"   F(ε/2) = {f_half:.0f} N")
         print(f"   Ratio = {f_quarter/f_half:.2f} (esperado ≈ 2.25)")
 
-    def plot_force_characteristics(self, max_pressure=500000):
+    def plot_force_characteristics(self, max_pressure=700000):
         """
         Grafica las características de fuerza vs contracción
         para diferentes presiones

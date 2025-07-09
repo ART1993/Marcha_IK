@@ -3,7 +3,7 @@ import os
 from biped_pam_IK_train import UnifiedBipedTrainer
 
 def train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, resume=True, action_space="hybrid"):
-    """Train PAM biped with muscle control."""
+    """Inicio de Entrenamiento PAM + IK."""
     _setup_multiprocessing()
     
     trainer = UnifiedBipedTrainer(
@@ -44,6 +44,7 @@ def test_pam_biped(model_path=None, episodes=10, action_space="hybrid"):
     trainer.test_model(model_path, episodes=episodes, normalization_path=norm_path)
 
 def _setup_multiprocessing():
+    # Prepara el multiprocesado para el caso de n_env>1
     if mp.get_start_method(allow_none=True) is None:
         mp.set_start_method('spawn')
     elif mp.get_start_method() != 'spawn':

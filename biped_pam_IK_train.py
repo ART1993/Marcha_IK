@@ -17,7 +17,7 @@ from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizac
 
 class UnifiedBipedTrainer:
     """
-    Unified trainer for both standard and PAM biped environments
+        Entrenamiento de marcha de robot bípedo para entornos PAM + IK.
     """
     
     def __init__(self, 
@@ -29,7 +29,7 @@ class UnifiedBipedTrainer:
                  resume_from=None,
                  action_space="hybrid" # "pam o hybrid"
                  ):
-        
+        # Atributos de entrada
         self.env_type = env_type
         self.action_space=action_space
         self.total_timesteps = total_timesteps
@@ -38,29 +38,37 @@ class UnifiedBipedTrainer:
         self.use_wandb = use_wandb
         self.resume_from = resume_from
 
+        # Genero la configuración de entrenamiento del modelo
         self.configuracion_modelo_entrenamiento
         
        
         
     def create_training_env(self):
-        """Creates vectorized environment with normalization for robust training."""
+        """
+            Creación de entorno de entrenamiento vectorizado y 
+            normalizado para darle robustez (al entrenamiento).
+        """
         
         config = self.env_configs[self.env_type]
         env_class = config['env_class']
-        
+        # Intenta crear el entorno con el modo de renderizado adecuado
         def make_env():
             def _init():
                 env = env_class(render_mode='human' if self.n_envs == 1 else 'direct', action_space=self.action_space)
                 env = Monitor(env, self.logs_dir)
                 return env
             return _init
-        
+        # Generación de entornos paralelos en caso de n_env>1
         env = self.create_parallel_env(make_env=make_env, config=config)
 
         return env
     
     def create_eval_env(self):
-        """Creates evaluation environment with same structure as training."""
+        """
+            Se genera un entorno de evaluación 
+            con la misma estructura del entrenamiento
+            Sin palalelización
+        """
         
         config = self.env_configs[self.env_type]
         env_class = config['env_class']
@@ -101,23 +109,26 @@ class UnifiedBipedTrainer:
         return None
     
     def create_model(self, env, resume_path=None):
-        """Creates RecurrentPPO model optimized for the selected environment type."""
+        """
+            Creación de modelo RecurrentPPO. 
+            Debería de estar optimizado para el entorno seleccionado.
+        """
 
-        # Try to load existing model first
+        # Carga un podelo creado anteriormente
         model = self.cargar_creacion_modelo(resume_path=resume_path, env=env)
         if model is not None:
             return model
         
         print("🧠 Creating new RecurrentPPO model...")
         
-        # Neural network architecture based on environment type
+        # Arquitectura de redes neuronales LSTM para el RL
         policy_kwargs_lstm={
                             'lstm_hidden_size': 128,
                             'n_lstm_layers': 1,
                             'shared_lstm': False
                             }
         
-        # Environment-specific hyperparameters
+        # Hiperparámetros de entorno y modelo
         # PAM-specific optimizations
         model_params = {
             'learning_rate': self.learning_rate,
@@ -145,7 +156,7 @@ class UnifiedBipedTrainer:
         return model
     
     def prep_modelo_anterior(self, resume):
-        """Prepare model loading and calculate remaining timesteps"""
+        """Carga el modelo anterior teniendo en cuenta los timesteps restantes"""
         # Determine starting point
         resume_path = None
         resume_timesteps = 0
@@ -185,7 +196,7 @@ class UnifiedBipedTrainer:
         return resume_path, resume_timesteps, remaining_timesteps
     
     def train(self, resume=True):
-        """Executes complete training using RecurrentPPO."""
+        """Ejecución del entrenamiento RecurrentPPO."""
         
         config = self.env_configs[self.env_type]
         
@@ -204,6 +215,7 @@ class UnifiedBipedTrainer:
         
         # Create environments
         print(f"📦 Creating {self.n_envs} training environments...")
+        # train_env=self.create_training_env_with_walking_cycle()
         train_env = self.create_training_env()
 
         def setup_walking_cycle(env_wrapper):
@@ -234,7 +246,7 @@ class UnifiedBipedTrainer:
                 print(f"⚠️ Dimension mismatch: env={obs_dim}, rms={rms_dim}. Resetting normalization.")
                 train_env.reset()
 
-        # Load normalization if exists
+        # Cargaa las normalizaciones existentes si las hay
         train_env = cargar_posible_normalizacion(self.model_dir, resume_path, config, train_env)
         
         eval_env = self.create_eval_env()
@@ -257,10 +269,10 @@ class UnifiedBipedTrainer:
         
         try:
             # ==============================================
-            # PUNTO 3: ENTRENAMIENTO POR FASES
+            #  ENTRENAMIENTO POR FASES
             # ==============================================
             current_timesteps = 0
-            # Train the model
+
             # FASE 1: Entrenamiento con ciclo base (solo ajustes finos)
             if phase1_timesteps > 0:
                 print(f"🚀 Starting training for {remaining_timesteps:,} steps...")
@@ -327,7 +339,7 @@ class UnifiedBipedTrainer:
         print("🎉 Training completed!")
     
     def test_model(self, model_path, episodes=10, normalization_path=None):
-        """Tests a trained RecurrentPPO model."""
+        """Hacer test de modelo RecurrentPPO ."""
         
         config = self.env_configs[self.env_type]
         env_class = config['env_class']
@@ -408,7 +420,9 @@ class UnifiedBipedTrainer:
         env.close()
 
     def find_latest_checkpoint(self, model_prefix=None):
-        """Find the most recent checkpoint based on timesteps."""
+        """
+            Find the most recent checkpoint based on timesteps.
+        """
         if model_prefix is None:
             model_prefix = self.env_configs[self.env_type]['model_prefix']
         
@@ -488,6 +502,7 @@ class UnifiedBipedTrainer:
         }
 
     def create_training_env_with_walking_cycle(self):
+        # De momento no lo uso, pero lo dejo por si acaso
         """Versión modificada del create_training_env que incluye configuración del ciclo"""
         # Tu código actual de create_training_env
         env = self.create_training_env()
@@ -503,7 +518,7 @@ class UnifiedBipedTrainer:
     
     @property
     def configuracion_modelo_entrenamiento(self):
-        # Configure directories
+        # Creación de carpetas donde se guardan los modelos
         self.model_dir = "./models"
         self.logs_dir = "./logs"
         self.checkpoints_dir = os.path.join(self.model_dir, "checkpoints")
@@ -511,7 +526,7 @@ class UnifiedBipedTrainer:
         os.makedirs(self.logs_dir, exist_ok=True)
         os.makedirs(self.checkpoints_dir, exist_ok=True)
         
-        # Environment-specific configurations
+        # Configuraciones especificas para el modelo de entrenamiento
         self.env_configs = {
             'pam': {
                 'env_class': PAMIKBipedEnv,
@@ -522,7 +537,7 @@ class UnifiedBipedTrainer:
             }
         }
 
-        # Training state tracking
+        # Información de entrenamiento (en caso de no continuar con uno previo)
         self.training_info = {
             'completed_timesteps': 0,
             'last_checkpoint': None,
@@ -531,7 +546,7 @@ class UnifiedBipedTrainer:
         }
 
     def create_parallel_env(self,make_env,config):
-        # Create multiple parallel environments
+        # Creación de entornos paralelos para entrenamiento n_envs > 1
         if self.n_envs > 1:
             base_env = SubprocVecEnv([make_env() for _ in range(self.n_envs)])
             env = VecNormalize(base_env, 

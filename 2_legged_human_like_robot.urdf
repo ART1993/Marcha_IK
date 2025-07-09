@@ -9,7 +9,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Increased width (0.6 along X-axis) -->
+        <box size="0.25 0.5 0.6"/>  <!-- Increased width (0.6 along X-axis) -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.25 0.5 0.6"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
@@ -28,9 +28,9 @@
   <joint name="left_hip_joint" type="revolute">
     <parent link="base_link"/>
     <child link="left_thigh_link"/>
-    <origin xyz="0 0.25 0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 0.25 -0.25" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
-    <limit lower=" -0.524" upper="0.873" effort="50" velocity="2.0"/>
+    <limit lower=" -1.0" upper="1.0" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Left Thigh -->
@@ -38,13 +38,13 @@
     <inertial>
       <mass value="3.0"/>
       <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
-      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
         <cylinder radius="0.08" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
       <material name="blue">
         <color rgba="0 0 1 1"/>
       </material>
@@ -53,7 +53,7 @@
       <geometry>
         <cylinder radius="0.08" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -61,9 +61,9 @@
   <joint name="left_knee_joint" type="revolute">
     <parent link="left_thigh_link"/>
     <child link="left_shin_link"/>
-    <origin xyz="0 0 0.6" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.571" upper="0" effort="50" velocity="2.0"/>
+    <limit lower="0" upper="1.571" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Left Shin -->
@@ -71,22 +71,22 @@
     <inertial>
       <mass value="2.0"/>
       <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
       <material name="red">
         <color rgba="1 0 0 1"/>
       </material>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -94,7 +94,7 @@
   <joint name="left_ankle_joint" type="revolute">
     <parent link="left_shin_link"/>
     <child link="left_foot_link"/>
-    <origin xyz="0 0 0.5" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.436" upper="0.436" effort="50" velocity="2.0"/>
   </joint>
@@ -104,13 +104,13 @@
     <inertial>
       <mass value="1.0"/>  <!-- Heavier feet for stability -->
       <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
         <box size="0.3 0.15 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
       <material name="green">
         <color rgba="0 1 0 1"/>
       </material>
@@ -119,7 +119,7 @@
       <geometry>
         <box size="0.3 0.15 0.05"/>
       </geometry>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -127,9 +127,9 @@
   <joint name="right_hip_joint" type="revolute">
     <parent link="base_link"/>
     <child link="right_thigh_link"/>
-    <origin xyz="0 -0.25 0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 -0.25 -0.25" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
-    <limit lower="-0.524" upper="0.873" effort="50" velocity="2.0"/>
+    <limit lower="-1.0" upper="1.0" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Right Thigh -->
@@ -137,13 +137,13 @@
     <inertial>
       <mass value="3.0"/>
       <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
-      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
         <cylinder radius="0.08" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
       <material name="blue">
         <color rgba="0 0 1 1"/>
       </material>
@@ -152,7 +152,7 @@
       <geometry>
         <cylinder radius="0.08" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.3" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -160,9 +160,9 @@
   <joint name="right_knee_joint" type="revolute">
     <parent link="right_thigh_link"/>
     <child link="right_shin_link"/>
-    <origin xyz="0 0 0.6" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.571" upper="0" effort="50" velocity="2.0"/>
+    <limit lower="0" upper="1.571" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Right Shin -->
@@ -170,22 +170,22 @@
     <inertial>
       <mass value="2.0"/>
       <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
       <material name="red">
         <color rgba="1 0 0 1"/>
       </material>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -193,7 +193,7 @@
   <joint name="right_ankle_joint" type="revolute">
     <parent link="right_shin_link"/>
     <child link="right_foot_link"/>
-    <origin xyz="0 0 0.5" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.436" upper="0.436" effort="50" velocity="2.0"/>
   </joint>
@@ -203,13 +203,13 @@
     <inertial>
       <mass value="1.0"/>  <!-- Heavier feet for stability -->
       <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
         <box size="0.3 0.15 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
       <material name="green">
         <color rgba="0 1 0 1"/>
       </material>
@@ -218,7 +218,7 @@
       <geometry>
         <box size="0.3 0.15 0.05"/>
       </geometry>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
     </collision>
   </link>
 </robot>

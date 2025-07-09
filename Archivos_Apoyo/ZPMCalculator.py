@@ -30,7 +30,7 @@ class ZMPCalculator:
                 "shin_right":(0.06,0.5,2)
             }
         }
-
+        # Selecciona la altura del centro de masa
         com, _ = self.robot_data.get_center_of_mass
         height = com[2]
         
@@ -73,7 +73,7 @@ class ZMPCalculator:
     
     def get_support_polygon(self):
         """
-        Obtiene el polígono de soporte basado en contactos con el suelo
+            Obtiene el polígono de soporte basado en contactos con el suelo
         """
         left_contacts = p.getContactPoints(self.robot_id, 0, self.left_foot_id)
         right_contacts = p.getContactPoints(self.robot_id, 0, self.right_foot_id)
@@ -93,7 +93,7 @@ class ZMPCalculator:
     
     def calculate_zmp(self, dt=1.0/1500.0):
         """
-        Calcula ZMP usando las ecuaciones proporcionadas
+            Calcula ZMP usando las ecuaciones proporcionadas
         """
         # Obtener posición actual del centro de masa
         #com_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
@@ -121,7 +121,7 @@ class ZMPCalculator:
     
     def is_stable(self, zmp_point=None):
         """
-        Verifica si el ZMP está dentro del polígono de soporte
+            Verifica si el ZMP está dentro del polígono de soporte
         """
 
         if self.initialization_steps < self.min_steps_for_stability:
@@ -152,8 +152,8 @@ class ZMPCalculator:
     
     def stability_margin_distance(self, zmp_point=None):
         """
-        Calcula la distancia del ZMP al borde del polígono de soporte
-        Positivo = dentro, negativo = fuera
+            Calcula la distancia del ZMP al borde del polígono de soporte
+            Positivo = dentro, negativo = fuera
         """
         if zmp_point is None:
             zmp_point = self.calculate_zmp()
@@ -179,7 +179,7 @@ class ZMPCalculator:
     def _calculate_zmp_reward(self, zmp_history, max_zmp_history, 
                               stability_bonus, instability_penalty, zmp_reward_weight):
         """
-        Calcula recompensa basada en estabilidad ZMP
+            Calcula recompensa basada en estabilidad ZMP
         """
         try:
             zmp_point = self.calculate_zmp()

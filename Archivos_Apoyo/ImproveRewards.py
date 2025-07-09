@@ -45,7 +45,7 @@ class ImprovedRewardSystem:
 
     def _calculate_balanced_reward(self, action, pam_forces):
         """
-        Sistema de recompensas balanceado que integra dinámica PAM
+            Sistema de recompensas balanceado que integra dinámica PAM
         """
         # Estados básicos del robot
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
@@ -62,7 +62,7 @@ class ImprovedRewardSystem:
         # 2. PROGRESO SUAVIZADO
         forward_velocity = lin_vel[0]
         if forward_velocity > 0:
-            progress_reward = min(forward_velocity / self.target_forward_velocity * 2.0, 3.0)
+            progress_reward = min(forward_velocity * 10.0, 3.0)
             # Penalización suave por exceso de velocidad
             if forward_velocity > self.target_forward_velocity:
                 excess_penalty = (forward_velocity - self.target_forward_velocity) * 0.5
@@ -75,11 +75,11 @@ class ImprovedRewardSystem:
         # 3. ESTABILIDAD POSTURAL
         # Altura estable
         height_error = abs(pos[2] - self.target_height)
-        height_reward = max(0, 4.0 - height_error * 5.0)
+        height_reward = max(0, 2.0 - height_error * 2.0)
         
         # Balance angular
-        roll_penalty = abs(euler[0]) * 2.0
-        pitch_penalty = abs(euler[1]) * 2.0
+        roll_penalty = abs(euler[0])
+        pitch_penalty = abs(euler[1])
         balance_reward = max(0, 0.5 + roll_penalty - pitch_penalty)
         
         rewards['stability'] = (height_reward + balance_reward) / 2.0
@@ -176,38 +176,56 @@ class ImprovedRewardSystem:
 
     def _calculate_gait_quality_reward(self):
         """
-        Evalúa la calidad de la marcha basada en contactos y patrones
+        Evalúa la calidad de la marcha basada en contactos y patrones,
+        incentivando alternancia de soporte, swing real y penalizando doble apoyo prolongado.
         """
-        # Detectar contactos con el suelo
+        # 1. Detectar contacto de los pies
         left_contact = len(p.getContactPoints(self.robot_id, 0, self.left_foot_id)) > 0
         right_contact = len(p.getContactPoints(self.robot_id, 0, self.right_foot_id)) > 0
-        
+
         gait_reward = 0.0
-        
-        # 1. Contacto con el suelo (al menos un pie)
+
+        # 2. Bonus por tener al menos un pie tocando el suelo
         if left_contact or right_contact:
             gait_reward += 1.0
-        
-        # 2. Alternancia de pasos
-        if hasattr(self, 'previous_contacts'):
-            # Detectar cambio de contacto
-            left_changed = left_contact != self.previous_contacts[0]
-            right_changed = right_contact != self.previous_contacts[1]
-            
-            if left_changed or right_changed:
-                gait_reward += 2.0  # Bonus por paso
-                
-            # Penalizar contacto simultáneo prolongado
-            if left_contact and right_contact and self.previous_contacts[0] and self.previous_contacts[1]:
-                gait_reward -= 0.5
-        
-        # 3. Estabilidad temporal de contactos
+
+        # 3. Penalizar doble apoyo prolongado
+        if left_contact and right_contact:
+            self.double_support_steps = getattr(self, "double_support_steps", 0) + 1
+        else:
+            self.double_support_steps = 0
+        if self.double_support_steps > 10:
+            gait_reward -= 1.0  # penalización si hay doble apoyo por muchos pasos
+
+        # 4. Incentiva alternancia de apoyo (“single support”)
+        if hasattr(self, 'last_single_support') and self.last_single_support is not None:
+            prev = self.last_single_support
+            current = (left_contact, right_contact)
+            if prev != current and (prev in [(True, False), (False, True)]) and (current in [(True, False), (False, True)]):
+                gait_reward += 1.5  # Bonus por alternancia de soporte
+        self.last_single_support = (left_contact, right_contact)
+
+        # 5. Premia swing real (pie levantado > 2.5 cm)
+        left_foot_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
+        right_foot_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
+        ground_z = 0.0  # Cambia esto si tu plano base está a otra altura
+
+        if not left_contact and (left_foot_pos[2] - ground_z) > 0.025:
+            gait_reward += 0.5
+        if not right_contact and (right_foot_pos[2] - ground_z) > 0.025:
+            gait_reward += 0.5
+
+        # 6. Penalización fuerte si ambos pies en el aire (posible salto/caída)
+        if not left_contact and not right_contact:
+            gait_reward -= 3.0
+
+        # 7. Bonus por estabilidad temporal (original)
         contact_stability = 0.5 if (left_contact or right_contact) else 0.0
         gait_reward += contact_stability
-        
-        # Actualizar historial
+
+        # 8. Actualiza historial
         self.previous_contacts = [left_contact, right_contact]
-        
+
         return gait_reward
 
     def _apply_critical_penalties(self, pos, euler, lin_vel):
@@ -218,18 +236,18 @@ class ImprovedRewardSystem:
         
         # Caída crítica
         if pos[2] < 0.55:
-            penalty -= 25.0
-        elif pos[2] < 0.8:
             penalty -= 10.0
+        elif pos[2] < 0.8:
+            penalty -= 2.0
         elif pos[2] < 1.0:  # Por debajo de altura objetivo
-            penalty -= 1.0
+            penalty -= 0.1
         
-        if abs(euler[0]) <math.pi -0.5:
-            penalty -=1.0
-        elif abs(euler[0]) <math.pi -1.0:
-            penalty -=10.0
-        elif abs(euler[0]) <math.pi -1.5:
-            penalty -=20.0
+        #if abs(euler[0]) <math.pi -0.5:
+        #    penalty -=1.0
+        #elif abs(euler[0]) <math.pi -1.0:
+        #    penalty -=10.0
+        #elif abs(euler[0]) <math.pi -1.5:
+        #    penalty -=20.0
         # Inclinación excesiva
         if abs(euler[1]) > math.pi/3:
             penalty -= 3.0
@@ -260,7 +278,7 @@ class ImprovedRewardSystem:
         
         # Crear quaternion de orientación inicial
         correction_quaternion = p.getQuaternionFromEuler([
-            math.pi + initial_roll,   # Corrección base + variación
+            initial_roll,   # Corrección base + variación
             initial_pitch,
             initial_yaw
         ])
@@ -283,7 +301,7 @@ class ImprovedRewardSystem:
         initial_quaternion = self.setup_random_initial_orientation()
         
         # Altura inicial con variación
-        initial_height = np.random.uniform(1.15, 1.25)
+        initial_height = np.random.uniform(1.45, 1.55)
         
         self.robot_id = p.loadURDF(
             self.urdf_path,
@@ -346,25 +364,25 @@ class ImprovedRewardSystem:
     @property
     def parametros_adicionales(self):
         # Parámetros de recompensa calibrados
-        self.target_forward_velocity = 0.8  # m/s - velocidad objetivo
+        self.target_forward_velocity = 1.1  # m/s - velocidad objetivo
         self.max_forward_velocity = 2.0     # m/s - velocidad máxima permitida
-        self.target_height = 1.0            # m - altura objetivo
+        self.target_height = 1.3            # m - altura objetivo
         self.max_angular_velocity = 2.0     # rad/s
 
         # NUEVO: Parámetros para control de altura de pies
-        self.target_foot_height = 0.05  # Altura mínima deseada durante swing
-        self.max_foot_height = 0.15     # Altura máxima recomendada
-        self.ground_clearance = 0.02    # Clearance mínimo del suelo
+        self.target_foot_height = 0.1  # Altura mínima deseada durante swing
+        self.max_foot_height = 0.3     # Altura máxima recomendada
+        self.ground_clearance = 0.05    # Clearance mínimo del suelo
         
         # Pesos de recompensas (suman a 1.0 para normalización)
         self.weights = {
             'survival': 0.10,        # Recompensa base por estar vivo
-            'progress': 0.20,        # Progreso controlado hacia adelante
-            'stability': 0.15,       # Estabilidad postural
+            'progress': 0.40,        # Progreso controlado hacia adelante
+            'stability': 0.10,       # Estabilidad postural
             'velocity_control': 0.10, # Control de velocidad
-            'pam_efficiency': 0.10,  # Eficiencia de músculos PAM
+            'pam_efficiency': 0.05,  # Eficiencia de músculos PAM
             'gait_quality': 0.15,     # Calidad de la marcha
-            'foot_clearance': 0.20  # NUEVO: Control de altura de pies
+            'foot_clearance': 0.10  # NUEVO: Control de altura de pies
         }
 
         # Variables para suavizado de recompensas

@@ -18,7 +18,8 @@ class SimplifiedWalkingController:
         
     def get_next_action(self):
         """
-        Obtiene la siguiente acción del ciclo de paso
+            Obtiene la siguiente acción del ciclo de paso
+            Dependiendo del modo de entrenamiento actual
         """
         if not self.is_initialized:
             return self._get_initialization_action()
@@ -44,7 +45,7 @@ class SimplifiedWalkingController:
             
     def _get_initialization_action(self):
         """
-        Maneja la secuencia de inicialización
+            Maneja la secuencia de inicialización
         """
         if self.init_sequence is None:
             self.init_sequence = self.walking_cycle.get_initialization_sequence()
@@ -59,7 +60,7 @@ class SimplifiedWalkingController:
     
     def reset(self):
         """
-        Reinicia el controlador
+            Reinicia el controlador
         """
         self.is_initialized = False
         self.init_sequence = None
