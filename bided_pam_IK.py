@@ -41,7 +41,7 @@ class PAMIKBipedEnv(gym.Env):
         # limites sistema
         self.limites_sistema
         
-        base_obs_size = 34  # Expandido para incluir más información
+        base_obs_size = 28  # Expandido para incluir más información Paso de 34 a 26 ver si serían 28 (elimino 4 de PAM y de IK)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -58,7 +58,7 @@ class PAMIKBipedEnv(gym.Env):
     def _setup_motors_for_force_control(self):
         """Configura motores para control de fuerza"""
         if self.robot_id is not None:
-            for i in range(6):  # 6 articulaciones
+            for i in range(4):  # 6 articulaciones
                 p.setJointMotorControl2(
                     self.robot_id,
                     i,
@@ -71,7 +71,7 @@ class PAMIKBipedEnv(gym.Env):
         """Verifica que las posiciones articulares estén dentro de límites."""
         joint_names = list(self.joint_limits.keys())
         
-        for i, pos in enumerate(joint_positions[:6]):
+        for i, pos in enumerate(joint_positions[:4]):
             if i < len(joint_names):
                 joint_name = joint_names[i]
                 low, high = self.joint_limits[joint_name]
@@ -88,23 +88,14 @@ class PAMIKBipedEnv(gym.Env):
             base_action = self.walking_controller.get_next_action()
             modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
             final_action=_safe_blend_actions(base_action, action, modulation_factor)
-            #if base_action.shape[0] == 6 and action.shape[0] == 12:
-            #    base_action_12=np.zeros_like(action)
-            #    base_action_12[6:]=base_action
-            #    # Puedes hacer blending o suma directa (modulación)
-            #    final_action = base_action_12 + modulation_factor * action
-                #final_action = np.clip(final_action, -1.0, 1.0)
-            #else:
-            #    final_action = base_action_12 + modulation_factor * action
-                #final_action = np.clip(final_action, -1.0, 1.0)
         else:
             final_action = action
         
         # 1. VALIDAR ACCIÓN IK (si es control híbrido)
         # Aplicar control según el modo
-        if self.control_mode == "hybrid" and len(action) >= 12:
+        if self.control_mode == "hybrid" and len(action) >= 8:
             #print("HYBRID_PAM")
-            foot_targets = final_action[:6] * 0.3  # Escalar a workspace
+            foot_targets = final_action[:4] * 0.3  # Escalar a workspace
             if not self._validate_foot_targets(foot_targets):
                 # Aplicar penalización por targets inválidos
                 reward = -10.0
@@ -138,7 +129,7 @@ class PAMIKBipedEnv(gym.Env):
             reward -= self.imitation_weight * imitation_penalty
         
         # 5. ACTUALIZAR TRACKING IK (si aplica)
-        if self.control_mode == "hybrid" and len(action) >= 12:
+        if self.control_mode == "hybrid" and len(action) >= 8:
             self._update_ik_tracking()
         # 6. ACTUALIZAR Estado
         current_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
@@ -199,9 +190,14 @@ class PAMIKBipedEnv(gym.Env):
             return True
         
         # Velocidad hacia atrás prolongada
-        if lin_vel[0] < -0.3 and self.step_count > 1000 and pos[0] <= -0.0:
-            print("marcha atrás", lin_vel, pos)
-            return True
+        if lin_vel[0] < 0.0 and pos[0] <= 0.0 and self.step_count > 1000:
+            self.repeat += 1
+            #print("repeat", self.repeat, lin_vel, pos)
+            if self.repeat > 200:
+                print("marcha atrás", lin_vel, pos)
+                return True
+        else:
+            self.repeat=0
             
         # Terminar si se sale del área
         if pos[0] > 1000 or pos[0] < -2.0 or abs(pos[1]) > 20:
@@ -220,7 +216,7 @@ class PAMIKBipedEnv(gym.Env):
                 return True
             
         # Límite de tiempo
-        if self.step_count > 30000:
+        if self.step_count > 6000:
             print("fuera de t")
             return True
             
@@ -250,12 +246,10 @@ class PAMIKBipedEnv(gym.Env):
 
         # Configurar posición inicial de articulaciones para caminar
         initial_joint_positions = [
-            -0.05,   # left_hip - ligeramente flexionado
+            0.0,   # left_hip - ligeramente flexionado
             0.0,  # left_knee - flexionado
-            0.0,  # left_ankle - neutro
-            -0.05,  # right_hip - extendido
+            0.0,  # right_hip - extendido
             0.0,  # right_knee - ligeramente flexionado
-            0.0    # right_ankle - neutro
         ]
     
         for i, pos in enumerate(initial_joint_positions):
@@ -269,16 +263,16 @@ class PAMIKBipedEnv(gym.Env):
             self._setup_motors_for_force_control()
             # Resetear estados PAM
             self.pam_states = {
-                'pressures': np.zeros(6),
-                'contractions': np.zeros(6),
-                'forces': np.zeros(6)
+                'pressures': np.zeros(4),
+                'contractions': np.zeros(4),
+                'forces': np.zeros(4)
             }
         
         # Resetear variables de seguimiento comunes
         self.step_count = 0
         self.total_reward = 0
         self.observation_history.clear()
-        self.previous_position = [0,0,1.45]
+        self.previous_position = [0,0,1.2]
         self.ik_success_rate.clear()
         
         # Variables específicas de IK
@@ -343,7 +337,7 @@ class PAMIKBipedEnv(gym.Env):
         Aplica fuerzas tensoriales a las articulaciones usando PyBullet
         """
         for i, force in enumerate(forces):
-            torque = force * 6
+            torque = force
             p.setJointMotorControl2(
                 self.robot_id,
                 i,
@@ -393,14 +387,14 @@ class PAMIKBipedEnv(gym.Env):
         action=np.asarray(action, dtype=np.float32)
         # Convertir acciones normalizadas a presiones PAM
         if len(action)==12:
-            pam_pressures = (action[6:] + 1.0) / 2.0 * self.max_pressure
+            pam_pressures = (action[4:] + 1.0) / 2.0 * self.max_pressure
         else:
             pam_pressures = (action+ 1.0) / 2.0 * self.max_pressure
         # Obtener estados articulares
-        joint_states = p.getJointStates(self.robot_id, range(6))
+        joint_states_pam = p.getJointStates(self.robot_id, range(4))
         
         # Calcular y aplicar fuerzas PAM
-        pam_forces = self._calculate_pam_forces(pam_pressures, joint_states)
+        pam_forces = self._calculate_pam_forces(pam_pressures, joint_states_pam)
         self._apply_joint_forces(pam_forces)
 
     def _stable_observation(self):
@@ -424,7 +418,7 @@ class PAMIKBipedEnv(gym.Env):
                     lin_vel[0], lin_vel[1], ang_vel[0], ang_vel[1]])
             
             # Estados articulares (12 elementos)
-            joint_states = p.getJointStates(self.robot_id, range(6))
+            joint_states = p.getJointStates(self.robot_id, range(4))
             for state in joint_states:
                 pos_val = state[0] if not (math.isnan(state[0]) or math.isinf(state[0])) else 0.0
                 vel_val = state[1] if not (math.isnan(state[1]) or math.isinf(state[1])) else 0.0
@@ -444,7 +438,7 @@ class PAMIKBipedEnv(gym.Env):
                 normalized_pressures = self.pam_states['pressures'] / self.max_pressure
                 obs.extend(normalized_pressures.tolist())
             else:
-                obs.extend([0.0] * 6)
+                obs.extend([0.0] * 4)
             
         except Exception as e:
             print(f"Error en observación: {e}")
@@ -510,7 +504,7 @@ class PAMIKBipedEnv(gym.Env):
         target_positions = np.concatenate([left_joints, right_joints])
 
         # Obtener posiciones actuales
-        joint_states = p.getJointStates(self.robot_id, range(6))
+        joint_states = p.getJointStates(self.robot_id, range(4))
         current_positions = [state[0] for state in joint_states]
 
         # Control PID simple hacia objetivos IK
@@ -522,13 +516,12 @@ class PAMIKBipedEnv(gym.Env):
          # Combinar con fuerzas PAM si hay ajustes adicionales
         total_forces = np.array(ik_forces)
         
-        if len(action)>6:
-            pam_adjustments = (action[6:12] + 1.0) / 2.0 * self.max_pressure  # Ajustes finos PAM
-            #joint_states = p.getJointStates(self.robot_id, range(6))
+        if len(action)>4:
+            pam_adjustments = (action[4:8] + 1.0) / 2.0 * self.max_pressure  # Ajustes finos PAM
             pam_forces = self._calculate_pam_forces(pam_adjustments, joint_states)
 
             # Peso híbrido (si existe)
-            hybrid_weight = 0.7 if len(action) <= 12 else action[12]
+            hybrid_weight = 0.7 if len(action) <= 8 else action[8]
             total_forces = hybrid_weight * np.array(ik_forces) + (1 - hybrid_weight) * np.array(pam_forces)
         # Aplicar solo control de fuerza
         self._apply_joint_forces(total_forces)
@@ -550,12 +543,12 @@ class PAMIKBipedEnv(gym.Env):
     
     def _validate_foot_targets(self, targets):
         """Valida que los objetivos de pies estén en workspace válido"""
-        left_target, right_target = targets[:3], targets[3:6]
+        left_target, right_target = targets[:2], targets[2:4]
         
         for target in [left_target, right_target]:
             if not (self.foot_workspace['x_range'][0] <= target[0] <= self.foot_workspace['x_range'][1] and
-                    self.foot_workspace['y_range'][0] <= target[1] <= self.foot_workspace['y_range'][1] and
-                    self.foot_workspace['z_range'][0] <= target[2] <= self.foot_workspace['z_range'][1]):
+                    #self.foot_workspace['y_range'][0] <= target[1] <= self.foot_workspace['y_range'][1] and
+                    self.foot_workspace['z_range'][0] <= target[1] <= self.foot_workspace['z_range'][1]):
                 return False
         return True
     
@@ -576,7 +569,7 @@ class PAMIKBipedEnv(gym.Env):
         self.last_ik_error = 0.0
         self.last_hybrid_weight = 0.5
         # Número total de joints articulados
-        self.num_joints = 6
+        self.num_joints = 4
         if self.action_space=="pam":
             self.control_mode = "pam"
             action_dims=1*self.num_joints
@@ -629,44 +622,38 @@ class PAMIKBipedEnv(gym.Env):
         """Define los límites del sistema y las propiedades de los músculos PAM."""
         # Configuración PAM
         self.pam_muscles = {
-            'left_hip_joint': PAMMcKibben(L0=0.25, r0=0.015, alpha0=np.pi/4),
-            'left_knee_joint': PAMMcKibben(L0=0.30, r0=0.012, alpha0=np.pi/4),
-            'left_ankle_joint': PAMMcKibben(L0=0.15, r0=0.010, alpha0=np.pi/4),
-            'right_hip_joint': PAMMcKibben(L0=0.25, r0=0.015, alpha0=np.pi/4),
-            'right_knee_joint': PAMMcKibben(L0=0.30, r0=0.012, alpha0=np.pi/4),
-            'right_ankle_joint': PAMMcKibben(L0=0.15, r0=0.010, alpha0=np.pi/4)
+            'left_hip_joint': PAMMcKibben(L0=0.5, r0=0.015, alpha0=np.pi/4),
+            'left_knee_joint': PAMMcKibben(L0=0.5, r0=0.012, alpha0=np.pi/4),
+            'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.015, alpha0=np.pi/4),
+            'right_knee_joint': PAMMcKibben(L0=0.5, r0=0.012, alpha0=np.pi/4),
         }
 
         # Parámetros de control PAM
-        self.max_pressure = 1000000  # 5 bar en Pa
+        self.max_pressure = 500000  # 5 bar en Pa
         self.min_pressure = 0
 
         # Estado interno de los músculos PAM
         self.pam_states = {
-            'pressures': np.zeros(6),
-            'contractions': np.zeros(6),
-            'forces': np.zeros(6)
+            'pressures': np.zeros(4),
+            'contractions': np.zeros(4),
+            'forces': np.zeros(4)
         }
 
         # Límites articulares reales del URDF para normalización
         self.joint_limits = {
             'left_hip_joint': (-1.0, 1.0),
-            'left_knee_joint': (0, 1.571),
-            'left_ankle_joint': (-0.436, 0.436),
+            'left_knee_joint': (0.0, 1.571),
             'right_hip_joint': (-1.0, 1.0),
-            'right_knee_joint': (0, 1.571),
-            'right_ankle_joint': (-0.436, 0.436)
+            'right_knee_joint': (0.0, 1.571),
         }
 
         self.joint_forces = {
             'left_hip_joint': 150,    # Cadera necesita más fuerza
             'left_knee_joint': 120,   # Rodilla fuerza moderada
-            'left_ankle_joint': 100,   # Tobillo menos fuerza
             'right_hip_joint': 150,
             'right_knee_joint': 120,
-            'right_ankle_joint': 100
         }
-        self.joint_force_array = [150, 120, 100, 150, 120, 100]
+        self.joint_force_array = [150, 120, 150, 120]
         self.imitation_weight = 1.0
 
     @property
@@ -723,13 +710,13 @@ class PAMIKBipedEnv(gym.Env):
         random_friction = np.random.uniform(0.5, 1.5)
         correction_quaternion = p.getQuaternionFromEuler([0, 0, 0])
         #print(correction_quaternion)
-        self.previous_position = [0,0,1.4]
+        self.previous_position = [0,0,1.2]
         self.plane_id = p.loadURDF("plane.urdf")
         p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
         self.robot_id = p.loadURDF(
             self.urdf_path,
             self.previous_position,
-            #correction_quaternion,
+            correction_quaternion,
             useFixedBase=False
         )
         aabb_min, aabb_max = p.getAABB(self.robot_id, -1)
@@ -740,7 +727,7 @@ class PAMIKBipedEnv(gym.Env):
         # Esperar a que la simulación se estabilice
         for _ in range(20):
             p.stepSimulation()
-
+        self.repeat = 0
         # Randomización de masa en links del robot
         # Esto ayuda a robustecer el modelo ante variaciones físicas
         for link_id in range(p.getNumJoints(self.robot_id)):
@@ -765,7 +752,7 @@ class PAMIKBipedEnv(gym.Env):
 
     def obtener_posicion_inicial_robot(self):
         robot_id = p.loadURDF("tu_robot.urdf", [0, 0, 0], useFixedBase=True)
-        for i in range(n_links):
+        for i in range(6):
             print(i, p.getJointInfo(robot_id, i)[12].decode())
 
 ######################################################################################################################

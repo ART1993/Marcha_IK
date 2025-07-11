@@ -23,7 +23,7 @@ class ImprovedRewardSystem:
         self.step_count = 0
         self.reward_history.clear()
         self.foot_trajectory_history.clear()
-        self.previous_foot_positions = None
+        self.previous_position  = None
 
     def redefine_robot(self, robot_id, plane_id):
         self.robot_id=robot_id
@@ -112,6 +112,32 @@ class ImprovedRewardSystem:
         # 6. CALIDAD DE MARCHA
         gait_reward = self._calculate_gait_quality_reward()
         rewards['gait_quality'] = gait_reward
+        left_foot_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
+        right_foot_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
+        ground_z = 0.0  # Ajusta si tu plano base cambia
+        # Clearance actual
+        left_clearance = left_foot_pos[2] - ground_z
+        right_clearance = right_foot_pos[2] - ground_z
+
+        # Incentiva alternancia: un pie arriba (>7cm) y el otro abajo (<4cm)
+        foot_clearance_reward = 0.0
+        if (left_clearance > 0.07 and right_clearance < 0.04) or (right_clearance > 0.07 and left_clearance < 0.04):
+            foot_clearance_reward += 1.0
+
+        # Penaliza ambos pies bajos o altos (robot está "quieto" o saltando)
+        if left_clearance < 0.03 and right_clearance < 0.03:
+            foot_clearance_reward -= 1.0  # ambos pies en el suelo sin alternancia
+        if left_clearance > 0.06 and right_clearance > 0.06:
+            foot_clearance_reward -= 1.5  # ambos pies en el aire
+
+        # Penaliza quietud de la base (cadera/torso)
+        if self.previous_position is not None:
+            delta = np.linalg.norm(np.array(pos) - np.array(self.previous_position))
+            if delta < 0.004:  # 4mm es poco desplazamiento, ajusta si es necesario
+                foot_clearance_reward -= 0.5
+        self.previous_position = pos
+
+        rewards['foot_clearance'] = foot_clearance_reward
         
         # Combinar recompensas con pesos
         for component, reward in rewards.items():
@@ -149,8 +175,8 @@ class ImprovedRewardSystem:
             pam_reward -=energy_penalty
         
         # 2. Coordinación muscular: premiar activación alternada
-        left_muscles = pressures[:3]  # hip, knee, ankle izquierdo
-        right_muscles = pressures[3:6]  # hip, knee, ankle derecho
+        left_muscles = pressures[:2]  # hip, knee, ankle izquierdo
+        right_muscles = pressures[2:4]  # hip, knee, ankle derecho
         
         left_activation = np.mean(left_muscles)
         right_activation = np.mean(right_muscles)
@@ -253,11 +279,11 @@ class ImprovedRewardSystem:
             penalty -= 3.0
         
         # Velocidad lateral excesiva
-        if abs(lin_vel[1]) > 1.5:
+        if abs(lin_vel[1]) > 1.0:
             penalty -= 2.0
         
         # Velocidad hacia atrás
-        if lin_vel[0] < -0.5:
+        if lin_vel[0] < 0.06:
             penalty -= 2.0
         
         return penalty
@@ -301,7 +327,12 @@ class ImprovedRewardSystem:
         initial_quaternion = self.setup_random_initial_orientation()
         
         # Altura inicial con variación
-        initial_height = np.random.uniform(1.45, 1.55)
+        initial_height = np.random.uniform(1.25, 1.35)
+        # Resetear sistema de tracking
+        self.step_count = 0
+        self.total_reward = 0
+        self.observation_history.clear()
+        self.previous_position = [0, 0, initial_height]
         
         self.robot_id = p.loadURDF(
             self.urdf_path,
@@ -314,7 +345,7 @@ class ImprovedRewardSystem:
         self.setup_physics_properties()
         
         # Posición inicial de articulaciones con variación
-        base_positions = [0.01, -0.02, 0.05, -0.01, -0.01, 0.0]
+        base_positions = [-0.05, 0.0, -0.05, 0.0]
         initial_joint_positions = []
         
         for pos in base_positions:
@@ -328,19 +359,13 @@ class ImprovedRewardSystem:
         initial_forward_vel = np.random.uniform(0.3, 0.7)
         p.resetBaseVelocity(self.robot_id, [initial_forward_vel, 0, 0], [0, 0, 0])
         
-        # Resetear sistema de tracking
-        self.step_count = 0
-        self.total_reward = 0
-        self.observation_history.clear()
-        self.previous_position = [0, 0, initial_height]
-        
         # Variables específicas
         if hasattr(self, 'pam_muscles'):
             self._setup_motors_for_force_control()
             self.pam_states = {
-                'pressures': np.zeros(6),
-                'contractions': np.zeros(6),
-                'forces': np.zeros(6)
+                'pressures': np.zeros(4),
+                'contractions': np.zeros(4),
+                'forces': np.zeros(4)
             }
         
         self.previous_contacts = [False, False]
@@ -366,7 +391,7 @@ class ImprovedRewardSystem:
         # Parámetros de recompensa calibrados
         self.target_forward_velocity = 1.1  # m/s - velocidad objetivo
         self.max_forward_velocity = 2.0     # m/s - velocidad máxima permitida
-        self.target_height = 1.3            # m - altura objetivo
+        self.target_height = 1.2            # m - altura objetivo
         self.max_angular_velocity = 2.0     # rad/s
 
         # NUEVO: Parámetros para control de altura de pies
@@ -377,12 +402,12 @@ class ImprovedRewardSystem:
         # Pesos de recompensas (suman a 1.0 para normalización)
         self.weights = {
             'survival': 0.10,        # Recompensa base por estar vivo
-            'progress': 0.40,        # Progreso controlado hacia adelante
+            'progress': 0.30,        # Progreso controlado hacia adelante
             'stability': 0.10,       # Estabilidad postural
             'velocity_control': 0.10, # Control de velocidad
-            'pam_efficiency': 0.05,  # Eficiencia de músculos PAM
+            'pam_efficiency': 0.10,  # Eficiencia de músculos PAM
             'gait_quality': 0.15,     # Calidad de la marcha
-            'foot_clearance': 0.10  # NUEVO: Control de altura de pies
+            'foot_clearance': 0.15  # NUEVO: Control de altura de pies
         }
 
         # Variables para suavizado de recompensas
@@ -391,6 +416,7 @@ class ImprovedRewardSystem:
         
         # Tracking mejorado
         self.step_count = 0
+        self.previous_position = None
         self.previous_foot_positions = None
         self.foot_trajectory_history = deque(maxlen=20)
     
@@ -408,7 +434,7 @@ class PAMTrainingConfig:
     REWARD_SCALE = 10.0    # Escala general de recompensas
     
     # Criterios de terminación
-    MIN_HEIGHT = 1.6       # m
+    MIN_HEIGHT = 1.0       # m
     MAX_TILT = math.pi/2   # rad
     MAX_EPISODE_STEPS = 2000
     

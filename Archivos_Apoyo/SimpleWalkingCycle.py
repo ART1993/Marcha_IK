@@ -6,10 +6,10 @@ import time
 class SimpleWalkingCycle:
     """
     Ciclo de paso sencillo para robot blando con músculos PAM
-    Mantiene 6 articulaciones pero con patrones simplificados
+    Mantiene 4 articulaciones pero con patrones simplificados
     """
     
-    def __init__(self, robot_id, step_frequency=1.0, step_length=0.3):
+    def __init__(self, robot_id, step_frequency=2.0, step_length=0.3):
         self.step_frequency = step_frequency  # Hz
         self.step_length = step_length        # metros
         self.robot_id=robot_id
@@ -24,7 +24,7 @@ class SimpleWalkingCycle:
     def get_simple_walking_actions(self, time_step):
         """
         Genera acciones de paso sencillas basadas en patrones senoidales
-        Returns: array de 6 presiones PAM normalizadas [-1, 1]
+        Returns: array de 4 presiones PAM normalizadas [-1, 1]
         """
         self.update_phase(time_step)
         
@@ -43,22 +43,16 @@ class SimpleWalkingCycle:
         knee_left = self.base_pressures['left_knee'] + \
                    self.modulation_amplitudes['left_knee'] * max(0, math.sin(left_leg_phase))
         
-        # Tobillo izquierdo: estabilización
-        ankle_left = self.base_pressures['left_ankle'] + \
-                    self.modulation_amplitudes['left_ankle'] * 0.5 * math.sin(left_leg_phase)
-        
         # PIERNA DERECHA (desfasada 180°)
         hip_right = self.base_pressures['right_hip'] + \
                    self.modulation_amplitudes['right_hip'] * math.sin(right_leg_phase)
         
         knee_right = self.base_pressures['right_knee'] + \
                     self.modulation_amplitudes['right_knee'] * max(0, math.sin(right_leg_phase))
-        
-        ankle_right = self.base_pressures['right_ankle'] + \
-                     self.modulation_amplitudes['right_ankle'] * 0.5 * math.sin(right_leg_phase)
+
         
         # Compilar acciones y normalizar a [-1, 1]
-        pressures = [hip_left, knee_left, ankle_left, hip_right, knee_right, ankle_right]
+        pressures = [hip_left, knee_left, hip_right, knee_right]
         
         # Convertir de [0,1] a [-1,1] para el entorno
         actions = [2.0 * pressure - 1.0 for pressure in pressures]
@@ -85,10 +79,8 @@ class SimpleWalkingCycle:
             actions = [
                 base_pressure,      # left_hip
                 base_pressure * 0.7, # left_knee  
-                base_pressure * 1.2, # left_ankle
                 base_pressure,      # right_hip
                 base_pressure * 0.7, # right_knee
-                base_pressure * 1.2  # right_ankle
             ]
             
             # Normalizar a [-1,1]
@@ -124,10 +116,10 @@ class SimpleWalkingCycle:
         Returns: array de posiciones articulares
         """
         self.update_phase(time_step)
-        alpha = (self.phase % 1.0)  # [0,1]
+        alpha = self.phase #(self.phase % 1.0)  # [0,1]
         step_length = self.step_length
-        step_height = 0.05  # altura del pie durante swing
-
+        step_height = 0.15  # altura del pie durante swing
+        print(self.phase)
         # Obtener posiciones actuales de los pies
         left_start = p.getLinkState(self.robot_id, left_foot_index)[0]
         right_start = p.getLinkState(self.robot_id, right_foot_index)[0]
@@ -179,20 +171,16 @@ class SimpleWalkingCycle:
         self.base_pressures = {
             'left_hip': 0.3,
             'left_knee': 0.2,
-            'left_ankle': 0.4,
             'right_hip': 0.3,
             'right_knee': 0.2,
-            'right_ankle': 0.4
         }
         
         # Amplitudes de modulación para cada articulación
         self.modulation_amplitudes = {
             'left_hip': 0.4,
-            'left_knee': 0.6,
-            'left_ankle': 0.3,
+            'left_knee': 0.7,
             'right_hip': 0.4,
-            'right_knee': 0.6,
-            'right_ankle': 0.3
+            'right_knee': 0.7,
         }
 
 def foot_bezier_parabola(start, end, ctrl1, ctrl2, alpha, height):

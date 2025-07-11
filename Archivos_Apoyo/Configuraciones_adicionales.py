@@ -35,7 +35,7 @@ def phase_trainig_preparations(model_dir, remaining_timesteps, train_env, eval_e
     set_env_phase(train_env, {num_phase})
     set_env_phase(eval_env, {num_phase})
     model.learn(
-        total_timesteps=remaining_timesteps,
+        total_timesteps=phase_timesteps,
         callback=callbacks,
         tb_log_name=f"{config['model_prefix']}_training"
     )
