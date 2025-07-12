@@ -301,7 +301,7 @@ class ImprovedRewardSystem:
         initial_quaternion = self.setup_random_initial_orientation()
         
         # Altura inicial con variación
-        initial_height = np.random.uniform(1.45, 1.55)
+        initial_height = np.random.uniform(1.2, 1.3)
         
         self.robot_id = p.loadURDF(
             self.urdf_path,

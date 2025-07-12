@@ -88,15 +88,6 @@ class PAMIKBipedEnv(gym.Env):
             base_action = self.walking_controller.get_next_action()
             modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
             final_action=_safe_blend_actions(base_action, action, modulation_factor)
-            #if base_action.shape[0] == 6 and action.shape[0] == 12:
-            #    base_action_12=np.zeros_like(action)
-            #    base_action_12[6:]=base_action
-            #    # Puedes hacer blending o suma directa (modulación)
-            #    final_action = base_action_12 + modulation_factor * action
-                #final_action = np.clip(final_action, -1.0, 1.0)
-            #else:
-            #    final_action = base_action_12 + modulation_factor * action
-                #final_action = np.clip(final_action, -1.0, 1.0)
         else:
             final_action = action
         
@@ -250,10 +241,10 @@ class PAMIKBipedEnv(gym.Env):
 
         # Configurar posición inicial de articulaciones para caminar
         initial_joint_positions = [
-            -0.05,   # left_hip - ligeramente flexionado
+            -0.0,   # left_hip - ligeramente flexionado
             0.0,  # left_knee - flexionado
             0.0,  # left_ankle - neutro
-            -0.05,  # right_hip - extendido
+            -0.0,  # right_hip - extendido
             0.0,  # right_knee - ligeramente flexionado
             0.0    # right_ankle - neutro
         ]
@@ -278,7 +269,6 @@ class PAMIKBipedEnv(gym.Env):
         self.step_count = 0
         self.total_reward = 0
         self.observation_history.clear()
-        self.previous_position = [0,0,1.45]
         self.ik_success_rate.clear()
         
         # Variables específicas de IK
@@ -629,12 +619,12 @@ class PAMIKBipedEnv(gym.Env):
         """Define los límites del sistema y las propiedades de los músculos PAM."""
         # Configuración PAM
         self.pam_muscles = {
-            'left_hip_joint': PAMMcKibben(L0=0.25, r0=0.015, alpha0=np.pi/4),
-            'left_knee_joint': PAMMcKibben(L0=0.30, r0=0.012, alpha0=np.pi/4),
-            'left_ankle_joint': PAMMcKibben(L0=0.15, r0=0.010, alpha0=np.pi/4),
-            'right_hip_joint': PAMMcKibben(L0=0.25, r0=0.015, alpha0=np.pi/4),
-            'right_knee_joint': PAMMcKibben(L0=0.30, r0=0.012, alpha0=np.pi/4),
-            'right_ankle_joint': PAMMcKibben(L0=0.15, r0=0.010, alpha0=np.pi/4)
+            'left_hip_joint': PAMMcKibben(L0=0.6, r0=0.015, alpha0=np.pi/4),
+            'left_knee_joint': PAMMcKibben(L0=0.6, r0=0.012, alpha0=np.pi/4),
+            'left_ankle_joint': PAMMcKibben(L0=0.1, r0=0.010, alpha0=np.pi/4),
+            'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.015, alpha0=np.pi/4),
+            'right_knee_joint': PAMMcKibben(L0=0.6, r0=0.012, alpha0=np.pi/4),
+            'right_ankle_joint': PAMMcKibben(L0=0.1, r0=0.010, alpha0=np.pi/4)
         }
 
         # Parámetros de control PAM
@@ -714,31 +704,42 @@ class PAMIKBipedEnv(gym.Env):
             Da cierta randomización para fortalecer el modelo
         """
         p.resetSimulation()
-        p.setGravity(0, 0, -9.81)
-        p.setTimeStep(self.time_step)
-        p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
-        
 
         # Cargar entorno con fricción random
         random_friction = np.random.uniform(0.5, 1.5)
         correction_quaternion = p.getQuaternionFromEuler([0, 0, 0])
         #print(correction_quaternion)
-        self.previous_position = [0,0,1.4]
+        self.previous_position = [0,0,1.2]
         self.plane_id = p.loadURDF("plane.urdf")
         p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
         self.robot_id = p.loadURDF(
             self.urdf_path,
             self.previous_position,
-            #correction_quaternion,
+            correction_quaternion,
             useFixedBase=False
         )
-        aabb_min, aabb_max = p.getAABB(self.robot_id, -1)
-        #altura = aabb_max[2] - aabb_min[2]
-        #print(f"Altura del robot: {altura:.2f} m")
+        initial_joint_positions = [0.0,   # left_hip
+                                    0.0,   # left_knee
+                                    0.0,   # right_hip
+                                    0.0,   # right_knee
+                                    ]
+        for i, pos in enumerate(initial_joint_positions):
+            p.resetJointState(self.robot_id, i, pos)
+        p.stepSimulation()
+        #self.robot_id=self.obtener_posicion_inicial_robot(self.robot_id,
+        #    self.urdf_path,
+        #    joint_positions=initial_joint_positions,
+        #    left_foot_id=self.left_foot_id,
+        #    right_foot_id=self.right_foot_id,
+        #    random_friction=random_friction
+        #)
+        p.setGravity(0, 0, -9.81)
+        p.setTimeStep(self.time_step)
+        p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
         self.setup_physics_properties()
 
         # Esperar a que la simulación se estabilice
-        for _ in range(20):
+        for _ in range(200):
             p.stepSimulation()
 
         # Randomización de masa en links del robot
@@ -763,10 +764,30 @@ class PAMIKBipedEnv(gym.Env):
             self.walking_controller = None
             self.imitation_weight = 0.0
 
-    def obtener_posicion_inicial_robot(self):
-        robot_id = p.loadURDF("tu_robot.urdf", [0, 0, 0], useFixedBase=True)
-        for i in range(n_links):
-            print(i, p.getJointInfo(robot_id, i)[12].decode())
+    def obtener_posicion_inicial_robot(self, robot_id_temp, urdf_path, joint_positions, 
+                                       left_foot_id, right_foot_id, random_friction=1.0):
+    
+        # 2. Poner posiciones iniciales
+        for i, pos in enumerate(joint_positions):
+            p.resetJointState(robot_id_temp, i, pos)
+        p.stepSimulation()
+        
+        # 3. Obtener altura del pie más bajo
+        left_foot_z = p.getLinkState(robot_id_temp, left_foot_id)[0][2]
+        right_foot_z = p.getLinkState(robot_id_temp, right_foot_id)[0][2]
+        min_foot_z = min(left_foot_z, right_foot_z)
+        
+        # 5. Volver a cargar robot con la base ajustada
+        p.resetSimulation()
+        adjusted_base_z = self.previous_position[2] - min_foot_z
+        p.removeBody(robot_id_temp)
+        self.plane_id = p.loadURDF("plane.urdf")
+        p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
+        robot_id = p.loadURDF(urdf_path, [0, 0, adjusted_base_z], useFixedBase=False)
+        for i, pos in enumerate(joint_positions):
+            p.resetJointState(robot_id, i, pos)
+        p.stepSimulation()
+        return robot_id
 
 ######################################################################################################################
 ##################################Ajuste de base_action para control híbrido##############################################

@@ -127,12 +127,12 @@ class SimpleWalkingCycle:
         alpha = (self.phase % 1.0)  # [0,1]
         step_length = self.step_length
         step_height = 0.05  # altura del pie durante swing
-
         # Obtener posiciones actuales de los pies
         left_start = p.getLinkState(self.robot_id, left_foot_index)[0]
         right_start = p.getLinkState(self.robot_id, right_foot_index)[0]
 
         if alpha < 0.5:
+            print(alpha, "right foot in swing")
             # Pierna derecha en swing
             swing_alpha = alpha / 0.5
             start=right_start
@@ -146,6 +146,7 @@ class SimpleWalkingCycle:
             )
             joint_positions = p.calculateInverseKinematics(self.robot_id, right_foot_index, target_pos)
         else:
+            print(alpha, "left foot in swing")
             # Pierna izquierda en swing
             swing_alpha = (alpha - 0.5) / 0.5
             start=left_start
