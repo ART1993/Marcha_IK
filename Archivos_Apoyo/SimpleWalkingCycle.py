@@ -9,10 +9,19 @@ class SimpleWalkingCycle:
     Mantiene 6 articulaciones pero con patrones simplificados
     """
     
-    def __init__(self, robot_id, step_frequency=1.0, step_length=0.3):
+    def __init__(self, robot_id, plane_id, step_frequency=1.0, step_length=0.3):
         self.step_frequency = step_frequency  # Hz
         self.step_length = step_length        # metros
         self.robot_id=robot_id
+        self.plane_id=plane_id
+        self.left_foot_index = 2
+        self.right_foot_index = 5
+        self.step_frequency = step_frequency  # Hz
+        self.step_length = step_length
+        self.step_height = 0.05
+        self.phase = 0.0  # [0, 1)
+        self.swing_leg = "right"  # O "left", alterna cada medio ciclo
+        self.last_swing_leg = "right"
 
         self.warking_cycle_params
         
@@ -20,6 +29,7 @@ class SimpleWalkingCycle:
         """Actualiza la fase del ciclo de paso"""
         self.phase += dt * self.step_frequency
         self.phase = self.phase % 1.0  # Mantener en rango [0,1]
+        
     
     def get_simple_walking_actions(self, time_step):
         """
@@ -126,10 +136,19 @@ class SimpleWalkingCycle:
         self.update_phase(time_step)
         alpha = (self.phase % 1.0)  # [0,1]
         step_length = self.step_length
-        step_height = 0.05  # altura del pie durante swing
+        step_height = self.step_height  # altura del pie durante swing
         # Obtener posiciones actuales de los pies
+        print(self.robot_id)
         left_start = p.getLinkState(self.robot_id, left_foot_index)[0]
         right_start = p.getLinkState(self.robot_id, right_foot_index)[0]
+        orientation = get_foot_orientation_parallel_to_ground()
+
+        left_foot_touchdown =p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=left_foot_index)
+        right_foot_touchdown =p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=right_foot_index)
+        if left_foot_touchdown and self.phase < 0.5:
+            self.phase = 0.5  # Forzar cambio de pierna de soporte
+        elif right_foot_touchdown and self.phase >= 0.5:
+            self.phase = 0.0
 
         if alpha < 0.5:
             print(alpha, "right foot in swing")
@@ -217,3 +236,7 @@ def foot_bezier_parabola(start, end, ctrl1, ctrl2, alpha, height):
     z = z_base + height * 4 * alpha * (1 - alpha)
 
     return [x, y, z]
+
+def get_foot_orientation_parallel_to_ground():
+    # Orientación paralela al suelo (ningún eje rotado)
+    return p.getQuaternionFromEuler([0, 0, 0])  # roll, pitch, yaw

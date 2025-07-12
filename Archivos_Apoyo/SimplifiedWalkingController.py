@@ -1,4 +1,5 @@
 import numpy as np
+import pybullet as p
 from Archivos_Apoyo.SimpleWalkingCycle import SimpleWalkingCycle
 
 
@@ -11,7 +12,7 @@ class SimplifiedWalkingController:
         self.env = env
         self.mode = mode
         self.blend_factor = blend_factor
-        self.walking_cycle = SimpleWalkingCycle(robot_id=env.robot_id)
+        self.walking_cycle = SimpleWalkingCycle(robot_id=env.robot_id, plane_id=env.plane_id)
         self.is_initialized = False
         self.init_sequence = None
         self.init_step = 0

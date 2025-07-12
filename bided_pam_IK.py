@@ -29,6 +29,7 @@ class PAMIKBipedEnv(gym.Env):
 
         self.action_space=action_space
         self.render_mode = render_mode
+        self.phase=1
 
         self.generar_simplified_space
 
@@ -121,7 +122,7 @@ class PAMIKBipedEnv(gym.Env):
             expert_action = np.asarray(expert_action)
             action = np.asarray(action)
             if expert_action.shape[0] != action.shape[0]:
-                print(f"Corrigiendo dimensiones: action {action.shape}, expert {expert_action.shape}")
+                #print(f"Corrigiendo dimensiones: action {action.shape}, expert {expert_action.shape}")
                 # Por ejemplo, compara solo PAM:
                 imitation_penalty = np.linalg.norm(action[-expert_action.shape[0]:] - expert_action)
             else:
@@ -231,9 +232,11 @@ class PAMIKBipedEnv(gym.Env):
             right_foot_id=self.right_foot_id,
             robot_data=self.robot_data
         )
-        self.walking_controller = SimplifiedWalkingController(self)
-        self.walking_controller.reset()
-
+        #self.walking_controller = SimplifiedWalkingController(self)
+        if self.use_walking_cycle is False:
+            self.walking_controller = self.set_training_phase(self, self.phase)
+        else:
+            self.walking_controller.reset()
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
         # Configurar propiedades físicas
@@ -296,8 +299,6 @@ class PAMIKBipedEnv(gym.Env):
         # Obtener observación (compatible con ambos entornos)
         observation = self._stable_observation()
         info = {'episode_reward': 0, 'episode_length': 0}
-        if self.use_walking_cycle:
-            self.walking_controller = SimplifiedWalkingController(self)
         return observation, info
     
     def close(self):
@@ -692,6 +693,8 @@ class PAMIKBipedEnv(gym.Env):
         self.walking_controller = None
         self.use_walking_cycle = True
 
+        self.setup_reset_simulation
+
 ########################################################################################################################
 ###########################Preparacion params simulacion y PAM##########################################################
 ########################################################################################################################
@@ -726,13 +729,6 @@ class PAMIKBipedEnv(gym.Env):
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
         p.stepSimulation()
-        #self.robot_id=self.obtener_posicion_inicial_robot(self.robot_id,
-        #    self.urdf_path,
-        #    joint_positions=initial_joint_positions,
-        #    left_foot_id=self.left_foot_id,
-        #    right_foot_id=self.right_foot_id,
-        #    random_friction=random_friction
-        #)
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.time_step)
         p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)

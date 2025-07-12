@@ -313,7 +313,7 @@ class UnifiedBipedTrainer:
                 
                 disable_walking_cycle(train_env)
                 disable_walking_cycle(eval_env)
-                
+                model.phase = 3
                 model.learn(
                     total_timesteps=phase3_timesteps,
                     callback=callbacks,
