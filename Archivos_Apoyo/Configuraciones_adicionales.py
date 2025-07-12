@@ -32,8 +32,8 @@ def set_env_phase(env_wrapper, phase):
 def phase_trainig_preparations(model_dir, remaining_timesteps, train_env, eval_env, current_timesteps,
                                 model, callbacks, phase_timesteps, config, num_phase:int):
     # Configurar entornos para usar ciclo base
-    set_env_phase(train_env, {num_phase})
-    set_env_phase(eval_env, {num_phase})
+    set_env_phase(train_env, num_phase)
+    set_env_phase(eval_env, num_phase)
     model.learn(
         total_timesteps=phase_timesteps,
         callback=callbacks,

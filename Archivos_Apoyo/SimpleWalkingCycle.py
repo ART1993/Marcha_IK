@@ -9,11 +9,16 @@ class SimpleWalkingCycle:
     Mantiene 4 articulaciones pero con patrones simplificados
     """
     
-    def __init__(self, robot_id, step_frequency=2.0, step_length=0.3):
-        self.step_frequency = step_frequency  # Hz
-        self.step_length = step_length        # metros
+    def __init__(self, robot_id, step_frequency=2.0, step_length=0.1):
         self.robot_id=robot_id
 
+        self.step_frequency = step_frequency  # Hz
+        self.step_length = step_length        # metros
+        self.step_height = 0.2  # altura del pie durante swing
+        #self.support_knee_drop = 0.35  # Ajusta según lo que te funcione visualmente
+        self.base_x_offset = 0.0  # <-- NUEVO: avanza con cada ciclo
+        self.prev_phase = 0.0     # Para detectar nuevo ciclo
+        self.base_height=1.2
         self.warking_cycle_params
         
     def update_phase(self, dt):
@@ -27,7 +32,6 @@ class SimpleWalkingCycle:
         Returns: array de 4 presiones PAM normalizadas [-1, 1]
         """
         self.update_phase(time_step)
-        
         # Patrones básicos usando senos desfasados
         left_leg_phase = self.phase * 2 * math.pi
         right_leg_phase = (self.phase + 0.5) * 2 * math.pi  # Desfase de 180°
@@ -116,42 +120,55 @@ class SimpleWalkingCycle:
         Returns: array de posiciones articulares
         """
         self.update_phase(time_step)
-        alpha = self.phase #(self.phase % 1.0)  # [0,1]
-        step_length = self.step_length
-        step_height = 0.15  # altura del pie durante swing
-        print(self.phase)
-        # Obtener posiciones actuales de los pies
-        left_start = p.getLinkState(self.robot_id, left_foot_index)[0]
-        right_start = p.getLinkState(self.robot_id, right_foot_index)[0]
+        alpha = self.phase % 1.0
 
+        # Avanza el offset de la base_link al iniciar un nuevo ciclo
+        if alpha < self.prev_phase:
+            self.base_x_offset += self.step_length
+        self.prev_phase = alpha
+
+        # Target X de la base/cadera en el ciclo actual
+        base_target_x = self.base_x_offset + alpha * self.step_length
+        base_target_y = 0.0
+        base_target_z = self.base_height
+        base_target = (base_target_x, base_target_y, base_target_z)
+
+        # Parámetros para pies
+        foot_y = 0.10    # Separación lateral de los pies
+        swing_z = self.step_height
+
+        # Alternancia de swing entre pies
         if alpha < 0.5:
-            # Pierna derecha en swing
+            # Derecho en swing
             swing_alpha = alpha / 0.5
-            start=right_start
-            end = [right_start[0] + step_length, right_start[1], right_start[2]]
-            ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
-            ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
-            target_pos = foot_bezier_parabola(
-                start=start,end=end,
-                ctrl1=ctrl1,ctrl2=ctrl2,
-                alpha=swing_alpha,height=step_height
-            )
-            joint_positions = p.calculateInverseKinematics(self.robot_id, right_foot_index, target_pos)
-        else:
-            # Pierna izquierda en swing
-            swing_alpha = (alpha - 0.5) / 0.5
-            start=left_start
-            end = [left_start[0] + step_length, left_start[1], left_start[2]]
-            ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
-            ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
-            target_pos = foot_bezier_parabola(
-                start=start,end=end,
-                ctrl1=ctrl1,ctrl2=ctrl2,
-                alpha=swing_alpha,height=step_height
-            )
-            joint_positions = p.calculateInverseKinematics(self.robot_id, left_foot_index, target_pos)
+            right_foot_x = base_target_x + self.step_length / 2
+            right_foot_y = -foot_y
+            right_foot_z = base_target_z + swing_z * np.sin(np.pi * swing_alpha)
+            right_foot_target = (right_foot_x, right_foot_y, right_foot_z)
 
-        return joint_positions  # posición deseada de las articulaciones
+            left_foot_x = base_target_x - self.step_length / 2
+            left_foot_y = foot_y
+            left_foot_z = base_target_z   # Pie soporte
+            left_foot_target = (left_foot_x, left_foot_y, left_foot_z)
+        else:
+            # Izquierdo en swing
+            swing_alpha = (alpha - 0.5) / 0.5
+            left_foot_x = base_target_x + self.step_length / 2
+            left_foot_y = foot_y
+            left_foot_z = base_target_z + swing_z * np.sin(np.pi * swing_alpha)
+            left_foot_target = (left_foot_x, left_foot_y, left_foot_z)
+
+            right_foot_x = base_target_x - self.step_length / 2
+            right_foot_y = -foot_y
+            right_foot_z = base_target_z   # Pie soporte
+            right_foot_target = (right_foot_x, right_foot_y, right_foot_z)
+        
+        left_joint_positions = p.calculateInverseKinematics(self.robot_id, left_foot_index, left_foot_target)
+        right_joint_positions = p.calculateInverseKinematics(self.robot_id, right_foot_index, right_foot_target)
+
+        # Devuelve todas las articulaciones, por ejemplo concatenando
+        # Suponiendo que el orden es [left_hip, left_knee, right_hip, right_knee]
+        return np.array(list(left_joint_positions[:2]) + list(right_joint_positions[:2]), dtype=np.float32)  # posición deseada de las articulaciones
     
 
 ############################################################################################################################
@@ -204,3 +221,61 @@ def foot_bezier_parabola(start, end, ctrl1, ctrl2, alpha, height):
     z = z_base + height * 4 * alpha * (1 - alpha)
 
     return [x, y, z]
+
+def debug_parabola(robot_id, left_foot_index, right_foot_index):
+    """
+    Función de depuración para imprimir posiciones de links y verificar trayectorias
+    
+    """
+    # Log de posiciones de links
+    base_link_index = 0  # Ajusta esto según tu URDF
+    base_pos, base_orn = p.getLinkState(robot_id, base_link_index)[:2]
+    print(f"[DEBUG] BASE_LINK pos: {base_pos}, orn (Euler): {p.getEulerFromQuaternion(base_orn)}")
+
+    left_start = p.getLinkState(robot_id, left_foot_index)[0]
+    right_start = p.getLinkState(robot_id, right_foot_index)[0]
+    print(f"[DEBUG] LEFT_FOOT pos: {left_start}")
+    print(f"[DEBUG] RIGHT_FOOT pos: {right_start}")
+
+def evolucion_antigua_swing(right_start, left_start, alpha, step_length=0.4, robot_id=None, right_foot_index=5, left_foot_index=2, 
+                            step_height=0.35, swing_alpha=0.5, support_knee_drop=0.35):
+        step_height = step_height  # altura del pie durante swing
+        support_knee_drop = support_knee_drop  # Ajusta según lo que te funcione visualmente
+        # Obtener posiciones actuales de los pies
+        left_start = p.getLinkState(robot_id, left_foot_index)[0]
+        right_start = p.getLinkState(robot_id, right_foot_index)[0]
+        if alpha < 0.5:
+            # Pierna derecha en swing
+            #print("swing derecho")
+            swing_alpha = alpha / 0.5
+            start=right_start
+            end = [right_start[0] + step_length, right_start[1], right_start[2]]
+            ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
+            ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
+            swing_target = foot_bezier_parabola(
+                start=start,end=end,
+                ctrl1=ctrl1,ctrl2=ctrl2,
+                alpha=swing_alpha,height=step_height
+            )
+            swing_joint_positions  = p.calculateInverseKinematics(robot_id, right_foot_index, swing_target)
+            # Pie izquierdo (soporte) - baja un poco para forzar flexión
+            support_target = list(left_start)
+            support_target[2] -= support_knee_drop
+            support_joint_positions = p.calculateInverseKinematics(robot_id, left_foot_index, support_target)
+        else:
+            # Pierna izquierda en swing
+            #print("swing izquierdo")
+            swing_alpha = (alpha - 0.5) / 0.5
+            start=left_start
+            end = [left_start[0] + step_length, left_start[1], left_start[2]]
+            ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
+            ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
+            swing_target = foot_bezier_parabola(
+                start=start,end=end,
+                ctrl1=ctrl1,ctrl2=ctrl2,
+                alpha=swing_alpha,height=step_height
+            )
+            swing_joint_positions = p.calculateInverseKinematics(robot_id, left_foot_index, swing_target)
+            support_target = list(right_start)
+            support_target[2] -= support_knee_drop
+            support_joint_positions = p.calculateInverseKinematics(robot_id, right_foot_index, support_target)

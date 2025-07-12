@@ -121,7 +121,6 @@ class PAMIKBipedEnv(gym.Env):
             expert_action = np.asarray(expert_action)
             action = np.asarray(action)
             if expert_action.shape[0] != action.shape[0]:
-                print(f"Corrigiendo dimensiones: action {action.shape}, expert {expert_action.shape}")
                 # Por ejemplo, compara solo PAM:
                 imitation_penalty = np.linalg.norm(action[-expert_action.shape[0]:] - expert_action)
             else:
@@ -216,7 +215,7 @@ class PAMIKBipedEnv(gym.Env):
                 return True
             
         # Límite de tiempo
-        if self.step_count > 6000:
+        if self.step_count > 9000:
             print("fuera de t")
             return True
             
@@ -246,17 +245,17 @@ class PAMIKBipedEnv(gym.Env):
 
         # Configurar posición inicial de articulaciones para caminar
         initial_joint_positions = [
-            0.0,   # left_hip - ligeramente flexionado
-            0.0,  # left_knee - flexionado
-            0.0,  # right_hip - extendido
-            0.0,  # right_knee - ligeramente flexionado
+            -0.00,   # left_hip - ligeramente flexionado
+            0.01,  # left_knee - flexionado
+            0.01,  # right_hip - extendido
+            -0.00,  # right_knee - ligeramente flexionado
         ]
     
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
 
         # Impulso inicial hacia adelante De momento lo dejo nulo en caso de que sea la fuente de desequilibrios
-        p.resetBaseVelocity(self.robot_id, [0.0, 0, 0], [0, 0, 0])
+        p.resetBaseVelocity(self.robot_id, [0.05, 0, 0], [0, 0, 0])
         
         # Configurar control de fuerza (solo para PAM)
         if hasattr(self, 'pam_muscles'):
@@ -509,7 +508,7 @@ class PAMIKBipedEnv(gym.Env):
 
         # Control PID simple hacia objetivos IK
         ik_forces = []
-        for i, (current, target) in enumerate(zip(current_positions, target_positions)):
+        for _, (current, target) in enumerate(zip(current_positions, target_positions)):
             error = target - current
             pid_force = error * 50.0  # Ganancia proporcional
             ik_forces.append(pid_force)
@@ -622,10 +621,10 @@ class PAMIKBipedEnv(gym.Env):
         """Define los límites del sistema y las propiedades de los músculos PAM."""
         # Configuración PAM
         self.pam_muscles = {
-            'left_hip_joint': PAMMcKibben(L0=0.5, r0=0.015, alpha0=np.pi/4),
-            'left_knee_joint': PAMMcKibben(L0=0.5, r0=0.012, alpha0=np.pi/4),
-            'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.015, alpha0=np.pi/4),
-            'right_knee_joint': PAMMcKibben(L0=0.5, r0=0.012, alpha0=np.pi/4),
+            'left_hip_joint': PAMMcKibben(L0=0.6, r0=0.02, alpha0=np.pi/4),
+            'left_knee_joint': PAMMcKibben(L0=0.5, r0=0.015, alpha0=np.pi/4),
+            'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.02, alpha0=np.pi/4),
+            'right_knee_joint': PAMMcKibben(L0=0.5, r0=0.015, alpha0=np.pi/4),
         }
 
         # Parámetros de control PAM

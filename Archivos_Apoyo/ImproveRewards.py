@@ -263,19 +263,7 @@ class ImprovedRewardSystem:
         # Caída crítica
         if pos[2] < 0.55:
             penalty -= 10.0
-        elif pos[2] < 0.8:
-            penalty -= 2.0
-        elif pos[2] < 1.0:  # Por debajo de altura objetivo
-            penalty -= 0.1
-        
-        #if abs(euler[0]) <math.pi -0.5:
-        #    penalty -=1.0
-        #elif abs(euler[0]) <math.pi -1.0:
-        #    penalty -=10.0
-        #elif abs(euler[0]) <math.pi -1.5:
-        #    penalty -=20.0
-        # Inclinación excesiva
-        if abs(euler[1]) > math.pi/3:
+        if abs(euler[1]) > math.pi/2:
             penalty -= 3.0
         
         # Velocidad lateral excesiva

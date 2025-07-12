@@ -21,6 +21,7 @@ class SimplifiedWalkingController:
             Obtiene la siguiente acción del ciclo de paso
             Dependiendo del modo de entrenamiento actual
         """
+        print(self.mode)
         if not self.is_initialized:
             return self._get_initialization_action()
         else:
