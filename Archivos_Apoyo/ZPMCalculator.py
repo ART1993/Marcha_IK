@@ -124,7 +124,7 @@ class ZMPCalculator:
             Verifica si el ZMP está dentro del polígono de soporte
         """
 
-        if self.initialization_steps < self.min_steps_for_stability:
+        if self.initialization_steps < self.min_step_stability:
             self.initialization_steps += 1
             return True
         

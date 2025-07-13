@@ -225,18 +225,10 @@ class PAMIKBipedEnv(gym.Env):
         self.setup_reset_simulation
 
         # Dentro de PAMIKBipedEnv.reset()
-        self.robot_data = PyBullet_Robot_Data(self.robot_id)
-        self.zmp_calculator = ZMPCalculator(
-            robot_id=self.robot_id,
-            left_foot_id=self.left_foot_id,
-            right_foot_id=self.right_foot_id,
-            robot_data=self.robot_data
-        )
+        
         #self.walking_controller = SimplifiedWalkingController(self)
-        if self.use_walking_cycle is False:
-            self.walking_controller = self.set_training_phase(self, self.phase)
-        else:
-            self.walking_controller.reset()
+        self.walking_controller = self.set_training_phase(self.phase)
+
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
         # Configurar propiedades físicas
@@ -723,8 +715,10 @@ class PAMIKBipedEnv(gym.Env):
         )
         initial_joint_positions = [0.0,   # left_hip
                                     0.0,   # left_knee
+                                    0.0,   # left_ankle
                                     0.0,   # right_hip
                                     0.0,   # right_knee
+                                    0.0    # right_ankle
                                     ]
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
@@ -732,6 +726,16 @@ class PAMIKBipedEnv(gym.Env):
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.time_step)
         p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
+
+        self.robot_data = PyBullet_Robot_Data(self.robot_id)
+        self.zmp_calculator = ZMPCalculator(
+            robot_id=self.robot_id,
+            left_foot_id=self.left_foot_id,
+            right_foot_id=self.right_foot_id,
+            robot_data=self.robot_data
+        )
+
+
         self.setup_physics_properties()
 
         # Esperar a que la simulación se estabilice
