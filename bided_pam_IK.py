@@ -235,17 +235,6 @@ class PAMIKBipedEnv(gym.Env):
         
 
         # Configurar posición inicial de articulaciones para caminar
-        initial_joint_positions = [
-            -0.0,   # left_hip - ligeramente flexionado
-            0.0,  # left_knee - flexionado
-            0.0,  # left_ankle - neutro
-            -0.0,  # right_hip - extendido
-            0.0,  # right_knee - ligeramente flexionado
-            0.0    # right_ankle - neutro
-        ]
-    
-        for i, pos in enumerate(initial_joint_positions):
-            p.resetJointState(self.robot_id, i, pos)
 
         # Impulso inicial hacia adelante De momento lo dejo nulo en caso de que sea la fuente de desequilibrios
         p.resetBaseVelocity(self.robot_id, [0.0, 0, 0], [0, 0, 0])
@@ -284,7 +273,7 @@ class PAMIKBipedEnv(gym.Env):
             self.zmp_history.clear()
 
         # Permitir estabilización inicial - ejecutar varios steps sin evaluar ZMP
-            for _ in range(15):  # Más pasos de estabilización
+            for _ in range(200):  # Más pasos de estabilización
                 p.stepSimulation()
         #if self.use_walking_cycle:
         #    self.walking_controller = SimplifiedWalkingController(self)
@@ -326,7 +315,7 @@ class PAMIKBipedEnv(gym.Env):
         Aplica fuerzas tensoriales a las articulaciones usando PyBullet
         """
         for i, force in enumerate(forces):
-            torque = force * 6
+            torque = force
             p.setJointMotorControl2(
                 self.robot_id,
                 i,
@@ -498,9 +487,11 @@ class PAMIKBipedEnv(gym.Env):
 
         # Control PID simple hacia objetivos IK
         ik_forces = []
+        max_delta=0.1
         for i, (current, target) in enumerate(zip(current_positions, target_positions)):
             error = target - current
-            pid_force = error * 50.0  # Ganancia proporcional
+            error = np.clip(target - current, -max_delta, max_delta)
+            pid_force = error * 5.0  # Ganancia proporcional
             ik_forces.append(pid_force)
          # Combinar con fuerzas PAM si hay ajustes adicionales
         total_forces = np.array(ik_forces)
@@ -612,12 +603,12 @@ class PAMIKBipedEnv(gym.Env):
         """Define los límites del sistema y las propiedades de los músculos PAM."""
         # Configuración PAM
         self.pam_muscles = {
-            'left_hip_joint': PAMMcKibben(L0=0.6, r0=0.015, alpha0=np.pi/4),
-            'left_knee_joint': PAMMcKibben(L0=0.6, r0=0.012, alpha0=np.pi/4),
+            'left_hip_joint': PAMMcKibben(L0=0.6, r0=0.03, alpha0=np.pi/4),
+            'left_knee_joint': PAMMcKibben(L0=0.6, r0=0.024, alpha0=np.pi/4),
             'left_ankle_joint': PAMMcKibben(L0=0.1, r0=0.010, alpha0=np.pi/4),
-            'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.015, alpha0=np.pi/4),
-            'right_knee_joint': PAMMcKibben(L0=0.6, r0=0.012, alpha0=np.pi/4),
-            'right_ankle_joint': PAMMcKibben(L0=0.1, r0=0.010, alpha0=np.pi/4)
+            'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.03, alpha0=np.pi/4),
+            'right_knee_joint': PAMMcKibben(L0=0.6, r0=0.024, alpha0=np.pi/4),
+            'right_ankle_joint': PAMMcKibben(L0=0.1, r0=0.01, alpha0=np.pi/4)
         }
 
         # Parámetros de control PAM
@@ -753,15 +744,15 @@ class PAMIKBipedEnv(gym.Env):
         # Por ejemplo:
         if phase == 1:
             self.use_walking_cycle = True
-            self.walking_controller = SimplifiedWalkingController(self, mode="trajectory")
+            self.walking_controller = SimplifiedWalkingController(self, mode="blend", blend_factor= 0.0)
             self.imitation_weight = 1.0
         elif phase == 2:
             self.use_walking_cycle = True
-            self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
-            self.imitation_weight = 0.2
+            self.walking_controller = SimplifiedWalkingController(self, mode="blend", blend_factor= 0.6)
+            self.imitation_weight = 0.4
         else:
             self.use_walking_cycle = False
-            self.walking_controller = None
+            self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
             self.imitation_weight = 0.0
 
     def obtener_posicion_inicial_robot(self, robot_id_temp, urdf_path, joint_positions, 

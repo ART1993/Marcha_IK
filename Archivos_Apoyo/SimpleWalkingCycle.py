@@ -10,13 +10,16 @@ class SimpleWalkingCycle:
     Mantiene 6 articulaciones pero con patrones simplificados
     """
     
-    def __init__(self, robot_id, plane_id, robot_data, zmp_calculator, step_frequency=1.0, step_length=0.3):
+    def __init__(self, robot_id, plane_id, robot_data, 
+                 zmp_calculator, step_frequency=2.0, step_length=0.1,
+                 blend_factor=0.0):
         self.step_frequency = step_frequency  # Hz
         self.step_length = step_length        # metros
         self.robot_id=robot_id
         self.plane_id=plane_id
         self.robot_data = robot_data
         self.zmp_calculator = zmp_calculator
+        self.blend_factor = blend_factor
         
         self.warking_cycle_params
         
@@ -67,7 +70,7 @@ class SimpleWalkingCycle:
         
         return np.array(actions, dtype=np.float32)
     
-    def get_initialization_sequence(self, duration=2.0, dt=0.01):
+    def get_initialization_sequence(self, duration=10.0, dt=0.01):
         """
         Genera secuencia de inicialización para estabilizar el robot
         """
@@ -82,12 +85,12 @@ class SimpleWalkingCycle:
             base_pressure = 0.3 * ramp_factor
             
             actions = [
-                base_pressure,      # left_hip
-                base_pressure * 0.7, # left_knee  
-                base_pressure * 1.2, # left_ankle
-                base_pressure,      # right_hip
-                base_pressure * 0.7, # right_knee
-                base_pressure * 1.2  # right_ankle
+                base_pressure, #*self.blend_factor,      # left_hip
+                base_pressure, #*self.blend_factor, # left_knee  
+                base_pressure, #*self.blend_factor, # left_ankle
+                base_pressure, #*self.blend_factor,      # right_hip
+                base_pressure, #*self.blend_factor, # right_knee
+                base_pressure #*self.blend_factor  # right_ankle
             ]
             
             # Normalizar a [-1,1]
@@ -170,24 +173,6 @@ class SimpleWalkingCycle:
         else:
             print("El pie de soporte NO está en contacto con el suelo")
 
-        # 3. ¿El COM está sobre el área de soporte?
-        stability_metrics = self.robot_data.get_stability_metrics
-        com = stability_metrics['center_of_mass']
-        is_stable_com = stability_metrics['is_stable']
-
-        # 4. ¿El ZMP está dentro del polígono de soporte?
-        zmp_point = self.zmp_calculator.calculate_zmp()
-        zmp_estable = self.zmp_calculator.is_stable(zmp_point)
-
-        if zmp_estable:
-            print("El ZMP está DENTRO del polígono de soporte (ZMP ESTABLE)")
-        else:
-            print("¡ALERTA! El ZMP está FUERA del polígono de soporte")
-
-        if is_stable_com:
-            print("El centro de masa está sobre el área de soporte (COM ESTABLE)")
-        else:
-            print("¡CUIDADO! El COM está fuera del área de soporte")
         ground_z = 0.0  # O usa la altura real del plano si es diferente
 
         print(self.robot_id)
@@ -261,27 +246,27 @@ class SimpleWalkingCycle:
         
         # Patrones de presión base para cada articulación (0-1)
         self.base_pressures = {
-            'left_hip': 0.3,
-            'left_knee': 0.2,
-            'left_ankle': 0.4,
-            'right_hip': 0.3,
-            'right_knee': 0.2,
-            'right_ankle': 0.4
+            'left_hip': 0.3*self.blend_factor,
+            'left_knee': 0.2*self.blend_factor,
+            'left_ankle': 0.4*self.blend_factor,
+            'right_hip': 0.3*self.blend_factor,
+            'right_knee': 0.2*self.blend_factor,
+            'right_ankle': 0.4*self.blend_factor
         }
         
         # Amplitudes de modulación para cada articulación
         self.modulation_amplitudes = {
-            'left_hip': 0.4,
-            'left_knee': 0.6,
-            'left_ankle': 0.3,
-            'right_hip': 0.4,
-            'right_knee': 0.6,
-            'right_ankle': 0.3
+            'left_hip': 0.4*(1-self.blend_factor),
+            'left_knee': 0.6*(1-self.blend_factor),
+            'left_ankle': 0.3*(1-self.blend_factor),
+            'right_hip': 0.4*(1-self.blend_factor),
+            'right_knee': 0.6*(1-self.blend_factor),
+            'right_ankle': 0.3*(1-self.blend_factor)
         }
 
         self.left_foot_index = 2
         self.right_foot_index = 5
-        self.step_height = 0.05
+        self.step_height = 0.01
         self.phase = 0.0  # [0, 1)
         self.fase = 0.0  # Fase del ciclo de paso (0-1)
         self.swing_leg = "right"  # O "left", alterna cada medio ciclo
@@ -301,7 +286,38 @@ class SimpleWalkingCycle:
         ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
         target_pos = foot_bezier_parabola(start_swing, end, ctrl1, ctrl2, alpha, step_height)
         swing_joint_positions = p.calculateInverseKinematics(self.robot_id, swing_foot_id, target_pos)
+
         support_orientation = p.getQuaternionFromEuler([0, 0, 0])
+        # 3. ¿El COM está sobre el área de soporte?
+        stability_metrics = self.robot_data.get_stability_metrics
+        com = stability_metrics['center_of_mass']
+        is_stable_com = stability_metrics['is_stable']
+
+        # 4. ¿El ZMP está dentro del polígono de soporte?
+        zmp_point = self.zmp_calculator.calculate_zmp()
+        zmp_estable = self.zmp_calculator.is_stable(zmp_point)
+
+        if zmp_estable:
+            print("El ZMP está DENTRO del polígono de soporte (ZMP ESTABLE)")
+        else:
+            print("¡ALERTA! El ZMP está FUERA del polígono de soporte")
+
+        if is_stable_com:
+            print("El centro de masa está sobre el área de soporte (COM ESTABLE)")
+        else:
+            print("¡CUIDADO! El COM está fuera del área de soporte")
+
+        # 4.3. Si está cerca del límite del polígono de soporte, corrige el pie de soporte hacia el ZMP (o COM)
+        correction_factor = 0.08
+        support_pos=list(start_support)  # Posición del pie en stance
+        if not zmp_estable or not is_stable_com:
+            # Calcula la diferencia entre el soporte (stance) y el ZMP proyectado al suelo
+            delta_x = zmp_point[0] - support_pos[0]
+            delta_y = zmp_point[1] - support_pos[1]
+            # Aplica solo una fracción para evitar movimientos bruscos
+            support_pos[0] += correction_factor * delta_x
+            support_pos[1] += correction_factor * delta_y
+        
         support_joint_positions = p.calculateInverseKinematics(self.robot_id, support_foot_id, start_support, support_orientation)
         
         if self.swing_leg =="right" and self.stand_leg == "left":

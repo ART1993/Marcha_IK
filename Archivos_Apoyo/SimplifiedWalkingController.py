@@ -15,7 +15,8 @@ class SimplifiedWalkingController:
         self.walking_cycle = SimpleWalkingCycle(robot_id=env.robot_id, 
                                                 plane_id=env.plane_id,
                                                 robot_data =env.robot_data,
-                                                zmp_calculator=env.zmp_calculator)
+                                                zmp_calculator=env.zmp_calculator,
+                                                blend_factor=blend_factor)
         self.is_initialized = False
         self.init_sequence = None
         self.init_step = 0
@@ -40,7 +41,9 @@ class SimplifiedWalkingController:
                 return self.walking_cycle.get_simple_walking_actions(self.env.time_step)
             elif self.mode == "blend":
                 traj = self.walking_cycle.get_trajectory_walking_actions(
-                    self.env.time_step, self.env.left_foot_id, self.env.right_foot_id
+                    self.env.time_step, 
+                    self.env.left_foot_id, 
+                    self.env.right_foot_id
                 )
                 press = self.walking_cycle.get_simple_walking_actions(self.env.time_step)
                 return (1-self.blend_factor) * traj + self.blend_factor * press
@@ -76,32 +79,3 @@ class SimplifiedWalkingController:
         return self.walking_cycle.get_trajectory_walking_actions(
             self.env.time_step, self.env.left_foot_id, self.env.right_foot_id
         )
-
-
-# Ejemplo de uso en tu entorno
-def integrate_walking_cycle_in_env(env):
-    """
-    Ejemplo de cómo integrar el ciclo de paso en tu entorno
-    """
-    controller = SimplifiedWalkingController(env)
-    
-    # En tu loop de entrenamiento:
-    obs, info = env.reset()
-    controller.reset()
-    
-    for step in range(10000):
-        # Obtener acción del ciclo de paso
-        walking_action = controller.get_next_action()
-        
-        # Opcional: añadir ruido para exploración
-        exploration_noise = np.random.normal(0, 0.1, size=walking_action.shape)
-        action = walking_action + exploration_noise
-        action = np.clip(action, -1.0, 1.0)
-        
-        # Ejecutar en el entorno
-        obs, reward, done, truncated, info = env.step(action)
-        
-        if done:
-            break
-    
-    return obs, reward, done, info
