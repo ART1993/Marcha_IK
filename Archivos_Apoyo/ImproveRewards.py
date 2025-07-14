@@ -16,32 +16,10 @@ class ImprovedRewardSystem:
         self.num_joints=num_joints
 
         self.parametros_adicionales
-        
-
-    def reset_tracking(self):
-        """Resetear variables de seguimiento"""
-        self.step_count = 0
-        self.reward_history.clear()
-        self.foot_trajectory_history.clear()
-        self.previous_foot_positions = None
 
     def redefine_robot(self, robot_id, plane_id):
         self.robot_id=robot_id
         self.plane_id=plane_id
-
-    def progress_reward_forward_old(self, lin_vel):
-        forward_velocity = lin_vel[0]
-        # Recompensa por velocidad en rango óptimo
-        if 0 < forward_velocity <= self.target_forward_velocity:
-            velocity_reward = min((forward_velocity / self.target_forward_velocity) * 2.0, 3)
-        elif self.target_forward_velocity < forward_velocity <= self.max_forward_velocity:
-            # Penalización suave por exceso de velocidad
-            excess_factor = (forward_velocity - self.target_forward_velocity) / (self.max_forward_velocity - self.target_forward_velocity)
-            velocity_reward = 5.0 * (1.0 - excess_factor * 0.5)
-        else:
-            # Penalización por velocidad excesiva o negativa
-            velocity_reward = -2.0 if forward_velocity > self.max_forward_velocity else 0.0
-        return velocity_reward
 
     def _calculate_balanced_reward(self, action, pam_forces):
         """
@@ -285,82 +263,10 @@ class ImprovedRewardSystem:
         
         return correction_quaternion
 
-    def reset_with_random_orientation(self, seed=None, options=None):
-        """
-        Reset mejorado con orientación inicial aleatoria
-        """
-        super().reset(seed=seed)
-        p.resetSimulation()
-        p.setGravity(0, 0, -9.81)
-        p.setTimeStep(self.time_step)
-        
-        # Cargar entorno
-        self.plane_id = p.loadURDF("plane.urdf")
-        
-        # Orientación inicial aleatoria
-        initial_quaternion = self.setup_random_initial_orientation()
-        
-        # Altura inicial con variación
-        initial_height = np.random.uniform(1.2, 1.3)
-        
-        self.robot_id = p.loadURDF(
-            self.urdf_path,
-            [0, 0, initial_height],
-            initial_quaternion,
-            useFixedBase=False
-        )
-        
-        # Configurar propiedades físicas
-        self.setup_physics_properties()
-        
-        # Posición inicial de articulaciones con variación
-        base_positions = [0.01, -0.02, 0.05, -0.01, -0.01, 0.0]
-        initial_joint_positions = []
-        
-        for pos in base_positions:
-            variation = np.random.uniform(-0.02, 0.02)  # ±1.15 grados
-            initial_joint_positions.append(pos + variation)
-        
-        for i, pos in enumerate(initial_joint_positions):
-            p.resetJointState(self.robot_id, i, pos)
-        
-        # Velocidad inicial controlada
-        initial_forward_vel = np.random.uniform(0.3, 0.7)
-        p.resetBaseVelocity(self.robot_id, [initial_forward_vel, 0, 0], [0, 0, 0])
-        
-        # Resetear sistema de tracking
-        self.step_count = 0
-        self.total_reward = 0
-        self.observation_history.clear()
-        self.previous_position = [0, 0, initial_height]
-        
-        # Variables específicas
-        if hasattr(self, 'pam_muscles'):
-            self._setup_motors_for_force_control()
-            self.pam_states = {
-                'pressures': np.zeros(6),
-                'contractions': np.zeros(6),
-                'forces': np.zeros(6)
-            }
-        
-        self.previous_contacts = [False, False]
-        self.previous_action = None
-        
-        observation = self._stable_observation()
-        info = {'episode_reward': 0, 'episode_length': 0}
-        
-        return observation, info
-    
-    def reset_tracking_old(self):
-        """Resetear variables de seguimiento"""
-        # Variables para tracking
-        self.step_count = 0
-        self.velocity_history = []
-        self.position_history = []
-
 ##############################################################################################################################
 ##############################################Atributos adicionales para el entorno###########################################
 ##############################################################################################################################
+
     @property
     def parametros_adicionales(self):
         # Parámetros de recompensa calibrados
