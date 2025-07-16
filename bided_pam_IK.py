@@ -83,30 +83,43 @@ class PAMIKBipedEnv(gym.Env):
     def step(self, action):
         """Step simplificado con recompensas positivas"""
         self.step_count += 1
-
+        if self.phase==2:
+            # Scheduler por timestep
+            self.schedule_blend_and_imitation_by_timestep(self.step_count, self.total_phase_timesteps)
         # NUEVO: Combinar acción del ciclo con RL
         if self.walking_controller and self.use_walking_cycle:
             base_action = self.walking_controller.get_next_action()
-            modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
-            final_action=_safe_blend_actions(base_action, action, modulation_factor)
+            print(f"base action is {base_action}")
+            if self.phase == 1:
+                if base_action is None:
+                    final_action = action
+                    print("phase 0")
+                else:
+                    final_action = base_action
+                    modulation_factor = 0.0
+                    print(f"phase 1")
+            elif self.phase == 2:
+                modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
+                final_action=_safe_blend_actions(base_action, action, modulation_factor)
+            else:
+                final_action = action
         else:
             final_action = action
         
         # 1. VALIDAR ACCIÓN IK (si es control híbrido)
         # Aplicar control según el modo
         if self.control_mode == "hybrid" and len(action) >= 12:
-            #print("HYBRID_PAM")
             foot_targets = final_action[:6] * 0.3  # Escalar a workspace
             if not self._validate_foot_targets(foot_targets):
                 # Aplicar penalización por targets inválidos
                 reward = -10.0
+                print("foot_targets_no_validos")
                 observation = self._stable_observation()
                 return observation, reward, True, False, {'invalid_targets': True}
         # 2. APLICAR CONTROL (IK o PAM según acción)
             pam_forces = self._apply_hybrid_ik_control(action)
         else:
             # Control PAM simple
-            print("PAM_SIMPLE")
             pam_forces = self._apply_simplified_control(action)
 
         # 3. Simular
@@ -121,8 +134,9 @@ class PAMIKBipedEnv(gym.Env):
             expert_action = self.walking_controller.get_expert_action()
             expert_action = np.asarray(expert_action)
             action = np.asarray(action)
+            print("expert_action",expert_action)
+            print("action", action)
             if expert_action.shape[0] != action.shape[0]:
-                #print(f"Corrigiendo dimensiones: action {action.shape}, expert {expert_action.shape}")
                 # Por ejemplo, compara solo PAM:
                 imitation_penalty = np.linalg.norm(action[-expert_action.shape[0]:] - expert_action)
             else:
@@ -227,7 +241,7 @@ class PAMIKBipedEnv(gym.Env):
         # Dentro de PAMIKBipedEnv.reset()
         
         #self.walking_controller = SimplifiedWalkingController(self)
-        self.walking_controller = self.set_training_phase(self.phase)
+        self.set_training_phase(self.phase, self.total_phase_timesteps)
 
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
@@ -275,9 +289,7 @@ class PAMIKBipedEnv(gym.Env):
         # Permitir estabilización inicial - ejecutar varios steps sin evaluar ZMP
             for _ in range(200):  # Más pasos de estabilización
                 p.stepSimulation()
-        #if self.use_walking_cycle:
-        #    self.walking_controller = SimplifiedWalkingController(self)
-        # Obtener observación (compatible con ambos entornos)
+        
         observation = self._stable_observation()
         info = {'episode_reward': 0, 'episode_length': 0}
         return observation, info
@@ -475,7 +487,7 @@ class PAMIKBipedEnv(gym.Env):
     # Para aplicar control de IK + PAM
     def _apply_hybrid_ik_control(self, action):
         # Primeros 6: coordenadas objetivo pies (x,y,z cada uno)
-        foot_targets = action[:6] * 0.3  # Escalar a workspace
+        foot_targets = action[:6]   # Escalar a workspace
         
         # Aplicar IK
         left_joints, right_joints = self._apply_ik_control(foot_targets)
@@ -487,26 +499,33 @@ class PAMIKBipedEnv(gym.Env):
 
         # Control PID simple hacia objetivos IK
         ik_forces = []
-        max_delta=0.1
+        max_delta=0.5
+        
         for i, (current, target) in enumerate(zip(current_positions, target_positions)):
             error = target - current
             error = np.clip(target - current, -max_delta, max_delta)
             pid_force = error * 5.0  # Ganancia proporcional
             ik_forces.append(pid_force)
-         # Combinar con fuerzas PAM si hay ajustes adicionales
+        # Combinar con fuerzas PAM si hay ajustes adicionales
         total_forces = np.array(ik_forces)
-        
-        if len(action)>6:
-            pam_adjustments = (action[6:12] + 1.0) / 2.0 * self.max_pressure  # Ajustes finos PAM
-            #joint_states = p.getJointStates(self.robot_id, range(6))
-            pam_forces = self._calculate_pam_forces(pam_adjustments, joint_states)
+        if self.phase == 1 or (self.walking_controller and getattr(self.walking_controller, "blend_factor", 0.0) == 0.0):
+            total_forces = np.array(ik_forces)
+            pam_forces = np.zeros_like(total_forces)
+        else:
+            if len(action)>6:
+                pam_adjustments = (action[6:12] + 1.0) / 2.0 * self.max_pressure  # Ajustes finos PAM
+                #joint_states = p.getJointStates(self.robot_id, range(6))
+                pam_forces = self._calculate_pam_forces(pam_adjustments, joint_states)
 
-            # Peso híbrido (si existe)
-            hybrid_weight = 0.7 if len(action) <= 12 else action[12]
-            total_forces = hybrid_weight * np.array(ik_forces) + (1 - hybrid_weight) * np.array(pam_forces)
+                # Peso híbrido (si existe)
+                hybrid_weight = 0.7 if len(action) <= 12 else action[12]
+                total_forces = hybrid_weight * np.array(ik_forces) + (1 - hybrid_weight) * np.array(pam_forces)
+            else:
+                total_forces = np.array(ik_forces)
+                pam_forces = np.zeros_like(total_forces)
         # Aplicar solo control de fuerza
         self._apply_joint_forces(total_forces)
-        return total_forces #No hay fuerzas PAM adicionales
+        return pam_forces #No hay fuerzas PAM adicionales
     
     def _update_ik_tracking(self):
         """Actualiza métricas de seguimiento IK"""
@@ -584,7 +603,8 @@ class PAMIKBipedEnv(gym.Env):
         # Número total de joints articulados
         self.sistema_recompensas=ImprovedRewardSystem(self.left_foot_id, 
                                                     self.right_foot_id,
-                                                    self.num_joints)
+                                                    self.num_joints,
+                                                    phase=self.phase)
         # Configuración de IK
         self.ik_solver = p.IK_DLS  # Damped Least Squares (más estable)
         self.max_ik_iterations = 100
@@ -673,6 +693,7 @@ class PAMIKBipedEnv(gym.Env):
         self.instability_penalty = -15.0
 
         # Añadir al final:
+        # Probar si se puede aplicar self.set_training_phase(self.phase, self.total_phase_timesteps)
         self.walking_controller = None
         self.use_walking_cycle = True
 
@@ -704,6 +725,7 @@ class PAMIKBipedEnv(gym.Env):
             correction_quaternion,
             useFixedBase=False
         )
+
         initial_joint_positions = [0.0,   # left_hip
                                     0.0,   # left_knee
                                     0.0,   # left_ankle
@@ -713,7 +735,6 @@ class PAMIKBipedEnv(gym.Env):
                                     ]
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
-        p.stepSimulation()
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.time_step)
         p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
@@ -740,7 +761,7 @@ class PAMIKBipedEnv(gym.Env):
             rand_mass = orig_mass * np.random.uniform(0.8, 1.2)
             p.changeDynamics(self.robot_id, link_id, mass=rand_mass)
 
-    def set_training_phase(self, phase):
+    def set_training_phase(self, phase, phase_timesteps):
         # Por ejemplo:
         if phase == 1:
             self.use_walking_cycle = True
@@ -748,37 +769,58 @@ class PAMIKBipedEnv(gym.Env):
             self.imitation_weight = 1.0
         elif phase == 2:
             self.use_walking_cycle = True
-            self.walking_controller = SimplifiedWalkingController(self, mode="blend", blend_factor= 0.6)
-            self.imitation_weight = 0.4
+            self.walking_controller = SimplifiedWalkingController(self, mode="blend", blend_factor= 0.0)
+            self.imitation_weight = 1.0
         else:
             self.use_walking_cycle = False
             self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
             self.imitation_weight = 0.0
-
-    def obtener_posicion_inicial_robot(self, robot_id_temp, urdf_path, joint_positions, 
-                                       left_foot_id, right_foot_id, random_friction=1.0):
+        self.phase = phase
+        self.total_phase_timesteps = phase_timesteps
     
-        # 2. Poner posiciones iniciales
-        for i, pos in enumerate(joint_positions):
-            p.resetJointState(robot_id_temp, i, pos)
-        p.stepSimulation()
-        
-        # 3. Obtener altura del pie más bajo
-        left_foot_z = p.getLinkState(robot_id_temp, left_foot_id)[0][2]
-        right_foot_z = p.getLinkState(robot_id_temp, right_foot_id)[0][2]
-        min_foot_z = min(left_foot_z, right_foot_z)
-        
-        # 5. Volver a cargar robot con la base ajustada
-        p.resetSimulation()
-        adjusted_base_z = self.previous_position[2] - min_foot_z
-        p.removeBody(robot_id_temp)
-        self.plane_id = p.loadURDF("plane.urdf")
-        p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
-        robot_id = p.loadURDF(urdf_path, [0, 0, adjusted_base_z], useFixedBase=False)
-        for i, pos in enumerate(joint_positions):
-            p.resetJointState(robot_id, i, pos)
-        p.stepSimulation()
-        return robot_id
+    def schedule_blend_and_imitation_by_timestep(self, current_timestep, total_phase2_timesteps,
+                                             blend_start=0.0, blend_end=1.0,
+                                             imitation_start=1.0, imitation_end=0.0):
+        """
+        Scheduler de blend_factor e imitation_weight por timestep (FASE 2).
+        """
+        progress = min(1.0, current_timestep / total_phase2_timesteps)
+        blend = blend_start + (blend_end - blend_start) * progress
+        imitation = imitation_start + (imitation_end - imitation_start) * progress
+
+        # Actualiza ambos valores en el entorno y el controlador
+        if self.walking_controller:
+            self.walking_controller.blend_factor = blend
+            if hasattr(self.walking_controller, "walking_cycle"):
+                self.walking_controller.walking_cycle.blend_factor = blend  # asegúrate
+        self.imitation_weight = imitation
+
+        # (Opcional: logging)
+        # print(f"[BLEND SCHEDULER][Timestep] step={current_timestep} | blend={blend:.3f} | imitation={imitation:.3f}")
+
+        return blend, imitation
+
+    def schedule_blend_and_imitation_by_episode(self, current_episode, total_phase2_episodes,
+                                            blend_start=0.0, blend_end=1.0,
+                                            imitation_start=1.0, imitation_end=0.0):
+        """
+        Scheduler de blend_factor e imitation_weight por episodio (FASE 2).
+        """
+        progress = min(1.0, current_episode / total_phase2_episodes)
+        blend = blend_start + (blend_end - blend_start) * progress
+        imitation = imitation_start + (imitation_end - imitation_start) * progress
+
+        # Actualiza ambos valores en el entorno y el controlador
+        if self.walking_controller:
+            self.walking_controller.blend_factor = blend
+            if hasattr(self.walking_controller, "walking_cycle"):
+                self.walking_controller.walking_cycle.blend_factor = blend  # asegúrate
+        self.imitation_weight = imitation
+
+        # (Opcional: logging)
+        # print(f"[BLEND SCHEDULER][Episode] episode={current_episode} | blend={blend:.3f} | imitation={imitation:.3f}")
+
+        return blend, imitation
 
 ######################################################################################################################
 ##################################Ajuste de base_action para control híbrido##############################################

@@ -299,28 +299,9 @@ class UnifiedBipedTrainer:
             # FASE 3: Entrenamiento con control libre
             if phase3_timesteps > 0:
                 print(f"🚀 Phase 3: Full RL control training ({phase3_timesteps:,} steps)...")
+                model, current_timesteps, phase3_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, train_env, eval_env,
+                                                                                      current_timesteps, model, callbacks, phase3_timesteps, config, 3)
                 
-                # Desactivar ciclo de paso
-                def disable_walking_cycle(env_wrapper):
-                    if hasattr(env_wrapper, 'envs'):
-                        for env in env_wrapper.envs:
-                            base_env = env.env if hasattr(env, 'env') else env
-                            if hasattr(base_env, 'set_walking_cycle'):
-                                base_env.set_walking_cycle(False)
-                    else:
-                        if hasattr(env_wrapper, 'set_walking_cycle'):
-                            env_wrapper.set_walking_cycle(False)
-                
-                disable_walking_cycle(train_env)
-                disable_walking_cycle(eval_env)
-                model.phase = 3
-                model.learn(
-                    total_timesteps=phase3_timesteps,
-                    callback=callbacks,
-                    tb_log_name=f"{config['model_prefix']}_phase3",
-                    reset_num_timesteps=False
-                )
-                current_timesteps += phase3_timesteps
 
             # Update training info
             self.training_info['completed_timesteps'] = self.total_timesteps
@@ -620,5 +601,27 @@ class UnifiedBipedTrainer:
         return phase1_timesteps, phase2_timesteps, phase3_timesteps
     
 
-
+def old_phase_3_timestep(model, phase3_timesteps, train_env, eval_env, callbacks, config, current_timesteps):
+    print(f"🚀 Phase 3: Full RL control training ({phase3_timesteps:,} steps)...")
+                
+    # Desactivar ciclo de paso
+    def disable_walking_cycle(env_wrapper):
+        if hasattr(env_wrapper, 'envs'):
+            for env in env_wrapper.envs:
+                base_env = env.env if hasattr(env, 'env') else env
+                if hasattr(base_env, 'set_walking_cycle'):
+                    base_env.set_walking_cycle(False)
+        else:
+            if hasattr(env_wrapper, 'set_walking_cycle'):
+                env_wrapper.set_walking_cycle(False)
+    
+    disable_walking_cycle(train_env, phase3_timesteps)
+    disable_walking_cycle(eval_env, phase3_timesteps)
+    model.learn(
+        total_timesteps=phase3_timesteps,
+        callback=callbacks,
+        tb_log_name=f"{config['model_prefix']}_phase3",
+        reset_num_timesteps=False
+    )
+    current_timesteps += phase3_timesteps
     

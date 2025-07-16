@@ -26,7 +26,9 @@ class SimplifiedWalkingController:
             Obtiene la siguiente acción del ciclo de paso
             Dependiendo del modo de entrenamiento actual
         """
+        print(self.mode)
         if not self.is_initialized:
+            print("is initiated")
             return self._get_initialization_action()
         else:
             if self.mode == "trajectory":
@@ -40,12 +42,18 @@ class SimplifiedWalkingController:
                 # Acciones sinusoidales en presión PAM
                 return self.walking_cycle.get_simple_walking_actions(self.env.time_step)
             elif self.mode == "blend":
+                print("inicio_traj")
                 traj = self.walking_cycle.get_trajectory_walking_actions(
                     self.env.time_step, 
                     self.env.left_foot_id, 
                     self.env.right_foot_id
                 )
+                print("traj",traj)
+                if traj is None:
+                    return traj
                 press = self.walking_cycle.get_simple_walking_actions(self.env.time_step)
+                print("press",press)
+                print("self.blend_factor",self.blend_factor)
                 return (1-self.blend_factor) * traj + self.blend_factor * press
             else:
                 raise ValueError(f"Modo de walking controller no válido: {self.mode}")

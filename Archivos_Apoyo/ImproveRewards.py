@@ -9,11 +9,12 @@ class ImprovedRewardSystem:
         y controla la velocidad para evitar comportamientos erráticos
     """
     
-    def __init__(self, left_foot_id, right_foot_id, num_joints):
+    def __init__(self, left_foot_id, right_foot_id, num_joints, phase=1):
 
         self.left_foot_id=left_foot_id
         self.right_foot_id=right_foot_id
         self.num_joints=num_joints
+        self.phase= phase
 
         self.parametros_adicionales
 
@@ -80,7 +81,10 @@ class ImprovedRewardSystem:
             pam_reward = self._calculate_pam_efficiency_reward(action, pam_forces)
         else:
             pam_reward = 0.0
-        rewards['pam_efficiency'] = pam_reward
+        if self.phase != 1:
+            rewards['pam_efficiency'] = pam_reward
+        else:
+            rewards['pam_efficiency'] = 0.0
 
         #if hasattr(self, 'previous_action') and self.previous_action is not None:
         #    action_delta = np.linalg.norm(action - self.previous_action)

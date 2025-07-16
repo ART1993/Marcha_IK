@@ -11,7 +11,7 @@ class SimpleWalkingCycle:
     """
     
     def __init__(self, robot_id, plane_id, robot_data, 
-                 zmp_calculator, step_frequency=2.0, step_length=0.1,
+                 zmp_calculator, step_frequency=1.0, step_length=0.1,
                  blend_factor=0.0):
         self.step_frequency = step_frequency  # Hz
         self.step_length = step_length        # metros
@@ -139,8 +139,12 @@ class SimpleWalkingCycle:
         #Empezaría con ambos true entonces si ambos true ó right es true y left es false, que se mueva el pie izquierdo
         # Si ambos vuelven a ser true y antes se movia la izquierda, entonces se mueve la pierna derecha y la izquierda permanece como estabilizador
         left_foot_touchdown, right_foot_touchdown = self.detectar_contacto_pies_suelo
-        
-
+        if left_foot_touchdown==False and right_foot_touchdown==False:
+            # Acción neutral del mismo shape
+            action = np.zeros(6, dtype=np.float32) # Fallback
+            return action
+        print(f"{left_foot_touchdown=:}", f"{right_foot_touchdown=:}")
+        print(self.swing_leg, self.stand_leg)
         if self.swing_leg == "right" and self.stand_leg == "left":
             swing_foot_id = self.right_foot_index
             support_foot_id = self.left_foot_index
@@ -202,12 +206,13 @@ class SimpleWalkingCycle:
             Returns:
                 True si ambos pies están en contacto, False de lo contrario.
         """
-        left_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=self.left_foot_index)) > 0
-        right_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=self.right_foot_index)) > 0
-        #self.swing_leg = "right"  # O "left", alterna cada medio ciclo
-        #self.stand_leg = "right"
-
-        if left_foot_touchdown and right_foot_touchdown and self.swing_leg == "right" and self.stand_leg == "right":
+        left_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=self.left_foot_index, linkIndexB=-1))
+        right_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=self.right_foot_index, linkIndexB=-1))
+        for i in range(p.getNumJoints(self.robot_id)):
+            contacts = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=i, linkIndexB=-1)
+            if contacts:
+                print(f"Link {i} ({p.getJointInfo(self.robot_id, i)[12].decode()}): tiene contacto con el suelo")
+        if left_foot_touchdown>0 and right_foot_touchdown>0 and self.swing_leg == "right" and self.stand_leg == "right":
             # Ambos pies en contacto, no mover ninguno
             valor= randint(0, 1)
             if valor == 0:
@@ -233,7 +238,7 @@ class SimpleWalkingCycle:
         else:
             print("Ningún pie en contacto, problematico ,moviendo el pie derecho por defecto")
         
-        return left_foot_touchdown, right_foot_touchdown
+        return left_foot_touchdown>0, right_foot_touchdown>0
 
     @property
     def warking_cycle_params(self):
@@ -266,7 +271,7 @@ class SimpleWalkingCycle:
 
         self.left_foot_index = 2
         self.right_foot_index = 5
-        self.step_height = 0.01
+        self.step_height = 0.10
         self.phase = 0.0  # [0, 1)
         self.fase = 0.0  # Fase del ciclo de paso (0-1)
         self.swing_leg = "right"  # O "left", alterna cada medio ciclo
