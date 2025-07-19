@@ -26,7 +26,7 @@ class SimplifiedWalkingController:
             Obtiene la siguiente acción del ciclo de paso
             Dependiendo del modo de entrenamiento actual
         """
-        print(self.mode)
+        #print(self.mode)
         if not self.is_initialized:
             print("is initiated")
             return self._get_initialization_action()
@@ -48,12 +48,14 @@ class SimplifiedWalkingController:
                     self.env.left_foot_id, 
                     self.env.right_foot_id
                 )
-                print("traj",traj)
                 if traj is None:
                     return traj
                 press = self.walking_cycle.get_simple_walking_actions(self.env.time_step)
-                print("press",press)
-                print("self.blend_factor",self.blend_factor)
+                traj = np.asarray(traj, dtype=np.float32)
+                press = np.asarray(press, dtype=np.float32)
+                print("press",press*self.blend_factor)
+                print("traj",self.blend_factor, (1-self.blend_factor)*traj)
+                # press y traj deben de ser trayectoria experta y de 
                 return (1-self.blend_factor) * traj + self.blend_factor * press
             else:
                 raise ValueError(f"Modo de walking controller no válido: {self.mode}")
@@ -81,6 +83,11 @@ class SimplifiedWalkingController:
         self.init_sequence = None
         self.init_step = 0
         self.walking_cycle.phase = 0.0
+
+        self.walking_cycle.swing_leg=None
+        self.walking_cycle.stand_leg=None
+        if hasattr(self.walking_cycle, 'double_support_counter'):
+            self.walking_cycle.double_support_counter = 0
 
     def get_expert_action(self):
         # Útil para reward shaping por imitación (fase 1)

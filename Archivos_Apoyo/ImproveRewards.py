@@ -43,9 +43,9 @@ class ImprovedRewardSystem:
         if forward_velocity > 0:
             progress_reward = min(forward_velocity * 10.0, 3.0)
             # Penalización suave por exceso de velocidad
-            if forward_velocity > self.target_forward_velocity:
-                excess_penalty = (forward_velocity - self.target_forward_velocity) * 0.5
-                progress_reward = max(0, progress_reward - excess_penalty)
+            #if forward_velocity > self.target_forward_velocity:
+            #    excess_penalty = (forward_velocity - self.target_forward_velocity) * 0.5
+            #    progress_reward = max(0, progress_reward - excess_penalty)
         else:
             progress_reward = forward_velocity * 2.0  # Penalización por ir hacia atrás
         

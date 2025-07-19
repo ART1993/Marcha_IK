@@ -1,21 +1,28 @@
 import time
 
 import pybullet as p
-import numpy as np  
+import numpy as np 
+
+from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 
 
 class PyBullet_Robot_Data:
 
-    def __init__(self, robot_id):
+    def __init__(self, robot_id, left_foot_id,right_foot_id):
         self.robot_id=robot_id
         self.is_initialized = False
         self.init_sequence = None
         self.init_step = 0
-
         # Obtener información del robot
         self.robot_info = self._get_robot_info
         self.joint_info = self._get_joint_info
         self.link_info = self._get_link_info
+        self.zmp_calculator = ZMPCalculator(
+            robot_id=self.robot_id,
+            left_foot_id=left_foot_id,
+            right_foot_id=right_foot_id,
+            robot_data=self
+        )
 
     @property
     def _get_robot_info(self) -> dict:
@@ -220,13 +227,13 @@ class PyBullet_Robot_Data:
         foot_width = 0.15
         foot_length = 0.3
         
-        support_polygon = np.array([
-            [left_foot_pos[0] - foot_length/2, left_foot_pos[1] - foot_width/2],
-            [left_foot_pos[0] + foot_length/2, left_foot_pos[1] - foot_width/2],
-            [right_foot_pos[0] + foot_length/2, right_foot_pos[1] + foot_width/2],
-            [right_foot_pos[0] - foot_length/2, right_foot_pos[1] + foot_width/2]
-        ])
-        
+        #support_polygon = np.array([
+        #    [left_foot_pos[0] - foot_length/2, left_foot_pos[1] - foot_width/2],
+        #    [left_foot_pos[0] + foot_length/2, left_foot_pos[1] - foot_width/2],
+        #    [right_foot_pos[0] + foot_length/2, right_foot_pos[1] + foot_width/2],
+        #    [right_foot_pos[0] - foot_length/2, right_foot_pos[1] + foot_width/2]
+        #])
+        support_polygon = self.zmp_calculator.get_support_polygon()
         # Verificar estabilidad (COM dentro del polígono)
         com_2d = com[:2]
         is_stable = self._point_in_polygon(com_2d, support_polygon)

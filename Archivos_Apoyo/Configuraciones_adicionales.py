@@ -58,44 +58,6 @@ def phase_trainig_preparations(model_dir, remaining_timesteps, train_env, eval_e
     return model, current_timesteps, phase_timesteps
 
 
-
-def swing_pierna_anticuado_SimpleWalkingCycle(self, alpha, right_start, foot_bezier_parabola,
-                                                          left_start, step_length, step_height):
-        import pybullet as p
-        """
-        Método para calcular las posiciones articulares deseadas en un ciclo de marcha simple.
-        Requiere índices de links de pies izquierdo y derecho.
-        Returns: array de posiciones articulares
-        """
-        if alpha < 0.5:
-            print(alpha, "right foot in swing")
-            # Pierna derecha en swing
-            swing_alpha = alpha / 0.5
-            start=right_start
-            end = [right_start[0] + step_length, right_start[1], right_start[2]]
-            ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
-            ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
-            target_pos = foot_bezier_parabola(
-                start=start,end=end,
-                ctrl1=ctrl1,ctrl2=ctrl2,
-                alpha=swing_alpha,height=step_height
-            )
-            joint_positions = p.calculateInverseKinematics(self.robot_id, self.right_foot_index, target_pos)
-        else:
-            print(alpha, "left foot in swing")
-            # Pierna izquierda en swing
-            swing_alpha = (alpha - 0.5) / 0.5
-            start=left_start
-            end = [left_start[0] + step_length, left_start[1], left_start[2]]
-            ctrl1 = [start[0] + 0.1, start[1], start[2] + step_height]
-            ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
-            target_pos = foot_bezier_parabola(
-                start=start,end=end,
-                ctrl1=ctrl1,ctrl2=ctrl2,
-                alpha=swing_alpha,height=step_height
-            )
-            joint_positions = p.calculateInverseKinematics(self.robot_id, self.left_foot_index, target_pos)
-
 def obtener_posicion_inicial_robot(self, robot_id_temp, urdf_path, joint_positions, 
                                        left_foot_id, right_foot_id, random_friction=1.0):
     import pybullet as p

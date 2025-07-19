@@ -55,17 +55,6 @@ class PAMIKBipedEnv(gym.Env):
         self.variables_seguimiento
 
         print(f"Observation space: {self.observation_space.shape}")
-    
-    def _setup_motors_for_force_control(self):
-        """Configura motores para control de fuerza"""
-        if self.robot_id is not None:
-            for i in range(6):  # 6 articulaciones
-                p.setJointMotorControl2(
-                    self.robot_id,
-                    i,
-                    p.VELOCITY_CONTROL,
-                    force=0  # Desactivar motores por defecto
-                )
         
     
     def _validate_joint_limits(self, joint_positions):
@@ -83,6 +72,7 @@ class PAMIKBipedEnv(gym.Env):
     def step(self, action):
         """Step simplificado con recompensas positivas"""
         self.step_count += 1
+
         if self.phase==2:
             # Scheduler por timestep
             self.schedule_blend_and_imitation_by_timestep(self.step_count, self.total_phase_timesteps)
@@ -91,13 +81,9 @@ class PAMIKBipedEnv(gym.Env):
             base_action = self.walking_controller.get_next_action()
             print(f"base action is {base_action}")
             if self.phase == 1:
-                if base_action is None:
-                    final_action = action
-                    print("phase 0")
-                else:
-                    final_action = base_action
-                    modulation_factor = 0.0
-                    print(f"phase 1")
+                final_action = base_action
+                modulation_factor = 0.0
+                print(f"phase 1")
             elif self.phase == 2:
                 modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
                 final_action=_safe_blend_actions(base_action, action, modulation_factor)
@@ -107,17 +93,21 @@ class PAMIKBipedEnv(gym.Env):
             final_action = action
         
         # 1. VALIDAR ACCIÓN IK (si es control híbrido)
-        # Aplicar control según el modo
-        if self.control_mode == "hybrid" and len(action) >= 12:
-            foot_targets = final_action[:6] * 0.3  # Escalar a workspace
-            if not self._validate_foot_targets(foot_targets):
-                # Aplicar penalización por targets inválidos
-                reward = -10.0
-                print("foot_targets_no_validos")
-                observation = self._stable_observation()
-                return observation, reward, True, False, {'invalid_targets': True}
-        # 2. APLICAR CONTROL (IK o PAM según acción)
-            pam_forces = self._apply_hybrid_ik_control(action)
+        # Aplicar control según el modo y la fase en laque se encuentra
+        if self.phase==1:
+            self._apply_joint_position_control(final_action)
+            pam_forces = np.zeros(6)
+        #Para ejecutar fase 2 y 3
+        elif self.control_mode == "hybrid" and len(action) >= 12:
+                foot_targets = final_action[:6] * 0.3  # Escalar a workspace
+                if not self._validate_foot_targets(foot_targets):
+                    # Aplicar penalización por targets inválidos
+                    reward = -10.0
+                    print("foot_targets_no_validos")
+                    observation = self._stable_observation()
+                    return observation, reward, True, False, {'invalid_targets': True}
+            # 2. APLICAR CONTROL (IK o PAM según acción)
+                pam_forces = self._apply_hybrid_ik_control(action)
         else:
             # Control PAM simple
             pam_forces = self._apply_simplified_control(action)
@@ -133,15 +123,16 @@ class PAMIKBipedEnv(gym.Env):
         if self.imitation_weight > 0 and self.walking_controller:
             expert_action = self.walking_controller.get_expert_action()
             expert_action = np.asarray(expert_action)
-            action = np.asarray(action)
-            print("expert_action",expert_action)
-            print("action", action)
-            if expert_action.shape[0] != action.shape[0]:
-                # Por ejemplo, compara solo PAM:
-                imitation_penalty = np.linalg.norm(action[-expert_action.shape[0]:] - expert_action)
-            else:
-                imitation_penalty = np.linalg.norm(action - expert_action)
-            reward -= self.imitation_weight * imitation_penalty
+            if self.phase >1:
+                action = np.asarray(action)
+                print("expert_action",expert_action)
+                print("action", action)
+                if expert_action.shape[0] != action.shape[0]:
+                    # Por ejemplo, compara solo PAM:
+                    imitation_penalty = np.linalg.norm(action[-expert_action.shape[0]:] - expert_action)
+                else:
+                    imitation_penalty = np.linalg.norm(action - expert_action)
+                reward -= self.imitation_weight * imitation_penalty
         
         # 5. ACTUALIZAR TRACKING IK (si aplica)
         if self.control_mode == "hybrid" and len(action) >= 12:
@@ -185,7 +176,11 @@ class PAMIKBipedEnv(gym.Env):
         reward += 1.0 if stable else -5.0
         reward += max(0, com_height - 0.4)  # Favorecer que se mantenga erguido
 
+        torso_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
+        print("torso_pos",torso_pos)
+
         done = self._is_done()
+        
         
         return observation, reward, done, False, info
     
@@ -229,6 +224,14 @@ class PAMIKBipedEnv(gym.Env):
         if self.step_count > 30000:
             print("fuera de t")
             return True
+        
+        # Detecta contacto de muslos/pantorrillas/cuerpo con el plano
+        links_a_verificar = [1, 4]  # (ejemplo) índices de muslos/pantorrillas
+        for link_id in links_a_verificar:
+            contacts = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=link_id)
+            if len(contacts) > 0:
+                print("Colapso detectado en", link_id)
+                return True
             
         return False
     
@@ -251,7 +254,7 @@ class PAMIKBipedEnv(gym.Env):
         # Configurar posición inicial de articulaciones para caminar
 
         # Impulso inicial hacia adelante De momento lo dejo nulo en caso de que sea la fuente de desequilibrios
-        p.resetBaseVelocity(self.robot_id, [0.0, 0, 0], [0, 0, 0])
+        p.resetBaseVelocity(self.robot_id, [0.2, 0, 0], [0, 0, 0])
         
         # Configurar control de fuerza (solo para PAM)
         if hasattr(self, 'pam_muscles'):
@@ -335,6 +338,27 @@ class PAMIKBipedEnv(gym.Env):
                 force=torque
             )
 
+    def _apply_joint_position_control(self, joint_positions):
+        # Asume joint_positions es [6,] en radianes
+        for i, pos in enumerate(joint_positions):
+            p.setJointMotorControl2(
+                self.robot_id, i,
+                p.POSITION_CONTROL,
+                targetPosition=pos,
+                force=self.joint_force_array[i]  # Usa la fuerza máxima definida
+        )
+            
+    def _setup_motors_for_force_control(self):
+        """Configura motores para control de fuerza"""
+        if self.robot_id is not None:
+            for i in range(6):  # 6 articulaciones
+                p.setJointMotorControl2(
+                    self.robot_id,
+                    i,
+                    p.VELOCITY_CONTROL,
+                    force=0  # Desactivar motores por defecto
+                )
+
     def _calculate_pam_forces(self, pressures, joint_states):
         """
             Calcula fuerzas de músculos PAM basado en presiones y estados articulares
@@ -371,6 +395,17 @@ class PAMIKBipedEnv(gym.Env):
                                     shape=(shape,), 
                                     dtype=np.float32)
         return action_space
+    
+    def _apply_inverse_dynamics_control(self, desired_joint_positions, desired_velocities=None, desired_accelerations=None):
+        # desired_joint_positions: [6,]
+        joint_states = p.getJointStates(self.robot_id, range(6))
+        q = [s[0] for s in joint_states]
+        qd = [s[1] for s in joint_states]
+        qdd = [0.0]*6 if desired_accelerations is None else desired_accelerations
+        # Optionally, estimate desired_velocities from trajectory
+        torques = p.calculateInverseDynamics(self.robot_id, desired_joint_positions, qd, qdd)
+        # Aplica torques como antes:
+        self._apply_joint_forces(torques)
         
     def _apply_simplified_control(self, action):
         """Control simplificado solo con PAM"""
@@ -499,12 +534,12 @@ class PAMIKBipedEnv(gym.Env):
 
         # Control PID simple hacia objetivos IK
         ik_forces = []
-        max_delta=0.5
-        
+        max_delta=2.0
+        Kp=80
         for i, (current, target) in enumerate(zip(current_positions, target_positions)):
             error = target - current
             error = np.clip(target - current, -max_delta, max_delta)
-            pid_force = error * 5.0  # Ganancia proporcional
+            pid_force = error * Kp  # Ganancia proporcional
             ik_forces.append(pid_force)
         # Combinar con fuerzas PAM si hay ajustes adicionales
         total_forces = np.array(ik_forces)
@@ -713,8 +748,11 @@ class PAMIKBipedEnv(gym.Env):
         p.resetSimulation()
 
         # Cargar entorno con fricción random
-        random_friction = np.random.uniform(0.5, 1.5)
-        correction_quaternion = p.getQuaternionFromEuler([0, 0, 0])
+        random_friction = np.random.uniform(0.8, 1.1)
+        correction_quaternion = p.getQuaternionFromEuler([np.random.uniform(-0.05, 0.05), 
+                                                        np.random.uniform(-0.03, 0.07), 
+                                                        0])
+        #correction_quaternion = p.getQuaternionFromEuler([0, 0, 0])
         #print(correction_quaternion)
         self.previous_position = [0,0,1.2]
         self.plane_id = p.loadURDF("plane.urdf")
@@ -739,13 +777,8 @@ class PAMIKBipedEnv(gym.Env):
         p.setTimeStep(self.time_step)
         p.setPhysicsEngineParameter(fixedTimeStep=self.time_step, numSubSteps=4)
 
-        self.robot_data = PyBullet_Robot_Data(self.robot_id)
-        self.zmp_calculator = ZMPCalculator(
-            robot_id=self.robot_id,
-            left_foot_id=self.left_foot_id,
-            right_foot_id=self.right_foot_id,
-            robot_data=self.robot_data
-        )
+        self.robot_data = PyBullet_Robot_Data(self.robot_id, left_foot_id=self.left_foot_id, right_foot_id=self.right_foot_id)
+        self.zmp_calculator = self.robot_data.zmp_calculator
 
 
         self.setup_physics_properties()
@@ -821,6 +854,59 @@ class PAMIKBipedEnv(gym.Env):
         # print(f"[BLEND SCHEDULER][Episode] episode={current_episode} | blend={blend:.3f} | imitation={imitation:.3f}")
 
         return blend, imitation
+    
+    def get_reference_pressures_from_angles(self, desired_joint_angles):
+        """
+        Convierte los ángulos deseados de las articulaciones en
+        presiones normalizadas para cada PAM, usando dinámica inversa y el modelo PAM.
+        """
+        # 1. Obtener el estado actual del robot
+        joint_states = p.getJointStates(self.robot_id, range(6))
+        current_angles = [s[0] for s in joint_states]
+        current_vels = [s[1] for s in joint_states]
+        # 2. Calcular los torques requeridos con dinámica inversa
+        # Aceleración objetivo: (target - current) / dt (aprox) o 0 si quieres movimiento lento
+        qddot = [(target - curr) / self.time_step for target, curr in zip(desired_joint_angles, current_angles)]
+        torques = p.calculateInverseDynamics(self.robot_id, desired_joint_angles, current_vels, qddot)
+
+        # 3. Convertir torque requerido a fuerza PAM
+        # Aquí simplificamos: torque = fuerza_PAM * brazo_momento
+        # Si tienes dos PAM antagonistas por articulación, asigna una a flexión y otra a extensión
+
+        pressures = []
+        for i, torque in enumerate(torques):
+            # Parámetros ejemplo: (ajusta según tu robot real)
+            if i in [0, 3]:  # caderas izquierda/derecha
+                # Probar este modo
+                brazo_momento = 0.03  # [m] distancia eje-articulación a punto de aplicación del PAM
+            elif i in [1, 4]:  # rodillas
+                brazo_momento = 0.03
+            else:  # tobillos
+                brazo_momento = 0.022
+            required_force = torque / brazo_momento  # F = τ / r
+            # Modelo PAM: usa el modelo real de tu clase PAMMcKibben
+            pam = list(self.pam_muscles.values())[i]
+
+            # Estima la contracción en función del ángulo (ejemplo muy simple, mejora según tu cinemática)
+            joint_range = self.joint_limits[list(self.joint_limits.keys())[i]]
+            normalized_pos = (desired_joint_angles[i] - joint_range[0]) / (joint_range[1] - joint_range[0])
+            contraction_ratio = np.clip(normalized_pos, 0, pam.epsilon_max*0.95)
+
+            # Invertir el modelo PAM: ¿qué presión produce esa fuerza para esa contracción?
+            # F = pressure * area * factor --> pressure = F / (area * factor)
+            factor = pam.F_max_factor  # usa el parámetro correcto
+            area = pam.area
+            if required_force > 0:
+                pressure = required_force / (area * factor)
+            else:
+                pressure = 0.0  # (o una presión mínima de seguridad)
+            # Limita presión física
+            pressure = np.clip(pressure, 0, self.max_pressure)
+            # Normaliza presión al rango [-1,1] (suponiendo max_pressure es el máximo de diseño)
+            max_pressure = self.max_pressure
+            norm_pressure = 2.0 * np.clip(pressure, 0, max_pressure) / max_pressure - 1.0
+            pressures.append(norm_pressure)
+        return np.array(pressures, dtype=np.float32)
 
 ######################################################################################################################
 ##################################Ajuste de base_action para control híbrido##############################################

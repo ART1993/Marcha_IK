@@ -11,10 +11,12 @@ class SimpleWalkingCycle:
     """
     
     def __init__(self, robot_id, plane_id, robot_data, 
-                 zmp_calculator, step_frequency=1.0, step_length=0.1,
+                 zmp_calculator, step_frequency=0.8, step_length=0.25,step_height=0.10,
                  blend_factor=0.0):
         self.step_frequency = step_frequency  # Hz
         self.step_length = step_length        # metros
+        self.step_height = step_height
+        self.last_time = 0.0        # para actualizar con el timestep real
         self.robot_id=robot_id
         self.plane_id=plane_id
         self.robot_data = robot_data
@@ -127,11 +129,11 @@ class SimpleWalkingCycle:
         """
         self.left_foot_index = left_foot_index
         self.right_foot_index = right_foot_index
-        self.update_phase(time_step)
-        alpha = (self.phase % 1.0)  # [0,1]
+        alpha=self.update_phase(time_step)
+
         step_length = self.step_length
         step_height = self.step_height  # altura del pie durante swing
-        # Obtener posiciones actuales de los pies
+
         # --- INICIO DEL NUEVO BLOQUE ---
         plane_id = self.plane_id
 
@@ -157,38 +159,20 @@ class SimpleWalkingCycle:
 
         vz= link_swing_state[6][2]  # Velocidad vertical del pie en swing
 
-        #if left_foot_touchdown>0 and self.phase < 0.5:
-        #    self.fase = 0.5  # Forzar cambio de pierna de soporte
-        #elif right_foot_touchdown>0 and self.phase >= 0.5:
-        #    self.fase = 0.0
-
         contact_points = p.getContactPoints(self.robot_id, plane_id, support_foot_id)
         en_contacto = len(contact_points) > 0
 
-
-
-        if vz > 0:
-            print("Ascenso")
-        else:
-            print("Descenso")
 
         if en_contacto:
             print("El pie de soporte ESTÁ en contacto con el suelo")
         else:
             print("El pie de soporte NO está en contacto con el suelo")
 
-        ground_z = 0.0  # O usa la altura real del plano si es diferente
-
         print(self.robot_id)
-        #left_start_link = p.getLinkState(self.robot_id, left_foot_index, computeLinkVelocity=1)
-        #right_start_link = p.getLinkState(self.robot_id, right_foot_index, computeLinkVelocity=1)
-        #left_start, left_speed = left_start_link[0], left_start_link[6]
-        #right_start, right_speed = right_start_link[0], right_start_link[6]
-        #vzl, vzr = left_speed[2], right_speed[2]  # velocidad vertical de los pies
 
 
         joint_positions = self.selection_swang_and_stance(alpha, link_swing_state, link_support_state, 
-                                                          step_length, step_height, swing_foot_id, support_foot_id)
+                                                          vz, step_length, step_height, swing_foot_id, support_foot_id)
 
 
         return joint_positions  # posición deseada de las articulaciones
@@ -206,43 +190,47 @@ class SimpleWalkingCycle:
             Returns:
                 True si ambos pies están en contacto, False de lo contrario.
         """
-        left_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=self.left_foot_index, linkIndexB=-1))
-        right_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=self.right_foot_index, linkIndexB=-1))
-        for i in range(p.getNumJoints(self.robot_id)):
-            contacts = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=i, linkIndexB=-1)
-            if contacts:
-                print(f"Link {i} ({p.getJointInfo(self.robot_id, i)[12].decode()}): tiene contacto con el suelo")
-        if left_foot_touchdown>0 and right_foot_touchdown>0 and self.swing_leg == "right" and self.stand_leg == "right":
-            # Ambos pies en contacto, no mover ninguno
-            valor= randint(0, 1)
-            if valor == 0:
+        left_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, 
+                                                     linkIndexA=self.left_foot_index, linkIndexB=-1))>0
+        right_foot_touchdown = len(p.getContactPoints(self.robot_id, self.plane_id, 
+                                                      linkIndexA=self.right_foot_index, linkIndexB=-1))>0
+        
+        # Inicialización de histeresis
+        if not hasattr(self, 'double_support_counter'):
+            self.double_support_counter = 0
+
+        if left_foot_touchdown and right_foot_touchdown:
+            self.double_support_counter += 1
+            if self.swing_leg is None and self.stand_leg == None:
+                if randint(0, 1) == 0:
+                    self.swing_leg = "left"
+                    self.stand_leg = "right"
+                else:
+                    self.swing_leg = "right"
+                    self.stand_leg = "left"
+        elif self.double_support_counter > 2:
+            if self.swing_leg == "right":
                 self.swing_leg = "left"
                 self.stand_leg = "right"
             else:
                 self.swing_leg = "right"
                 self.stand_leg = "left"
-        elif left_foot_touchdown and right_foot_touchdown and self.swing_leg == "right" and self.stand_leg == "left":
-            self.swing_leg = "left"
-            self.stand_leg = "right"
-        elif left_foot_touchdown and right_foot_touchdown and self.swing_leg == "left" and self.stand_leg == "right":
-            self.swing_leg = "right"
-            self.stand_leg = "left"
-        elif left_foot_touchdown is True and right_foot_touchdown is False:
-            self.swing_leg = "right"
-            self.stand_leg = "left"
-            print("Pie izquierdo en contacto, moviendo pie derecho")
-        elif left_foot_touchdown is False and right_foot_touchdown is True:
-            self.swing_leg = "left"
-            self.stand_leg = "right"
-            print("Pie derecho en contacto, moviendo pie izquierdo")
+            self.double_support_counter = 0
         else:
-            print("Ningún pie en contacto, problematico ,moviendo el pie derecho por defecto")
-        
-        return left_foot_touchdown>0, right_foot_touchdown>0
+            self.double_support_counter = 0
+            if left_foot_touchdown is True and right_foot_touchdown is False:
+                self.swing_leg = "right"
+                self.stand_leg = "left"
+                print("Pie izquierdo en contacto, moviendo pie derecho")
+            elif left_foot_touchdown is False and right_foot_touchdown is True:
+                self.swing_leg = "left"
+                self.stand_leg = "right"
+                print("Pie derecho en contacto, moviendo pie izquierdo")
+                    
+        return left_foot_touchdown, right_foot_touchdown
 
     @property
     def warking_cycle_params(self):
-        self.phase = 0.0                      # Fase del ciclo (0-1)
         # Configuración simplificada del ciclo
         self.cycle_phases = {
             'stance_left': (0.0, 0.5),   # Pie izquierdo en suelo
@@ -251,46 +239,57 @@ class SimpleWalkingCycle:
         
         # Patrones de presión base para cada articulación (0-1)
         self.base_pressures = {
-            'left_hip': 0.3*self.blend_factor,
-            'left_knee': 0.2*self.blend_factor,
-            'left_ankle': 0.4*self.blend_factor,
-            'right_hip': 0.3*self.blend_factor,
-            'right_knee': 0.2*self.blend_factor,
-            'right_ankle': 0.4*self.blend_factor
+            'left_hip': 0.3,
+            'left_knee': 0.2,
+            'left_ankle': 0.4,
+            'right_hip': 0.3,
+            'right_knee': 0.2,
+            'right_ankle': 0.4
         }
         
         # Amplitudes de modulación para cada articulación
         self.modulation_amplitudes = {
-            'left_hip': 0.4*(1-self.blend_factor),
-            'left_knee': 0.6*(1-self.blend_factor),
-            'left_ankle': 0.3*(1-self.blend_factor),
-            'right_hip': 0.4*(1-self.blend_factor),
-            'right_knee': 0.6*(1-self.blend_factor),
-            'right_ankle': 0.3*(1-self.blend_factor)
+            'left_hip': 0.4,
+            'left_knee': 0.6,
+            'left_ankle': 0.3,
+            'right_hip': 0.4,
+            'right_knee': 0.6,
+            'right_ankle': 0.3
         }
 
         self.left_foot_index = 2
         self.right_foot_index = 5
-        self.step_height = 0.10
         self.phase = 0.0  # [0, 1)
         self.fase = 0.0  # Fase del ciclo de paso (0-1)
-        self.swing_leg = "right"  # O "left", alterna cada medio ciclo
-        self.stand_leg = "right"
+        self.swing_leg = None  # O "left", alterna cada medio ciclo
+        self.stand_leg = None
 
     def update_phase(self, dt):
         """Actualiza la fase del ciclo de paso"""
         self.phase += dt * self.step_frequency
-        self.phase = self.phase % 1.0  # Mantener en rango [0,1]
+        if self.phase >= 1.0:
+            self.phase -= 1.0  # ciclo entre 0 y 
+        return self.phase
 
     def selection_swang_and_stance(self, alpha, link_swing_state, link_support_state, 
-                                   step_length, step_height, swing_foot_id, support_foot_id):
+                                   vz, step_length, step_height, swing_foot_id, support_foot_id):
         start_swing=link_swing_state[0]  # Posición inicial del pie en swing
         start_support=link_support_state[0]  # Posición del pie en stance
-        end = [start_swing[0] + self.step_length, start_swing[1], start_swing[2]]
-        ctrl1 = [start_swing[0] + 0.1, start_swing[1], start_swing[2] + step_height]
-        ctrl2 = [end[0] - 0.1, end[1], end[2] + step_height]
+        end = [start_swing[0] + step_length, start_swing[1], start_swing[2]+ step_height]
+        ctrl1 = [start_swing[0] + 0.05, start_swing[1], start_swing[2] + step_height]
+        ctrl2 = [end[0] - 0.05, end[1], end[2] + step_height]
         target_pos = foot_bezier_parabola(start_swing, end, ctrl1, ctrl2, alpha, step_height)
-        swing_joint_positions = p.calculateInverseKinematics(self.robot_id, swing_foot_id, target_pos)
+        ground_z = 0.0  # O la altura real de tu plano
+        if (target_pos[2] - ground_z) < 0.03 and vz < 0:
+            swing_orientation = p.getQuaternionFromEuler([0, 0, 0])
+            swing_joint_positions = p.calculateInverseKinematics(
+                self.robot_id, swing_foot_id, target_pos, swing_orientation
+            )
+        else:
+            swing_orientation = None  # Deja que PyBullet use la orientación por defecto
+            swing_joint_positions = p.calculateInverseKinematics(
+                self.robot_id, swing_foot_id, target_pos
+            )
 
         support_orientation = p.getQuaternionFromEuler([0, 0, 0])
         # 3. ¿El COM está sobre el área de soporte?
@@ -302,16 +301,6 @@ class SimpleWalkingCycle:
         zmp_point = self.zmp_calculator.calculate_zmp()
         zmp_estable = self.zmp_calculator.is_stable(zmp_point)
 
-        if zmp_estable:
-            print("El ZMP está DENTRO del polígono de soporte (ZMP ESTABLE)")
-        else:
-            print("¡ALERTA! El ZMP está FUERA del polígono de soporte")
-
-        if is_stable_com:
-            print("El centro de masa está sobre el área de soporte (COM ESTABLE)")
-        else:
-            print("¡CUIDADO! El COM está fuera del área de soporte")
-
         # 4.3. Si está cerca del límite del polígono de soporte, corrige el pie de soporte hacia el ZMP (o COM)
         correction_factor = 0.08
         support_pos=list(start_support)  # Posición del pie en stance
@@ -320,8 +309,15 @@ class SimpleWalkingCycle:
             delta_x = zmp_point[0] - support_pos[0]
             delta_y = zmp_point[1] - support_pos[1]
             # Aplica solo una fracción para evitar movimientos bruscos
-            support_pos[0] += correction_factor * delta_x
-            support_pos[1] += correction_factor * delta_y
+            end[0] += correction_factor * delta_x
+            end[1] += correction_factor * delta_y
+            # ... ajuste a end ...
+            # Ahora recalcula la trayectoria
+            target_pos = foot_bezier_parabola(start_swing, end, ctrl1, ctrl2, alpha, step_height)
+            # Vuelve a hacer IK para swing_joint_positions
+            swing_joint_positions = p.calculateInverseKinematics(
+                self.robot_id, swing_foot_id, target_pos
+            )
         
         support_joint_positions = p.calculateInverseKinematics(self.robot_id, support_foot_id, start_support, support_orientation)
         
@@ -335,7 +331,17 @@ class SimpleWalkingCycle:
             joint_positions = [swing_joint_positions[0], swing_joint_positions[1], swing_joint_positions[2],      # left leg
                                 support_joint_positions[3], support_joint_positions[4], support_joint_positions[5], # right leg
         ]
-        return joint_positions
+        print(end)
+        #if zmp_estable:
+        #    print("El ZMP está DENTRO del polígono de soporte (ZMP ESTABLE)")
+        #else:
+        #    print("¡ALERTA! El ZMP está FUERA del polígono de soporte")
+
+        #if is_stable_com:
+        #    print("El centro de masa está sobre el área de soporte (COM ESTABLE)")
+        #else:
+        #    print("¡CUIDADO! El COM está fuera del área de soporte")
+        return np.asarray(joint_positions, dtype=np.float32)
     
     def condicionar_pie_paralelo_suelo(self): 
         """

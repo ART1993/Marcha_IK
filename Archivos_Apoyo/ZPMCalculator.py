@@ -1,8 +1,6 @@
 import numpy as np
 import pybullet as p
 
-from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-
 
 class ZMPCalculator:
     """
@@ -108,14 +106,11 @@ class ZMPCalculator:
         
         # Ecuaciones ZMP que proporcionaste:
         # X_zmp = X_mc - (l/g) * l^2 * X_mc_ddot
-        # Simplificando: X_zmp = X_mc - (l^3/g) * X_mc_ddot
+        # Simplificando: X_zmp = X_mc - (l/g) * X_mc_ddot
         
-        zmp_x = com_pos[0] - (self.l**3 / self.g) * com_acceleration[0]
-        zmp_y = com_pos[1] - (self.l**3 / self.g) * com_acceleration[1]
+        zmp_x = com_pos[0] - (self.l / self.g) * com_acceleration[0]
+        zmp_y = com_pos[1] - (self.l / self.g) * com_acceleration[1]
         
-        # Para la ecuación lateral (si tienes movimiento oscilatorio):
-        # Y_zmp = A(1 + l*omega^2/g)*sin(omega*t)
-        # Esta es más compleja y requiere conocer la frecuencia omega
         
         return np.array([zmp_x, zmp_y])
     
