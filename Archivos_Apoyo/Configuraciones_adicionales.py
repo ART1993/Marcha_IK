@@ -19,26 +19,34 @@ def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
                     print("   Continuing with fresh normalization...")
         return train_env
 
-def set_env_phase(env_wrapper, phase):
+def set_env_phase(env_wrapper, phase, phase_timesteps):
     if hasattr(env_wrapper, 'envs'):
         for env in env_wrapper.envs:
             base_env = env.env if hasattr(env, 'env') else env
             if hasattr(base_env, 'set_training_phase'):
-                base_env.set_training_phase(phase)
+                base_env.set_training_phase(phase, phase_timesteps)
     else:
         if hasattr(env_wrapper, 'set_training_phase'):
-            env_wrapper.set_training_phase(phase)
+            env_wrapper.set_training_phase(phase, phase_timesteps)
 
-def phase_trainig_preparations(model_dir, remaining_timesteps, train_env, eval_env, current_timesteps,
+def phase_trainig_preparations(model_dir, train_env, eval_env, current_timesteps,
                                 model, callbacks, phase_timesteps, config, num_phase:int):
     # Configurar entornos para usar ciclo base
-    set_env_phase(train_env, num_phase)
-    set_env_phase(eval_env, num_phase)
-    model.learn(
-        total_timesteps=phase_timesteps,
-        callback=callbacks,
-        tb_log_name=f"{config['model_prefix']}_training"
-    )
+    set_env_phase(train_env, num_phase, phase_timesteps)
+    set_env_phase(eval_env, num_phase, phase_timesteps)
+    if num_phase >1:
+        model.learn(
+            total_timesteps=phase_timesteps,
+            callback=callbacks,
+            tb_log_name=f"{config['model_prefix']}_training",
+            reset_num_timesteps=False
+        )
+    else:
+        model.learn(
+            total_timesteps=phase_timesteps,
+            callback=callbacks,
+            tb_log_name=f"{config['model_prefix']}_training")
+    
     current_timesteps += phase_timesteps
 
     # Guardar modelo de fase i
@@ -47,3 +55,28 @@ def phase_trainig_preparations(model_dir, remaining_timesteps, train_env, eval_e
     print(f"✅ Phase {num_phase} model saved at: {phase_path}")
 
     return model, current_timesteps, phase_timesteps
+
+def obtener_posicion_inicial_robot(self, robot_id_temp, urdf_path, joint_positions, 
+                                       left_foot_id, right_foot_id, random_friction=1.0):
+    import pybullet as p
+    # 2. Poner posiciones iniciales
+    for i, pos in enumerate(joint_positions):
+        p.resetJointState(robot_id_temp, i, pos)
+    p.stepSimulation()
+    
+    # 3. Obtener altura del pie más bajo
+    left_foot_z = p.getLinkState(robot_id_temp, left_foot_id)[0][2]
+    right_foot_z = p.getLinkState(robot_id_temp, right_foot_id)[0][2]
+    min_foot_z = min(left_foot_z, right_foot_z)
+    
+    # 5. Volver a cargar robot con la base ajustada
+    p.resetSimulation()
+    adjusted_base_z = self.previous_position[2] - min_foot_z
+    p.removeBody(robot_id_temp)
+    self.plane_id = p.loadURDF("plane.urdf")
+    p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
+    robot_id = p.loadURDF(urdf_path, [0, 0, adjusted_base_z], useFixedBase=False)
+    for i, pos in enumerate(joint_positions):
+        p.resetJointState(robot_id, i, pos)
+    p.stepSimulation()
+    return robot_id

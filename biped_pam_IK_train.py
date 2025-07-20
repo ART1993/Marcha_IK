@@ -269,6 +269,7 @@ class UnifiedBipedTrainer:
             # ==============================================
             #  ENTRENAMIENTO POR FASES
             # ==============================================
+            
             model, config, \
             train_env, eval_env\
             =self.seleccion_entrenamiento_fases(resume_timesteps, config, callbacks,model,
@@ -299,24 +300,29 @@ class UnifiedBipedTrainer:
 
     def seleccion_entrenamiento_fases(self, resume_timesteps, config, callbacks,model,
                                       remaining_timesteps, train_env, eval_env):
-        total_phase1_timesteps, \
-        total_phase2_timesteps, \
-        total_phase3_timesteps=self.generar_timesteps(self.total_timesteps, config, model)
-        phase1_timesteps = np.max(total_phase1_timesteps-resume_timesteps, 0)
-        if phase1_timesteps == 0:
-            phase2_timesteps = np.max(total_phase2_timesteps-(resume_timesteps-total_phase1_timesteps), 0)
+        if self.action_space == "pam":
+            phase1_timesteps = 0
+            phase2_timesteps = 0
+            phase3_timesteps = self.total_timesteps
         else:
-            phase2_timesteps = np.max(total_phase2_timesteps, 0)
-        if phase2_timesteps == 0:
-            phase3_timesteps = np.max(total_phase3_timesteps-(resume_timesteps-total_phase1_timesteps-total_phase2_timesteps), 0)
-        else:
-            phase3_timesteps = np.max(total_phase3_timesteps, 0)
+            total_phase1_timesteps, \
+            total_phase2_timesteps, \
+            total_phase3_timesteps=self.generar_timesteps(self.total_timesteps, config, model)
+            phase1_timesteps = np.max(total_phase1_timesteps-resume_timesteps, 0)
+            if phase1_timesteps == 0:
+                phase2_timesteps = np.max(total_phase2_timesteps-(resume_timesteps-total_phase1_timesteps), 0)
+            else:
+                phase2_timesteps = np.max(total_phase2_timesteps, 0)
+            if phase2_timesteps == 0:
+                phase3_timesteps = np.max(total_phase3_timesteps-(resume_timesteps-total_phase1_timesteps-total_phase2_timesteps), 0)
+            else:
+                phase3_timesteps = np.max(total_phase3_timesteps, 0)
         current_timesteps = 0
 
         # FASE 1: Entrenamiento con ciclo base (solo ajustes finos)
         if phase1_timesteps > 0:
             print(f"🚀 Starting training phase 1 for {phase1_timesteps:,} steps...")
-            model, current_timesteps, phase1_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, 
+            model, current_timesteps, phase1_timesteps=phase_trainig_preparations(self.model_dir,
                                                                                     train_env, eval_env, current_timesteps,
                                                                                     model, callbacks, phase1_timesteps, config, 1)
         else:
@@ -324,7 +330,7 @@ class UnifiedBipedTrainer:
         # FASE 2: Entrenamiento con modulación del ciclo
         if phase2_timesteps > 0:
             print(f"🚀 Phase 2: Cycle modulation training ({phase2_timesteps:,} steps)...")
-            model, current_timesteps, phase2_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, train_env, eval_env,
+            model, current_timesteps, phase2_timesteps=phase_trainig_preparations(self.model_dir, train_env, eval_env,
                                                                                     current_timesteps, model, callbacks, phase2_timesteps, config, 2)
         else:
             current_timesteps += phase2_timesteps

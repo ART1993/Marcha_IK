@@ -9,13 +9,18 @@ class ImprovedRewardSystem:
         y controla la velocidad para evitar comportamientos erráticos
     """
     
-    def __init__(self, left_foot_id, right_foot_id, num_joints):
+    def __init__(self, left_foot_id, 
+                 right_foot_id, num_joints, curriculum_phase=1):
 
         self.left_foot_id=left_foot_id
         self.right_foot_id=right_foot_id
         self.num_joints=num_joints
 
         self.parametros_adicionales
+        self.curriculum_phase = curriculum_phase
+
+    def set_curriculum_phase(self, phase: int):
+        self.curriculum_phase = phase
         
 
     def reset_tracking(self):
@@ -138,6 +143,52 @@ class ImprovedRewardSystem:
         self.previous_position = pos
 
         rewards['foot_clearance'] = foot_clearance_reward
+
+        # --- RECOMPENSA POSTURAL ADICIONAL ---
+        # Obtener posiciones relevantes
+        base_pos = pos  # posición (x, y, z) de la base/cadera
+        left_foot = p.getLinkState(self.robot_id, self.left_foot_id)[0]
+        right_foot = p.getLinkState(self.robot_id, self.right_foot_id)[0]
+        foot_center_x = (left_foot[0] + right_foot[0]) / 2
+
+        # Default weights (puedes ajustarlos como quieras)
+        if self.curriculum_phase == 1:
+            back_penalty = 4.0
+            low_penalty = 4.0
+            hip_penalty = 3.0
+            forward_bonus = 2.0
+        elif self.curriculum_phase == 2:
+            back_penalty = 2.0
+            low_penalty = 2.0
+            hip_penalty = 1.5
+            forward_bonus = 1.0
+        else:  # fase 3 o RL puro
+            back_penalty = 0.7
+            low_penalty = 0.7
+            hip_penalty = 0.5
+            forward_bonus = 0.3
+
+        # Penalización si la base (cadera) está muy retrasada respecto a los pies
+        if base_pos[0] < foot_center_x - 0.08:
+            total_reward -= back_penalty  # Ajusta la magnitud
+
+        # Penalización si la base está demasiado baja (sentado)
+        if base_pos[2] < self.target_height - 0.15:
+            total_reward -= low_penalty
+
+        # Penalizar ángulos de cadera poco naturales
+        joint_states = p.getJointStates(self.robot_id, range(4))
+        left_hip_angle = joint_states[0][0]
+        right_hip_angle = joint_states[2][0]
+        # Si la cadera está muy "en retroversión" (apunta para atrás)
+        if left_hip_angle < -0.5:
+            total_reward -= hip_penalty
+        if right_hip_angle < -0.5:
+            total_reward -= hip_penalty
+
+        # BONUS: Recompensa por mantener la cadera adelantada respecto a los pies
+        if base_pos[0] > foot_center_x + 0.01:
+            total_reward += forward_bonus  # Incentiva la postura de marcha
         
         # Combinar recompensas con pesos
         for component, reward in rewards.items():

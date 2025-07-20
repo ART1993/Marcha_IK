@@ -32,6 +32,7 @@ class PAMIKBipedEnv(gym.Env):
 
         self.action_space=action_space
         self.render_mode = render_mode
+        self.phase=1
 
         self.generar_simplified_space
         self.num_actors_per_leg=num_actors_per_leg
@@ -39,9 +40,6 @@ class PAMIKBipedEnv(gym.Env):
 
         # conf simulacion
         self.configuracion_simulacion_1
-
-        #p.setPhysicsEngineParameter(solverResidualThreshold=1e-6)
-        #p.setPhysicsEngineParameter(numSolverIterations=200)
 
         # limites sistema
         self.limites_sistema
@@ -108,7 +106,7 @@ class PAMIKBipedEnv(gym.Env):
             pam_forces = self._apply_hybrid_ik_control(action)
         else:
             # Control PAM simple
-            print("PAM_SIMPLE")
+            #print("PAM_SIMPLE")
             pam_forces = self._apply_simplified_control(action)
 
         # 3. Simular
@@ -238,6 +236,9 @@ class PAMIKBipedEnv(gym.Env):
             right_foot_id=self.right_foot_id,
             robot_data=self.robot_data
         )
+
+        # (Opcional) Inclinación inicial hacia adelante
+        
         self.walking_controller = SimplifiedWalkingController(self)
         self.walking_controller.reset()
 
@@ -257,8 +258,12 @@ class PAMIKBipedEnv(gym.Env):
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
 
+        
+        #roll, pitch, yaw = 0.0, np.random.uniform(0.08, 0.15), 0.0
+        #quat = p.getQuaternionFromEuler([0.0, 0.00, 0.0])
+        #p.resetBasePositionAndOrientation(self.robot_id, self.previous_position, quat)
         # Impulso inicial hacia adelante De momento lo dejo nulo en caso de que sea la fuente de desequilibrios
-        p.resetBaseVelocity(self.robot_id, [0.05, 0, 0], [0, 0, 0])
+        p.resetBaseVelocity(self.robot_id, [0.08, 0, 0], [0, 0, 0])
         
         # Configurar control de fuerza (solo para PAM)
         if hasattr(self, 'pam_muscles'):
@@ -302,8 +307,8 @@ class PAMIKBipedEnv(gym.Env):
         # Obtener observación (compatible con ambos entornos)
         observation = self._stable_observation()
         info = {'episode_reward': 0, 'episode_length': 0}
-        if self.use_walking_cycle:
-            self.walking_controller = SimplifiedWalkingController(self)
+        #if self.use_walking_cycle:
+        #    self.walking_controller = SimplifiedWalkingController(self)
         return observation, info
     
     def close(self):
@@ -723,7 +728,7 @@ class PAMIKBipedEnv(gym.Env):
         
 
         # Cargar entorno con fricción random
-        random_friction = np.random.uniform(0.5, 1.5)
+        random_friction = np.random.uniform(0.8, 1.1)
         correction_quaternion = p.getQuaternionFromEuler([0, 0, 0])
         self.previous_position = [0,0,1.2]
         self.plane_id = p.loadURDF("plane.urdf")
@@ -744,10 +749,10 @@ class PAMIKBipedEnv(gym.Env):
         # Esto ayuda a robustecer el modelo ante variaciones físicas
         for link_id in range(p.getNumJoints(self.robot_id)):
             orig_mass = p.getDynamicsInfo(self.robot_id, link_id)[0]
-            rand_mass = orig_mass * np.random.uniform(0.8, 1.2)
+            rand_mass = orig_mass * np.random.uniform(0.8, 1.1)
             p.changeDynamics(self.robot_id, link_id, mass=rand_mass)
 
-    def set_training_phase(self, phase):
+    def set_training_phase(self, phase, phase_timesteps):
         # Por ejemplo:
         if self.action_space == "pam":
             self.use_walking_cycle = False
@@ -767,11 +772,20 @@ class PAMIKBipedEnv(gym.Env):
                 self.use_walking_cycle = False
                 self.walking_controller = None
                 self.imitation_weight = 0.0
+            self.phase = phase
+            self.total_phase_timesteps = phase_timesteps
 
-    def obtener_posicion_inicial_robot(self):
-        robot_id = p.loadURDF("tu_robot.urdf", [0, 0, 0], useFixedBase=True)
-        for i in range(6):
-            print(i, p.getJointInfo(robot_id, i)[12].decode())
+    def _apply_inverse_dynamics_control(self, desired_positions, desired_velocities, desired_accelerations):
+        # Utiliza PyBullet para obtener los torques ideales
+        torques = p.calculateInverseDynamics(
+            self.robot_id,
+            desired_positions,
+            desired_velocities,
+            desired_accelerations
+        )
+        # Aquí deberías mapear esos torques a presiones PAM (¡no trivial!)
+        # Puedes hacer una función adicional para esto, dependiendo del modelo PAM
+        return torques
 
 ######################################################################################################################
 ##################################Ajuste de base_action para control híbrido##############################################
