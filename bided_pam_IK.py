@@ -596,8 +596,8 @@ class PAMIKBipedEnv(gym.Env):
         # Fuerzas específicas para cada articulación (en Newtons)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         # IDs de end-effectors (enlaces de pies)
-        self.left_foot_id = 2   # Ajustar según tu URDF
-        self.right_foot_id = 5  # Ajustar según tu URDF
+        self.left_foot_id = 2   # ID Pie izquierdo
+        self.right_foot_id = 5  # ID pie derecho
 
         # Número total de joints articulados
         self.sistema_recompensas=ImprovedRewardSystem(self.left_foot_id, 
@@ -742,9 +742,10 @@ class PAMIKBipedEnv(gym.Env):
             self.imitation_weight = 1.0
         elif phase == 2:
             self.use_walking_cycle = True
-            self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
+            self.walking_controller = SimplifiedWalkingController(self, mode="blend")
             self.imitation_weight = 0.2
         else:
+            self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
             self.use_walking_cycle = False
             self.walking_controller = None
             self.imitation_weight = 0.0

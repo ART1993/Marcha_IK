@@ -148,7 +148,7 @@ class SimpleWalkingCycle:
 
             left_foot_x = base_target_x - self.step_length / 2
             left_foot_y = foot_y
-            left_foot_z = base_target_z   # Pie soporte
+            left_foot_z = 0.0   # Pie soporte
             left_foot_target = (left_foot_x, left_foot_y, left_foot_z)
         else:
             # Izquierdo en swing
@@ -160,7 +160,7 @@ class SimpleWalkingCycle:
 
             right_foot_x = base_target_x - self.step_length / 2
             right_foot_y = -foot_y
-            right_foot_z = base_target_z   # Pie soporte
+            right_foot_z = 0.0   # Pie soporte
             right_foot_target = (right_foot_x, right_foot_y, right_foot_z)
         
         left_joint_positions = p.calculateInverseKinematics(self.robot_id, left_foot_index, left_foot_target)

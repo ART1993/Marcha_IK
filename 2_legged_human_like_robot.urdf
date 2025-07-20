@@ -104,13 +104,13 @@
     <inertial>
       <mass value="1.5"/>  <!-- Heavier feet for stability -->
       <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
-      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.035" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
         <box size="0.5 0.35 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
-      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.035" rpy="0 0 0"/>
       <material name="green">
         <color rgba="0 1 0 1"/>
       </material>
@@ -119,7 +119,7 @@
       <geometry>
         <box size="0.5 0.35 0.05"/>
       </geometry>
-      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.035" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -203,13 +203,13 @@
     <inertial>
       <mass value="1.5"/>  <!-- Heavier feet for stability -->
       <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
-      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.035" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
         <box size="0.5 0.35 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
-      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.035" rpy="0 0 0"/>
       <material name="green">
         <color rgba="0 1 0 1"/>
       </material>
@@ -218,7 +218,7 @@
       <geometry>
         <box size="0.5 0.35 0.05"/>
       </geometry>
-      <origin xyz="0 0 -0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.035" rpy="0 0 0"/>
     </collision>
   </link>
 </robot>

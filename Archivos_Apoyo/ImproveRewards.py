@@ -125,8 +125,8 @@ class ImprovedRewardSystem:
             foot_clearance_reward += 1.0
 
         # Penaliza ambos pies bajos o altos (robot está "quieto" o saltando)
-        if left_clearance < 0.03 and right_clearance < 0.03:
-            foot_clearance_reward -= 1.0  # ambos pies en el suelo sin alternancia
+        if left_clearance < 0.015 and right_clearance < 0.015:
+            foot_clearance_reward -= 0.5
         if left_clearance > 0.06 and right_clearance > 0.06:
             foot_clearance_reward -= 1.5  # ambos pies en el aire
 
@@ -175,8 +175,8 @@ class ImprovedRewardSystem:
             pam_reward -=energy_penalty
         
         # 2. Coordinación muscular: premiar activación alternada
-        left_muscles = pressures[:2]  # hip, knee, ankle izquierdo
-        right_muscles = pressures[2:4]  # hip, knee, ankle derecho
+        left_muscles = pressures[:2]  # hip, knee izquierdo
+        right_muscles = pressures[2:4]  # hip, knee derecho
         
         left_activation = np.mean(left_muscles)
         right_activation = np.mean(right_muscles)
