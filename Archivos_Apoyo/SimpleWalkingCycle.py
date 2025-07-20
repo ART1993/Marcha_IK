@@ -245,8 +245,6 @@ def evolucion_antigua_swing(right_start, left_start, alpha, step_length=0.4, rob
         left_start = p.getLinkState(robot_id, left_foot_index)[0]
         right_start = p.getLinkState(robot_id, right_foot_index)[0]
         if alpha < 0.5:
-            # Pierna derecha en swing
-            #print("swing derecho")
             swing_alpha = alpha / 0.5
             start=right_start
             end = [right_start[0] + step_length, right_start[1], right_start[2]]

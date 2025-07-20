@@ -321,7 +321,6 @@ class PyBullet_Robot_Data:
         print(f"Robot ID: {self.robot_id}")
         print(f"Número de articulaciones: {self.robot_info['num_joints']}")
         print(f"Posición base: {self.robot_info['base_position']}")
-        print()
         
         print("ARTICULACIONES:")
         for index, data in self.joint_info.items():
@@ -331,13 +330,11 @@ class PyBullet_Robot_Data:
                 print(f"    Tipo: {joint_type}")
                 print(f"    Límites: {data['lower_limit']:.3f} a {data['upper_limit']:.3f}")
                 print(f"    Fuerza máxima: {data['max_force']:.1f}")
-                print()
         
         print("LINKS:")
         for index, data in self.link_info.items():
             print(f"  {data['name']} (ID: {index})")
             print(f"    Masa: {data['mass']:.2f} kg")
-            print()
         
         # Estado actual
         com, total_mass = self.get_center_of_mass

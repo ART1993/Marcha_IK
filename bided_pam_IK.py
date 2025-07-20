@@ -16,7 +16,10 @@ class PAMIKBipedEnv(gym.Env):
 
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, render_mode='human', action_space="hybrid"):
+    def __init__(self, render_mode='human', 
+                 action_space="hybrid", 
+                 num_actors_per_leg=3,
+                 num_articulaciones_pierna=2):
         """
             Entorno de robot bípedo con control híbrido IK + control directo.
     
@@ -31,6 +34,8 @@ class PAMIKBipedEnv(gym.Env):
         self.render_mode = render_mode
 
         self.generar_simplified_space
+        self.num_actors_per_leg=num_actors_per_leg
+        self.num_articulaciones_pierna=num_articulaciones_pierna
 
         # conf simulacion
         self.configuracion_simulacion_1
@@ -52,13 +57,12 @@ class PAMIKBipedEnv(gym.Env):
         # Variables_seguimiento
 
         self.variables_seguimiento
-
-        print(f"Observation space: {self.observation_space.shape}")
     
     def _setup_motors_for_force_control(self):
         """Configura motores para control de fuerza"""
         if self.robot_id is not None:
-            for i in range(4):  # 6 articulaciones
+            # 4 articulaciones
+            for i in range(self.num_articulaciones_pierna*2):  
                 p.setJointMotorControl2(
                     self.robot_id,
                     i,
@@ -71,7 +75,7 @@ class PAMIKBipedEnv(gym.Env):
         """Verifica que las posiciones articulares estén dentro de límites."""
         joint_names = list(self.joint_limits.keys())
         
-        for i, pos in enumerate(joint_positions[:4]):
+        for i, pos in enumerate(joint_positions[:self.num_articulaciones_pierna*2]):
             if i < len(joint_names):
                 joint_name = joint_names[i]
                 low, high = self.joint_limits[joint_name]
@@ -94,9 +98,8 @@ class PAMIKBipedEnv(gym.Env):
         # 1. VALIDAR ACCIÓN IK (si es control híbrido)
         # Aplicar control según el modo
         if self.control_mode == "hybrid" and len(action) >= 8:
-            #print("HYBRID_PAM")
-            foot_targets = final_action[:4] * 0.3  # Escalar a workspace
-            if not self._validate_foot_targets(foot_targets):
+            foot_targets = final_action[:self.num_articulaciones_pierna*2] * 0.3  # Escalar a workspace
+            if not self._validate_foot_targets(foot_targets, num_ejes=self.num_articulaciones_pierna):
                 # Aplicar penalización por targets inválidos
                 reward = -10.0
                 observation = self._stable_observation()
@@ -262,9 +265,9 @@ class PAMIKBipedEnv(gym.Env):
             self._setup_motors_for_force_control()
             # Resetear estados PAM
             self.pam_states = {
-                'pressures': np.zeros(4),
-                'contractions': np.zeros(4),
-                'forces': np.zeros(4)
+                'pressures': np.zeros(self.num_articulaciones_pierna*2),
+                'contractions': np.zeros(self.num_articulaciones_pierna*2),
+                'forces': np.zeros(self.num_articulaciones_pierna*2)
             }
         
         # Resetear variables de seguimiento comunes
@@ -292,7 +295,7 @@ class PAMIKBipedEnv(gym.Env):
             self.zmp_history.clear()
 
         # Permitir estabilización inicial - ejecutar varios steps sin evaluar ZMP
-            for _ in range(15):  # Más pasos de estabilización
+            for _ in range(20):  # Más pasos de estabilización
                 p.stepSimulation()
         #if self.use_walking_cycle:
         #    self.walking_controller = SimplifiedWalkingController(self)
@@ -386,11 +389,12 @@ class PAMIKBipedEnv(gym.Env):
         action=np.asarray(action, dtype=np.float32)
         # Convertir acciones normalizadas a presiones PAM
         if len(action)==12:
-            pam_pressures = (action[4:] + 1.0) / 2.0 * self.max_pressure
+            pam_pressures = (action[self.num_articulaciones_pierna*2:] 
+                             + 1.0) / 2.0 * self.max_pressure
         else:
             pam_pressures = (action+ 1.0) / 2.0 * self.max_pressure
         # Obtener estados articulares
-        joint_states_pam = p.getJointStates(self.robot_id, range(4))
+        joint_states_pam = p.getJointStates(self.robot_id, range(self.num_articulaciones_pierna*2))
         
         # Calcular y aplicar fuerzas PAM
         pam_forces = self._calculate_pam_forces(pam_pressures, joint_states_pam)
@@ -417,7 +421,8 @@ class PAMIKBipedEnv(gym.Env):
                     lin_vel[0], lin_vel[1], ang_vel[0], ang_vel[1]])
             
             # Estados articulares (12 elementos)
-            joint_states = p.getJointStates(self.robot_id, range(4))
+            joint_states = p.getJointStates(self.robot_id, 
+                                            range(self.num_articulaciones_pierna*2))
             for state in joint_states:
                 pos_val = state[0] if not (math.isnan(state[0]) or math.isinf(state[0])) else 0.0
                 vel_val = state[1] if not (math.isnan(state[1]) or math.isinf(state[1])) else 0.0
@@ -432,12 +437,12 @@ class PAMIKBipedEnv(gym.Env):
             obs.extend([float(left_contact), float(right_contact), 
                     normalized_time, float(self.step_count > 0)])
             
-            # Estados PAM (6 elementos)
+            # Estados PAM (4 elementos)
             if hasattr(self, 'pam_states'):
                 normalized_pressures = self.pam_states['pressures'] / self.max_pressure
                 obs.extend(normalized_pressures.tolist())
             else:
-                obs.extend([0.0] * 4)
+                obs.extend([0.0] * self.num_articulaciones_pierna*2)
             
         except Exception as e:
             print(f"Error en observación: {e}")
@@ -468,8 +473,9 @@ class PAMIKBipedEnv(gym.Env):
     # Inverse Kinematics
     def _apply_ik_control(self, target_positions):
         """Aplica control IK para posicionar los pies en coordenadas objetivo"""
-        left_target = target_positions[:3]   # x,y,z pie izquierdo
-        right_target = target_positions[3:6] # x,y,z pie derecho
+        num_ejes=self.num_actors_per_leg
+        left_target = target_positions[:num_ejes]   # x,y,z pie izquierdo
+        right_target = target_positions[num_ejes:num_ejes*2] # x,y,z pie derecho
         
         # IK para pie izquierdo
         left_joint_poses = p.calculateInverseKinematics(
@@ -491,19 +497,21 @@ class PAMIKBipedEnv(gym.Env):
             residualThreshold=self.ik_residual_threshold
         )
         
-        return left_joint_poses[:3], right_joint_poses[:3]  # Solo articulaciones de cada pierna
+        return left_joint_poses[:num_ejes], right_joint_poses[:num_ejes]  # Solo articulaciones de cada pierna
     
     # Para aplicar control de IK + PAM
     def _apply_hybrid_ik_control(self, action):
         # Primeros 6: coordenadas objetivo pies (x,y,z cada uno)
-        foot_targets = action[:6] * 0.3  # Escalar a workspace
+        num_action_points=self.num_actors_per_leg*2
+        #si pongo como 4 me sale error
+        foot_targets = action[:num_action_points] * 0.3  # Escalar a workspace
         
         # Aplicar IK
         left_joints, right_joints = self._apply_ik_control(foot_targets)
         target_positions = np.concatenate([left_joints, right_joints])
 
         # Obtener posiciones actuales
-        joint_states = p.getJointStates(self.robot_id, range(4))
+        joint_states = p.getJointStates(self.robot_id, range(self.num_articulaciones_pierna*2))
         current_positions = [state[0] for state in joint_states]
 
         # Control PID simple hacia objetivos IK
@@ -516,6 +524,7 @@ class PAMIKBipedEnv(gym.Env):
         total_forces = np.array(ik_forces)
         
         if len(action)>4:
+            # Es posible
             pam_adjustments = (action[4:8] + 1.0) / 2.0 * self.max_pressure  # Ajustes finos PAM
             pam_forces = self._calculate_pam_forces(pam_adjustments, joint_states)
 
@@ -540,15 +549,23 @@ class PAMIKBipedEnv(gym.Env):
         self.ik_success_rate.append(float(self.last_ik_success))
 
     
-    def _validate_foot_targets(self, targets):
+    def _validate_foot_targets(self, targets, num_ejes=2):
         """Valida que los objetivos de pies estén en workspace válido"""
-        left_target, right_target = targets[:2], targets[2:4]
+        left_target, right_target = targets[:num_ejes], targets[num_ejes:num_ejes*2]
         
-        for target in [left_target, right_target]:
-            if not (self.foot_workspace['x_range'][0] <= target[0] <= self.foot_workspace['x_range'][1] and
-                    #self.foot_workspace['y_range'][0] <= target[1] <= self.foot_workspace['y_range'][1] and
-                    self.foot_workspace['z_range'][0] <= target[1] <= self.foot_workspace['z_range'][1]):
-                return False
+        if num_ejes ==2:
+            for target in [left_target, right_target]:
+                if not (self.foot_workspace['x_range'][0] <= target[0] <= self.foot_workspace['x_range'][1] and
+                        #self.foot_workspace['y_range'][0] <= target[1] <= self.foot_workspace['y_range'][1] and
+                        self.foot_workspace['z_range'][0] <= target[1] <= self.foot_workspace['z_range'][1]):
+                    return False
+        elif num_ejes==3:
+            for target in [left_target, right_target]:
+                if not (self.foot_workspace['x_range'][0] <= target[0] <= self.foot_workspace['x_range'][1] and
+                        self.foot_workspace['y_range'][0] <= target[1] <= self.foot_workspace['y_range'][1] and
+                        self.foot_workspace['z_range'][0] <= target[2] <= self.foot_workspace['z_range'][1]):
+                    return False
+
         return True
     
 
@@ -708,7 +725,6 @@ class PAMIKBipedEnv(gym.Env):
         # Cargar entorno con fricción random
         random_friction = np.random.uniform(0.5, 1.5)
         correction_quaternion = p.getQuaternionFromEuler([0, 0, 0])
-        #print(correction_quaternion)
         self.previous_position = [0,0,1.2]
         self.plane_id = p.loadURDF("plane.urdf")
         p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
@@ -718,9 +734,6 @@ class PAMIKBipedEnv(gym.Env):
             correction_quaternion,
             useFixedBase=False
         )
-        aabb_min, aabb_max = p.getAABB(self.robot_id, -1)
-        #altura = aabb_max[2] - aabb_min[2]
-        #print(f"Altura del robot: {altura:.2f} m")
         self.setup_physics_properties()
 
         # Esperar a que la simulación se estabilice
@@ -736,19 +749,24 @@ class PAMIKBipedEnv(gym.Env):
 
     def set_training_phase(self, phase):
         # Por ejemplo:
-        if phase == 1:
-            self.use_walking_cycle = True
-            self.walking_controller = SimplifiedWalkingController(self, mode="trajectory")
-            self.imitation_weight = 1.0
-        elif phase == 2:
-            self.use_walking_cycle = True
-            self.walking_controller = SimplifiedWalkingController(self, mode="blend")
-            self.imitation_weight = 0.2
-        else:
-            self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
+        if self.action_space == "pam":
             self.use_walking_cycle = False
             self.walking_controller = None
             self.imitation_weight = 0.0
+        else:
+            if phase == 1:
+                self.use_walking_cycle = True
+                self.walking_controller = SimplifiedWalkingController(self, mode="trajectory")
+                self.imitation_weight = 1.0
+            elif phase == 2:
+                self.use_walking_cycle = True
+                self.walking_controller = SimplifiedWalkingController(self, mode="blend")
+                self.imitation_weight = 0.2
+            else:
+                self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
+                self.use_walking_cycle = False
+                self.walking_controller = None
+                self.imitation_weight = 0.0
 
     def obtener_posicion_inicial_robot(self):
         robot_id = p.loadURDF("tu_robot.urdf", [0, 0, 0], useFixedBase=True)

@@ -261,18 +261,6 @@ class UnifiedBipedTrainer:
         # Setup callbacks
         callbacks = self.setup_callbacks(eval_env)
 
-        total_phase1_timesteps, total_phase2_timesteps, total_phase3_timesteps=self.generar_timesteps(self.total_timesteps, config, model)
-        resume_timesteps
-        phase1_timesteps = np.max(total_phase1_timesteps-resume_timesteps, 0)
-        if phase1_timesteps == 0:
-            phase2_timesteps = np.max(total_phase2_timesteps-(resume_timesteps-total_phase1_timesteps), 0)
-        else:
-            phase2_timesteps = np.max(total_phase2_timesteps, 0)
-        if phase2_timesteps == 0:
-            phase3_timesteps = np.max(total_phase3_timesteps-(resume_timesteps-total_phase1_timesteps-total_phase2_timesteps), 0)
-        else:
-            phase3_timesteps = np.max(total_phase3_timesteps, 0)
-
         # Record training start
         self.training_info['training_start_time'] = datetime.now().isoformat()
         self.training_info['completed_timesteps'] = resume_timesteps
@@ -281,51 +269,10 @@ class UnifiedBipedTrainer:
             # ==============================================
             #  ENTRENAMIENTO POR FASES
             # ==============================================
-            current_timesteps = 0
-
-            # FASE 1: Entrenamiento con ciclo base (solo ajustes finos)
-            if phase1_timesteps > 0:
-                print(f"🚀 Starting training phase 1 for {phase1_timesteps:,} steps...")
-                model, current_timesteps, phase1_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, 
-                                                                                      train_env, eval_env, current_timesteps,
-                                                                                      model, callbacks, phase1_timesteps, config, 1)
-            else:
-                current_timesteps += phase1_timesteps
-            # FASE 2: Entrenamiento con modulación del ciclo
-            if phase2_timesteps > 0:
-                print(f"🚀 Phase 2: Cycle modulation training ({phase2_timesteps:,} steps)...")
-                model, current_timesteps, phase2_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, train_env, eval_env,
-                                                                                      current_timesteps, model, callbacks, phase2_timesteps, config, 2)
-            else:
-                current_timesteps += phase2_timesteps
-            # FASE 3: Entrenamiento con control libre
-            if phase3_timesteps > 0:
-                print(f"🚀 Phase 3: Full RL control training ({phase3_timesteps:,} steps)...")
-                
-                # Desactivar ciclo de paso
-                def disable_walking_cycle(env_wrapper):
-                    if hasattr(env_wrapper, 'envs'):
-                        for env in env_wrapper.envs:
-                            base_env = env.env if hasattr(env, 'env') else env
-                            if hasattr(base_env, 'set_walking_cycle'):
-                                base_env.set_walking_cycle(False)
-                    else:
-                        if hasattr(env_wrapper, 'set_walking_cycle'):
-                            env_wrapper.set_walking_cycle(False)
-                
-                disable_walking_cycle(train_env)
-                disable_walking_cycle(eval_env)
-                
-                model.learn(
-                    total_timesteps=phase3_timesteps,
-                    callback=callbacks,
-                    tb_log_name=f"{config['model_prefix']}_phase3",
-                    reset_num_timesteps=False
-                )
-                current_timesteps += phase3_timesteps
-
-            # Update training info
-            self.training_info['completed_timesteps'] = self.total_timesteps
+            model, config, \
+            train_env, eval_env\
+            =self.seleccion_entrenamiento_fases(resume_timesteps, config, callbacks,model,
+                                                remaining_timesteps, train_env, eval_env)
             
             # Save final model
             final_model_path = os.path.join(self.model_dir, f"{config['model_prefix']}_final")
@@ -349,6 +296,67 @@ class UnifiedBipedTrainer:
             eval_env.close()
                 
         print("🎉 Training completed!")
+
+    def seleccion_entrenamiento_fases(self, resume_timesteps, config, callbacks,model,
+                                      remaining_timesteps, train_env, eval_env):
+        total_phase1_timesteps, \
+        total_phase2_timesteps, \
+        total_phase3_timesteps=self.generar_timesteps(self.total_timesteps, config, model)
+        phase1_timesteps = np.max(total_phase1_timesteps-resume_timesteps, 0)
+        if phase1_timesteps == 0:
+            phase2_timesteps = np.max(total_phase2_timesteps-(resume_timesteps-total_phase1_timesteps), 0)
+        else:
+            phase2_timesteps = np.max(total_phase2_timesteps, 0)
+        if phase2_timesteps == 0:
+            phase3_timesteps = np.max(total_phase3_timesteps-(resume_timesteps-total_phase1_timesteps-total_phase2_timesteps), 0)
+        else:
+            phase3_timesteps = np.max(total_phase3_timesteps, 0)
+        current_timesteps = 0
+
+        # FASE 1: Entrenamiento con ciclo base (solo ajustes finos)
+        if phase1_timesteps > 0:
+            print(f"🚀 Starting training phase 1 for {phase1_timesteps:,} steps...")
+            model, current_timesteps, phase1_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, 
+                                                                                    train_env, eval_env, current_timesteps,
+                                                                                    model, callbacks, phase1_timesteps, config, 1)
+        else:
+            current_timesteps += phase1_timesteps
+        # FASE 2: Entrenamiento con modulación del ciclo
+        if phase2_timesteps > 0:
+            print(f"🚀 Phase 2: Cycle modulation training ({phase2_timesteps:,} steps)...")
+            model, current_timesteps, phase2_timesteps=phase_trainig_preparations(self.model_dir, remaining_timesteps, train_env, eval_env,
+                                                                                    current_timesteps, model, callbacks, phase2_timesteps, config, 2)
+        else:
+            current_timesteps += phase2_timesteps
+        # FASE 3: Entrenamiento con control libre
+        if phase3_timesteps > 0:
+            print(f"🚀 Phase 3: Full RL control training ({phase3_timesteps:,} steps)...")
+            
+            # Desactivar ciclo de paso
+            def disable_walking_cycle(env_wrapper):
+                if hasattr(env_wrapper, 'envs'):
+                    for env in env_wrapper.envs:
+                        base_env = env.env if hasattr(env, 'env') else env
+                        if hasattr(base_env, 'set_walking_cycle'):
+                            base_env.set_walking_cycle(False)
+                else:
+                    if hasattr(env_wrapper, 'set_walking_cycle'):
+                        env_wrapper.set_walking_cycle(False)
+            
+            disable_walking_cycle(train_env)
+            disable_walking_cycle(eval_env)
+            
+            model.learn(
+                total_timesteps=phase3_timesteps,
+                callback=callbacks,
+                tb_log_name=f"{config['model_prefix']}_phase3",
+                reset_num_timesteps=False
+            )
+            current_timesteps += phase3_timesteps
+
+        # Update training info
+        self.training_info['completed_timesteps'] = self.total_timesteps
+        return model,config, train_env, eval_env
     
     def test_model(self, model_path, episodes=10, normalization_path=None):
         """Hacer test de modelo RecurrentPPO ."""
