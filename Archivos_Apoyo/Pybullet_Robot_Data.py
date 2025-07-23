@@ -217,8 +217,8 @@ class PyBullet_Robot_Data:
         right_foot_pos = link_positions.get('right_foot_link', np.array([0, -0.25, 0]))
         
         # Calcular polígono de soporte (simplificado)
-        foot_width = 0.15
-        foot_length = 0.3
+        foot_width = 0.35
+        foot_length = 0.5
         
         support_polygon = np.array([
             [left_foot_pos[0] - foot_length/2, left_foot_pos[1] - foot_width/2],

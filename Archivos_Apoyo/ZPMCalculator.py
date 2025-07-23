@@ -20,14 +20,14 @@ class ZMPCalculator:
         # para cilindro_
         self.dimensiones_robot={
             "cubic":{
-                "waist":(0.3,0.8,0.1,8),
-                "foot_left":(0.3,0.15,0.05,1),
-                "foot_right":(0.3,0.15,0.05,1)},
+                "waist":(0.3,0.8,0.1,6),
+                "foot_left":(0.5,0.35,0.05,1.5),
+                "foot_right":(0.5,0.35,0.05,1.5)},
             "cilinder":{
-                "thigh_left":(0.08,0.6,3),
-                "thight_right":(0.08,0.6,3),
-                "shin_left":(0.06,0.5,2),
-                "shin_right":(0.06,0.5,2)
+                "thigh_left":(0.08,0.6,4),
+                "thight_right":(0.08,0.6,4),
+                "shin_left":(0.06,0.5,4),
+                "shin_right":(0.06,0.5,4)
             }
         }
         # Selecciona la altura del centro de masa
