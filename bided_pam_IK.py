@@ -142,7 +142,7 @@ class PAMIKBipedEnv(gym.Env):
         }
 
         # Añado parámetros ZMP
-        if self.zmp_calculator is None:
+        if self.zmp_calculator is not None:
         # Añadir recompensa ZMP
             zmp_reward, self.zmp_history, self.max_zmp_history, \
             self.stability_bonus, self.instability_penalty, self.zmp_reward_weight\
@@ -154,6 +154,7 @@ class PAMIKBipedEnv(gym.Env):
         # Actualizar info
         if self.zmp_calculator and self.zmp_history:
             latest_zmp = self.zmp_history[-1]
+            print(f"ZMP: {latest_zmp['zmp']} | stable: {latest_zmp['stable']} | margin: {latest_zmp['margin']}")
             info.update({
                 'zmp_stable': latest_zmp['stable'],
                 'zmp_margin': latest_zmp['margin'],
@@ -249,11 +250,13 @@ class PAMIKBipedEnv(gym.Env):
 
         # Configurar posición inicial de articulaciones para caminar
         initial_joint_positions = [
-            -0.00,   # left_hip - ligeramente flexionado
-            0.01,  # left_knee - flexionado
-            0.01,  # right_hip - extendido
-            -0.00,  # right_knee - ligeramente flexionado
+            0.00,   # left_hip - ligeramente flexionado
+            0.00,  # left_knee - flexionado
+            0.00,  # right_hip - extendido
+            0.00,  # right_knee - ligeramente flexionado
         ]
+
+        self.esperando_contacto = True
     
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
@@ -279,7 +282,7 @@ class PAMIKBipedEnv(gym.Env):
         self.step_count = 0
         self.total_reward = 0
         self.observation_history.clear()
-        self.previous_position = [0,0,1.2]
+        self.previous_position = [0,0,1.15]
         self.ik_success_rate.clear()
         
         # Variables específicas de IK
@@ -289,8 +292,16 @@ class PAMIKBipedEnv(gym.Env):
         self.previous_contacts = [False, False]
         self.previous_action = None
 
+        left_contact = len(p.getContactPoints(self.robot_id, 0, self.left_foot_id)) > 0
+        right_contact = len(p.getContactPoints(self.robot_id, 0, self.right_foot_id)) > 0
+        print(f"Left contact: {left_contact}, Right contact: {right_contact}")
+
+        left_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
+        right_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
+        print(f"Left foot Z: {left_pos[2]:.4f}, Right foot Z: {right_pos[2]:.4f}")
+
         # Inicializar calculador ZMP después de cargar el robot
-        if self.robot_id is not None:
+        if self.robot_id is None:
             self.zmp_calculator = ZMPCalculator(
                 self.robot_id, 
                 self.left_foot_id, 

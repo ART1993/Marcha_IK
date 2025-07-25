@@ -91,12 +91,12 @@
   </link>
 
   <!-- Joint 3: Left Ankle Joint -->
-  <joint name="left_ankle_joint" type="fixed">
+  <joint name="left_ankle_joint" type="revolute">
     <parent link="left_shin_link"/>
     <child link="left_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <!--limit lower="-0.436" upper="0.436" effort="50" velocity="2.0"/-->
+    <axis xyz="1 0 0"/>
+    <limit lower="-0.436" upper="0.436" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Left Foot -->
@@ -190,12 +190,12 @@
   </link>
 
   <!-- Joint 3: Right Ankle Joint -->
-  <joint name="right_ankle_joint" type="fixed">
+  <joint name="right_ankle_joint" type="revolute">
     <parent link="right_shin_link"/>
     <child link="right_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <!--limit lower="-0.436" upper="0.436" effort="50" velocity="2.0"/-->
+    <axis xyz="1 0 0"/>
+    <limit lower="-0.436" upper="0.436" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Right Foot -->

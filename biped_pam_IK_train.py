@@ -12,6 +12,8 @@ import json
 #import pickle
 
 # Import your environments
+from Archivos_Apoyo.Logs import log_training_plan, error_load_model, \
+                                info_latest_checkpoint, print_info_env_pam
 from bided_pam_IK import PAMIKBipedEnv  # Assuming this is your PAM environment
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, phase_trainig_preparations
 
@@ -103,9 +105,7 @@ class UnifiedBipedTrainer:
                     
                 return model
             except Exception as e:
-                print(f"❌ Error loading model: {e}")
-                print("🔄 Creating new model instead...")
-                return None
+                error_load_model(e)
         return None
     
     def create_model(self, env, resume_path=None):
@@ -174,20 +174,12 @@ class UnifiedBipedTrainer:
         elif resume:
             # Search for latest checkpoint automatically
             latest_checkpoint, resume_timesteps = self.find_latest_checkpoint()
-            if latest_checkpoint:
-                resume_path = latest_checkpoint
-                print(f"📂 Found latest checkpoint: {latest_checkpoint}")
-                print(f"📊 Resuming from timestep: {resume_timesteps:,}")
-            else:
-                print("📝 No previous checkpoints found, starting fresh training")
+            resume_path=info_latest_checkpoint(latest_checkpoint, resume_timesteps)
         
         # Calculate remaining timesteps
         remaining_timesteps = max(0, self.total_timesteps - resume_timesteps)
 
-        print(f"🎯 Training plan:")
-        print(f"   - Completed: {resume_timesteps:,} timesteps")
-        print(f"   - Remaining: {remaining_timesteps:,} timesteps")
-        print(f"   - Total target: {self.total_timesteps:,} timesteps")
+        log_training_plan(resume_timesteps, remaining_timesteps, self.total_timesteps)
 
         if remaining_timesteps == 0:
             print(f"✅ Training already completed! ({resume_timesteps:,}/{self.total_timesteps:,} timesteps)")
@@ -206,15 +198,7 @@ class UnifiedBipedTrainer:
         if resume_path is None and remaining_timesteps is None:
             return
 
-        if self.env_type == 'pam':
-            print("📊 PAM Training Features:")
-            print("   - Hybrid IK + PAM control")
-            print("   - Realistic tensile forces")
-            print("   - LSTM memory for muscle coordination")
-            print("   - Energy efficiency optimization")
-        
-        # Create environments
-        print(f"📦 Creating {self.n_envs} training environments...")
+        print_info_env_pam(self)
         # train_env=self.create_training_env_with_walking_cycle()
         train_env = self.create_training_env()
 

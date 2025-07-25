@@ -1,8 +1,6 @@
 import numpy as np
 import pybullet as p
 
-from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-
 
 class ZMPCalculator:
     """
@@ -46,7 +44,7 @@ class ZMPCalculator:
         self.stability_margin = 0.25  # 5cm de margen
 
         self.initialization_steps = 0
-        self.min_step_stability=15
+        self.min_step_stability=1500
         
     def update_com_history(self, com_position):
         """Actualiza el historial del centro de masa"""
@@ -128,13 +126,15 @@ class ZMPCalculator:
             self.initialization_steps += 1
             return True
         
-        if zmp_point is None:
-            zmp_point = self.calculate_zmp()
-        
         support_polygon = self.get_support_polygon()
         
         if len(support_polygon) == 0:
             return False  # Sin contacto = inestable
+        
+        if zmp_point is None:
+            zmp_point = self.calculate_zmp()
+        
+        
         
         if len(support_polygon) == 1:
             # Solo un pie en contacto - verificar distancia
@@ -184,6 +184,7 @@ class ZMPCalculator:
         try:
             zmp_point = self.calculate_zmp()
             is_stable = self.is_stable(zmp_point)
+            print(is_stable)
             margin_distance = self.stability_margin_distance(zmp_point)
             
             # Guardar en historial
@@ -206,10 +207,14 @@ class ZMPCalculator:
 
             new_reward=reward * zmp_reward_weight
 
+            if len(self.get_support_polygon()) == 0:
+                # No hay soporte, no calcules ZMP
+                new_reward=0.0
+
             salida = (new_reward,zmp_history, max_zmp_history, 
                               stability_bonus, instability_penalty, zmp_reward_weight)
             return salida
             
         except Exception as e:
             print(f"Error calculando ZMP reward: {e}")
-            return 0.0
+            return 0.0, zmp_history, max_zmp_history, stability_bonus, instability_penalty, zmp_reward_weight
