@@ -55,28 +55,3 @@ def phase_trainig_preparations(model_dir, train_env, eval_env, current_timesteps
     print(f"✅ Phase {num_phase} model saved at: {phase_path}")
 
     return model, current_timesteps, phase_timesteps
-
-def obtener_posicion_inicial_robot(self, robot_id_temp, urdf_path, joint_positions, 
-                                       left_foot_id, right_foot_id, random_friction=1.0):
-    import pybullet as p
-    # 2. Poner posiciones iniciales
-    for i, pos in enumerate(joint_positions):
-        p.resetJointState(robot_id_temp, i, pos)
-    p.stepSimulation()
-    
-    # 3. Obtener altura del pie más bajo
-    left_foot_z = p.getLinkState(robot_id_temp, left_foot_id)[0][2]
-    right_foot_z = p.getLinkState(robot_id_temp, right_foot_id)[0][2]
-    min_foot_z = min(left_foot_z, right_foot_z)
-    
-    # 5. Volver a cargar robot con la base ajustada
-    p.resetSimulation()
-    adjusted_base_z = self.previous_position[2] - min_foot_z
-    p.removeBody(robot_id_temp)
-    self.plane_id = p.loadURDF("plane.urdf")
-    p.changeDynamics(self.plane_id, -1, lateralFriction=random_friction)
-    robot_id = p.loadURDF(urdf_path, [0, 0, adjusted_base_z], useFixedBase=False)
-    for i, pos in enumerate(joint_positions):
-        p.resetJointState(robot_id, i, pos)
-    p.stepSimulation()
-    return robot_id
