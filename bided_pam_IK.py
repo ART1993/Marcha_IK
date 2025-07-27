@@ -108,7 +108,7 @@ class PAMIKBipedEnv(gym.Env):
             # Control PAM simple
             #print("PAM_SIMPLE")
             pam_forces = self._apply_simplified_control(action)
-
+        self._apply_ankle_spring(k_spring=8.0)
         # 3. Simular
         p.stepSimulation()
         
@@ -282,7 +282,7 @@ class PAMIKBipedEnv(gym.Env):
         self.step_count = 0
         self.total_reward = 0
         self.observation_history.clear()
-        self.previous_position = [0,0,1.15]
+        self.previous_position = [0,0,1.2]
         self.ik_success_rate.clear()
         
         # Variables específicas de IK
@@ -797,6 +797,27 @@ class PAMIKBipedEnv(gym.Env):
         # Aquí deberías mapear esos torques a presiones PAM (¡no trivial!)
         # Puedes hacer una función adicional para esto, dependiendo del modelo PAM
         return torques
+    
+    def _apply_ankle_spring(self, k_spring=8.0):
+        """
+        Aplica un torque de resorte pasivo en los tobillos izquierdo y derecho
+        para mantener los pies paralelos al suelo pero permitiendo movimiento.
+        Llama a esta función en cada paso antes de p.stepSimulation().
+        k_spring: rigidez del resorte [Nm/rad]
+        """
+        # Asegúrate de que los nombres/índices son correctos
+        left_ankle_joint = self.left_foot_id    # <-- Cambia si tu joint es diferente
+        right_ankle_joint = self.right_foot_id   # <-- Cambia si tu joint es diferente
+
+        for ankle_joint in [left_ankle_joint, right_ankle_joint]:
+            theta = p.getJointState(self.robot_id, ankle_joint)[0]  # Ángulo actual [rad]
+            torque = -k_spring * theta
+            p.setJointMotorControl2(
+                self.robot_id,
+                ankle_joint,
+                controlMode=p.TORQUE_CONTROL,
+                force=torque
+            )
 
 ######################################################################################################################
 ##################################Ajuste de base_action para control híbrido##############################################
