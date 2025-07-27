@@ -32,7 +32,7 @@ class PAMIKBipedEnv(gym.Env):
 
         self.action_space=action_space
         self.render_mode = render_mode
-        self.phase=1
+        self.phase=0
 
         self.generar_simplified_space
         self.num_actors_per_leg=num_actors_per_leg
@@ -92,7 +92,7 @@ class PAMIKBipedEnv(gym.Env):
             final_action=_safe_blend_actions(base_action, action, modulation_factor)
         else:
             final_action = action
-        
+        print(f"{self.phase=:}")
         # 1. VALIDAR ACCIÓN IK (si es control híbrido)
         # Aplicar control según el modo
         if self.control_mode == "hybrid" and len(action) >= 8:
@@ -603,10 +603,10 @@ class PAMIKBipedEnv(gym.Env):
         # Número total de joints articulados
         self.num_joints = 4
         if self.action_space=="pam":
-            self.control_mode = "pam"
+        #    self.control_mode = "pam"
             action_dims=1*self.num_joints
         else:
-            self.control_mode = "hybrid"
+        #    self.control_mode = "hybrid"
             action_dims=2*self.num_joints
 
         self.action_space=self._simplified_action_space(shape=action_dims)
@@ -770,19 +770,30 @@ class PAMIKBipedEnv(gym.Env):
             self.walking_controller = None
             self.imitation_weight = 0.0
         else:
+            if phase == 0:
+                self.use_walking_cycle = False
+                self.walking_controller = None
+                self.imitation_weight = 0.0
+                self.control_mode ="ik"
+                self.total_phase_timesteps = phase_timesteps
             if phase == 1:
                 self.use_walking_cycle = True
                 self.walking_controller = SimplifiedWalkingController(self, mode="trajectory")
                 self.imitation_weight = 1.0
+                self.control_mode ="ik"
+                self.sistema_recompensas.set_curriculum_phase(phase)
             elif phase == 2:
                 self.use_walking_cycle = True
                 self.walking_controller = SimplifiedWalkingController(self, mode="blend")
                 self.imitation_weight = 0.2
+                self.control_mode ="hybrid"
             else:
                 self.walking_controller = SimplifiedWalkingController(self, mode="pressure")
                 self.use_walking_cycle = False
                 self.walking_controller = None
                 self.imitation_weight = 0.0
+                self.control_mode ="pam"
+            self.sistema_recompensas.set_curriculum_phase(phase)  # << IMPORTANTE
             self.phase = phase
             self.total_phase_timesteps = phase_timesteps
 

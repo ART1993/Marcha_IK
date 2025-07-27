@@ -52,6 +52,29 @@ class ImprovedRewardSystem:
         """
             Sistema de recompensas balanceado que integra dinámica PAM
         """
+        #============FASE 0: Equilibrio Robot =================================
+        if getattr(self, "curriculum_phase", 1) == 0:
+            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+            lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            reward = 1.0  # base por sobrevivir
+
+            # Penalización por inclinación
+            reward -= 5.0 * (abs(euler[0]) + abs(euler[1]))
+            # Penalización por movimiento lateral/frontal
+            reward -= 0.2 * np.linalg.norm(lin_vel[:2])
+            # Penalización por caída
+            if pos[2] < 0.8:
+                reward -= 10.0
+            # Penalización por uso excesivo de presión PAM
+            if hasattr(self, "pam_states"):
+                reward -= 0.1 * np.sum((self.pam_states['pressures'] / self.max_pressure) ** 2)
+            # Limita el reward
+            return np.clip(reward, -20, 5), {
+                'survival': 1.0,
+                'tilt_penalty': -5.0 * (abs(euler[0]) + abs(euler[1])),
+                'movement_penalty': -0.2 * np.linalg.norm(lin_vel[:2])
+            }
         # Estados básicos del robot
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
