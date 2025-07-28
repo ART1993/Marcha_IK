@@ -12,7 +12,7 @@ import json
 #import pickle
 
 # Import your environments
-from Archivos_Apoyo.Logs import log_training_plan, error_load_model, \
+from Archivos_Apoyo.Generate_Prints import log_training_plan, error_load_model, \
                                 info_latest_checkpoint, print_info_env_pam
 from bided_pam_IK import PAMIKBipedEnv  # Assuming this is your PAM environment
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, phase_trainig_preparations

@@ -659,10 +659,10 @@ class PAMIKBipedEnv(gym.Env):
             'right_hip_joint': PAMMcKibben(L0=0.6, r0=0.02, alpha0=np.pi/4),
             'right_knee_joint': PAMMcKibben(L0=0.5, r0=0.015, alpha0=np.pi/4),
         }
-
+        self.min_pressure = 101325 # 1 atm: Suponemos que esa es la presión ambiente
         # Parámetros de control PAM
-        self.max_pressure = 500000  # 5 bar en Pa
-        self.min_pressure = 0
+        self.max_pressure = 500000+ self.min_pressure  # 5 bar en Pa
+        
 
         # Estado interno de los músculos PAM
         self.pam_states = {
