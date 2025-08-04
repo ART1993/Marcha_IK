@@ -16,6 +16,7 @@ from Archivos_Apoyo.Generate_Prints import log_training_plan, error_load_model, 
                                 info_latest_checkpoint, print_info_env_pam
 from bided_pam_IK import PAMIKBipedEnv  # Assuming this is your PAM environment
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, phase_trainig_preparations
+from Curriculum_generator.Curriculum_Manager import ExpertCurriculumManager 
 
 class UnifiedBipedTrainer:
     """
@@ -29,7 +30,8 @@ class UnifiedBipedTrainer:
                  learning_rate=5e-4,
                  use_wandb=False,
                  resume_from=None,
-                 action_space="hybrid" # "pam o hybrid"
+                 action_space="hybrid", # "pam o hybrid"
+                 enable_expert_curriculum=True
                  ):
         # Atributos de entrada
         self.env_type = env_type
@@ -39,11 +41,373 @@ class UnifiedBipedTrainer:
         self.learning_rate = learning_rate
         self.use_wandb = use_wandb
         self.resume_from = resume_from
+        self.enable_expert_curriculum = enable_expert_curriculum
+
+        # Inicializar gestor de currículo experto
+        if self.enable_expert_curriculum:
+            self.curriculum_manager = ExpertCurriculumManager(total_timesteps)
+            print("🎓 Expert curriculum enabled with {} phases".format(len(self.curriculum_manager.phases)))
+        else:
+            self.curriculum_manager = None
 
         # Genero la configuración de entrenamiento del modelo
         self.configuracion_modelo_entrenamiento
+
+        #  Métricas del currículo experto
+        self.expert_metrics = {
+            'imitation_losses': [],
+            'phase_rewards': [],
+            'expert_action_similarity': [],
+            'phase_success_rates': []
+        }
+
+    def _configure_environment_for_phase(self, env_wrapper, phase_info):
+        """
+        Configura el entorno para una fase específica del currículo.
+        Aquí es donde establecemos los parámetros específicos de cada fase.
+        """
         
-       
+        def configure_single_env(base_env, phase_info):
+            """Configura un entorno individual"""
+            if hasattr(base_env, 'set_training_phase'):
+                # Configurar fase en el entorno
+                base_env.set_training_phase(
+                    phase=phase_info['phase_id'],
+                    phase_timesteps=phase_info['timesteps']
+                )
+                
+                # Configurar peso de imitación
+                if hasattr(base_env, 'imitation_weight'):
+                    base_env.imitation_weight = phase_info['expert_weight']
+                
+                # Configurar modo de control
+                if hasattr(base_env, 'control_mode'):
+                    base_env.control_mode = phase_info['control_mode']
+                
+                # Configurar controlador de paso según la fase
+                if hasattr(base_env, 'walking_controller') and base_env.walking_controller:
+                    if phase_info['phase_id'] <= 2:  # Fases iniciales usan trayectorias
+                        base_env.walking_controller.mode = "trajectory"
+                    elif phase_info['phase_id'] == 3:  # Fase híbrida
+                        base_env.walking_controller.mode = "blend"
+                        base_env.walking_controller.blend_factor = 0.5
+                    else:  # Fases avanzadas usan presiones PAM
+                        base_env.walking_controller.mode = "pressure"
+                
+                # Configurar dificultad ambiental
+                self._set_environmental_difficulty(base_env, phase_info['difficulty_level'])
+                
+                print(f"   ✅ Environment configured for Phase {phase_info['phase_id']}: {phase_info['name']}")
+        
+        # Aplicar configuración a entornos vectorizados
+        if hasattr(env_wrapper, 'envs'):
+            for env in env_wrapper.envs:
+                base_env = env.env if hasattr(env, 'env') else env
+                configure_single_env(base_env, phase_info)
+        else:
+            configure_single_env(env_wrapper, phase_info)
+    
+    def _set_environmental_difficulty(self, env, difficulty_level):
+        """
+        Ajusta la dificultad del entorno según el nivel especificado.
+        """
+        if difficulty_level == 1:  # Básico
+            # Condiciones ideales: superficie plana, sin perturbaciones
+            if hasattr(env, 'sistema_recompensas'):
+                env.sistema_recompensas.target_forward_velocity = 0.6  # Velocidad baja
+                
+        elif difficulty_level == 2:  # Intermedio
+            # Pequeñas variaciones en superficie y velocidad objetivo
+            if hasattr(env, 'sistema_recompensas'):
+                env.sistema_recompensas.target_forward_velocity = 0.8
+                
+        elif difficulty_level == 3:  # Avanzado
+            # Velocidad normal con más exigencia de estabilidad
+            if hasattr(env, 'sistema_recompensas'):
+                env.sistema_recompensas.target_forward_velocity = 1.0
+                
+        elif difficulty_level == 4:  # Experto
+            # Alta velocidad y requisitos de eficiencia
+            if hasattr(env, 'sistema_recompensas'):
+                env.sistema_recompensas.target_forward_velocity = 1.2
+                
+        elif difficulty_level == 5:  # Maestría
+            # Máxima dificultad con desafíos adicionales
+            if hasattr(env, 'sistema_recompensas'):
+                env.sistema_recompensas.target_forward_velocity = 1.4
+
+    def _calculate_expert_action_similarity(self, env, rl_action, expert_action):
+        """
+        Calcula la similitud entre las acciones RL y las acciones expertas.
+        Esto nos ayuda a monitorear qué tan bien está aprendiendo el agente.
+        """
+        if expert_action is None or len(expert_action) == 0:
+            return 0.0
+            
+        # Normalizar acciones si tienen diferentes escalas
+        rl_normalized = np.array(rl_action) / (np.linalg.norm(rl_action) + 1e-8)
+        expert_normalized = np.array(expert_action) / (np.linalg.norm(expert_action) + 1e-8)
+        
+        # Calcular similitud coseno
+        similarity = np.dot(rl_normalized, expert_normalized)
+        return max(0.0, similarity)  # Clamp to [0, 1]
+    
+    def _compute_phase_specific_rewards(self, env, phase_info, base_reward):
+        """
+        Calcula recompensas específicas para cada fase del currículo.
+        """
+        phase_reward = base_reward
+        
+        if phase_info['phase_id'] <= 2:  # Fases de imitación
+            # Bonificar similitud con acciones expertas
+            if hasattr(env, 'walking_controller') and env.walking_controller:
+                expert_action = env.walking_controller.get_expert_action_pressures()
+                if expert_action is not None:
+                    # Obtener última acción RL del entorno
+                    rl_action = getattr(env, 'last_rl_action', None)
+                    if rl_action is not None:
+                        similarity = self._calculate_expert_action_similarity(
+                            env, rl_action, expert_action
+                        )
+                        imitation_bonus = similarity * 2.0  # Bonificación por imitación
+                        phase_reward += imitation_bonus
+                        
+                        # Registrar métrica
+                        self.expert_metrics['expert_action_similarity'].append(similarity)
+        
+        elif phase_info['phase_id'] >= 4:  # Fases de RL avanzado
+            # Bonificar eficiencia energética y suavidad de movimientos
+            if hasattr(env, 'pam_states'):
+                # Penalizar uso excesivo de presión
+                pressure_penalty = np.mean(env.pam_states['pressures']) * 0.001
+                phase_reward -= pressure_penalty
+                
+                # Bonificar movimientos suaves
+                if hasattr(env, 'previous_action'):
+                    action_smoothness = 1.0 / (1.0 + np.linalg.norm(
+                        np.array(env.last_rl_action) - np.array(env.previous_action)
+                    ))
+                    phase_reward += action_smoothness * 0.5
+        
+        return phase_reward
+
+    def seleccion_entrenamiento_fases(self, resume_timesteps, config, callbacks, model,
+                                      train_env, eval_env):
+        """
+        Método mejorado para selección y ejecución de fases de entrenamiento con currículo experto.
+        """
+        
+        if not self.enable_expert_curriculum or self.action_space == "pam":
+            # Entrenamiento tradicional sin currículo
+            return self._traditional_training(resume_timesteps, config, callbacks, 
+                                           model, train_env, eval_env)
+        
+        print("\n🎓 Starting Expert Curriculum Training")
+        print("=" * 60)
+        
+        current_timesteps = 0
+        completed_phases = []
+        
+        # Iterar a través de todas las fases del currículo
+        for phase_idx, phase in enumerate(self.curriculum_manager.phases):
+            
+            phase_info = self.curriculum_manager.get_phase_info(phase_idx)
+            phase_timesteps = phase_info['timesteps']
+            
+            # Verificar si esta fase ya fue completada en un entrenamiento previo
+            if current_timesteps + phase_timesteps <= resume_timesteps:
+                current_timesteps += phase_timesteps
+                completed_phases.append(phase_idx)
+                continue
+            
+            # Ajustar timesteps si estamos resumiendo desde medio de una fase
+            if current_timesteps < resume_timesteps:
+                remaining_in_phase = phase_timesteps - (resume_timesteps - current_timesteps)
+                phase_timesteps = remaining_in_phase
+                current_timesteps = resume_timesteps
+                
+            if phase_timesteps <= 0:
+                continue
+            
+            print(f"\n🚀 Phase {phase_idx}: {phase.name}")
+            print(f"   Description: {phase.description}")
+            print(f"   Duration: {phase_timesteps:,} timesteps")
+            print(f"   Expert Weight: {phase.expert_weight:.2f}")
+            print(f"   Control Mode: {phase.control_mode}")
+            print(f"   Difficulty: {phase.difficulty_level}/5")
+            
+            # Configurar entornos para esta fase
+            self._configure_environment_for_phase(train_env, phase_info)
+            self._configure_environment_for_phase(eval_env, phase_info)
+            
+            # Crear callbacks específicos para esta fase
+            phase_callbacks = self._create_phase_callbacks(phase_info, callbacks)
+            
+            # Ejecutar entrenamiento para esta fase
+            try:
+                model.learn(
+                    total_timesteps=phase_timesteps,
+                    callback=phase_callbacks,
+                    tb_log_name=f"{config['model_prefix']}_phase_{phase_idx}",
+                    reset_num_timesteps=(phase_idx == 0 and current_timesteps == 0)
+                )
+                
+                current_timesteps += phase_timesteps
+                completed_phases.append(phase_idx)
+                
+                # Guardar modelo de fase
+                phase_model_path = os.path.join(
+                    self.model_dir, 
+                    f"{config['model_prefix']}_phase_{phase_idx}"
+                )
+                model.save(phase_model_path)
+                print(f"✅ Phase {phase_idx} completed and saved: {phase_model_path}")
+                
+                # Avanzar el gestor de currículo
+                self.curriculum_manager.advance_phase()
+                
+                # Registrar métricas de la fase
+                self._record_phase_metrics(phase_info, model, train_env)
+                
+            except Exception as e:
+                print(f"❌ Error in Phase {phase_idx}: {e}")
+                raise e
+        
+        # Actualizar información de entrenamiento
+        self.training_info['completed_timesteps'] = current_timesteps
+        self.training_info['completed_phases'] = completed_phases
+        
+        print(f"\n🎉 Expert Curriculum Training Completed!")
+        print(f"   Total phases completed: {len(completed_phases)}")
+        print(f"   Total timesteps: {current_timesteps:,}")
+        
+        return model, config, train_env, eval_env
+    
+    def _create_phase_callbacks(self, phase_info, base_callbacks):
+        """
+        Crea callbacks específicos para cada fase del currículo.
+        """
+        class PhaseCallback:
+            def __init__(self, phase_info, trainer):
+                self.phase_info = phase_info
+                self.trainer = trainer
+                self.phase_rewards = []
+                
+            def on_step(self, locals_, globals_):
+                # Registrar recompensas específicas de la fase
+                if 'rewards' in locals_:
+                    self.phase_rewards.extend(locals_['rewards'])
+                    
+                # Ajustar dinámicamente el peso de imitación (opcional)
+                if self.phase_info['phase_id'] in [2, 4]:  # Fases de transición
+                    progress = locals_.get('num_timesteps', 0) / self.phase_info['timesteps']
+                    dynamic_weight = self.phase_info['expert_weight'] * (1 - progress * 0.3)
+                    
+                    # Aplicar a entornos si es posible
+                    # (esto requeriría implementación adicional en el entorno)
+                    
+                return True
+        
+        phase_callback = PhaseCallback(phase_info, self)
+        
+        # Combinar con callbacks base
+        if isinstance(base_callbacks, CallbackList):
+            base_callbacks.callbacks.append(phase_callback)
+            return base_callbacks
+        else:
+            return CallbackList([base_callbacks, phase_callback])
+    
+    def _record_phase_metrics(self, phase_info, model, env):
+        """
+        Registra métricas específicas de cada fase para análisis posterior.
+        """
+        metrics = {
+            'phase_id': phase_info['phase_id'],
+            'phase_name': phase_info['name'],
+            'expert_weight_used': phase_info['expert_weight'],
+            'control_mode': phase_info['control_mode'],
+            'difficulty_level': phase_info['difficulty_level'],
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Calcular métricas de rendimiento si están disponibles
+        if hasattr(env, 'get_episode_rewards'):
+            recent_rewards = env.get_episode_rewards()[-100:]  # Últimos 100 episodios
+            if recent_rewards:
+                metrics['mean_reward'] = np.mean(recent_rewards)
+                metrics['std_reward'] = np.std(recent_rewards)
+        
+        self.expert_metrics['phase_rewards'].append(metrics)
+        
+        # Guardar métricas en archivo
+        metrics_path = os.path.join(
+            self.model_dir, 
+            f"expert_curriculum_metrics_phase_{phase_info['phase_id']}.json"
+        )
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=2)
+    
+    def _traditional_training(self, resume_timesteps, config, callbacks, 
+                            model, train_env, eval_env):
+        """
+        Método de entrenamiento tradicional (sin currículo) como fallback.
+        """
+        print("🔄 Using traditional training approach (no expert curriculum)")
+        
+        remaining_timesteps = max(0, self.total_timesteps - resume_timesteps)
+        
+        if remaining_timesteps > 0:
+            model.learn(
+                total_timesteps=remaining_timesteps,
+                callback=callbacks,
+                tb_log_name=f"{config['model_prefix']}_traditional",
+                reset_num_timesteps=(resume_timesteps == 0)
+            )
+        
+        self.training_info['completed_timesteps'] = self.total_timesteps
+        
+        return model, config, train_env, eval_env
+    
+    def save_training_info(self):
+        """
+        Versión extendida que incluye información del currículo experto.
+        """
+        config = self.env_configs[self.env_type]
+        info_path = os.path.join(self.model_dir, f"{config['model_prefix']}_training_info.json")
+        
+        training_data = {
+            'environment': self.env_type,
+            'action_space': self.action_space,
+            'completed_timesteps': self.training_info['completed_timesteps'],
+            'total_timesteps_target': self.total_timesteps,
+            'last_checkpoint': self.training_info['last_checkpoint'],
+            'training_start': self.training_info['training_start_time'],
+            'total_training_time_hours': self.training_info['total_training_time'],
+            'n_envs': self.n_envs,
+            'learning_rate': self.learning_rate,
+            'expert_curriculum_enabled': self.enable_expert_curriculum
+        }
+        
+        # Añadir información del currículo si está habilitado
+        if self.enable_expert_curriculum and self.curriculum_manager:
+            training_data['curriculum_info'] = {
+                'total_phases': len(self.curriculum_manager.phases),
+                'completed_phases': self.training_info.get('completed_phases', []),
+                'phase_transitions': self.curriculum_manager.phase_transitions,
+                'expert_metrics_summary': {
+                    'total_similarity_measurements': len(self.expert_metrics['expert_action_similarity']),
+                    'mean_similarity': np.mean(self.expert_metrics['expert_action_similarity']) if self.expert_metrics['expert_action_similarity'] else 0.0
+                }
+            }
+        
+        with open(info_path, 'w') as f:
+            json.dump(training_data, f, indent=2)
+        
+        print(f"💾 Enhanced training info saved to: {info_path}")
+        
+# ================================================================================================================================================================== #
+# ===================================================Versión antigua de entrenamiento curriculo expert============================================================== #
+# ================================================================================================================================================================== #
         
     def create_training_env(self):
         """
@@ -472,27 +836,6 @@ class UnifiedBipedTrainer:
         latest_timesteps, latest_file = max(timesteps, key=lambda x: x[0])
         
         return latest_file, latest_timesteps
-    
-    def save_training_info(self):
-        """Save training state information."""
-        config = self.env_configs[self.env_type]
-        info_path = os.path.join(self.model_dir, f"{config['model_prefix']}_training_info.json")
-        
-        training_data = {
-            'environment': self.env_type,
-            'completed_timesteps': self.training_info['completed_timesteps'],
-            'total_timesteps_target': self.total_timesteps,
-            'last_checkpoint': self.training_info['last_checkpoint'],
-            'training_start': self.training_info['training_start_time'],
-            'total_training_time_hours': self.training_info['total_training_time'],
-            'n_envs': self.n_envs,
-            'learning_rate': self.learning_rate
-        }
-        
-        with open(info_path, 'w') as f:
-            json.dump(training_data, f, indent=2)
-        
-        print(f"💾 Training info saved to: {info_path}")
 
     def load_training_info(self):
         """Load previous training state information."""
@@ -558,13 +901,14 @@ class UnifiedBipedTrainer:
                 'clip_obs': 20.0,
                 'clip_reward': 15.0,
                 'net_arch': dict(pi=[256, 256, 128], vf=[256, 256, 128]),
-                'model_prefix': 'biped_pam'
+                'model_prefix': 'biped_pam_expert' if self.enable_expert_curriculum else 'biped_pam'
             }
         }
 
         # Información de entrenamiento (en caso de no continuar con uno previo)
         self.training_info = {
             'completed_timesteps': 0,
+            'completed_phases': [],  # Nueva: fases completadas
             'last_checkpoint': None,
             'training_start_time': None,
             'total_training_time': 0
