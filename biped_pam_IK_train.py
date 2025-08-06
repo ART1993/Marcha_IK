@@ -15,6 +15,7 @@ import json
 from Archivos_Apoyo.Generate_Prints import log_training_plan, error_load_model, \
                                 info_latest_checkpoint, print_info_env_pam
 from bided_pam_IK import PAMIKBipedEnv  # Assuming this is your PAM environment
+from Archivos_Mejorados.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, phase_trainig_preparations
 from Curriculum_generator.Curriculum_Manager import ExpertCurriculumManager 
 
@@ -31,7 +32,8 @@ class UnifiedBipedTrainer:
                  use_wandb=False,
                  resume_from=None,
                  action_space="hybrid", # "pam o hybrid"
-                 enable_expert_curriculum=True
+                 enable_expert_curriculum=True,
+                 seleccion="enhanced",
                  ):
         # Atributos de entrada
         self.env_type = env_type
@@ -42,6 +44,7 @@ class UnifiedBipedTrainer:
         self.use_wandb = use_wandb
         self.resume_from = resume_from
         self.enable_expert_curriculum = enable_expert_curriculum
+        self.seleccion=seleccion
 
         # Inicializar gestor de currículo experto
         if self.enable_expert_curriculum:
@@ -897,7 +900,7 @@ class UnifiedBipedTrainer:
         # Configuraciones especificas para el modelo de entrenamiento
         self.env_configs = {
             'pam': {
-                'env_class': PAMIKBipedEnv,
+                'env_class': Enhanced_PAMIKBipedEnv if self.seleccion == "enhanced" else PAMIKBipedEnv,
                 'clip_obs': 20.0,
                 'clip_reward': 15.0,
                 'net_arch': dict(pi=[256, 256, 128], vf=[256, 256, 128]),

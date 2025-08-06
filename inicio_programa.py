@@ -10,7 +10,27 @@ def train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, resum
         env_type='pam',
         total_timesteps=total_timesteps,
         n_envs=n_envs,
-        learning_rate=learning_rate,action_space=action_space
+        learning_rate=learning_rate,
+        action_space=action_space,
+        seleccion="simple"
+    )
+    
+    print("🚀 Starting PAM biped training...")
+    trainer.train(resume=resume)
+    return trainer
+
+def enhanced_train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, 
+                             resume=True, action_space="pam"):
+    """Inicio de Entrenamiento PAM + IK."""
+    _setup_multiprocessing()
+    
+    trainer = UnifiedBipedTrainer(
+        env_type='pam',
+        total_timesteps=total_timesteps,
+        n_envs=n_envs,
+        learning_rate=learning_rate,
+        action_space=action_space,
+        seleccion="enhanced"
     )
     
     print("🚀 Starting PAM biped training...")
@@ -42,6 +62,9 @@ def test_pam_biped(model_path=None, episodes=10, action_space="hybrid"):
         norm_path = None
     
     trainer.test_model(model_path, episodes=episodes, normalization_path=norm_path)
+
+
+
 
 def _setup_multiprocessing():
     # Prepara el multiprocesado para el caso de n_env>1

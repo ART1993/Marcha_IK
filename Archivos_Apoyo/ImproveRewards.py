@@ -10,14 +10,19 @@ class ImprovedRewardSystem:
     """
     
     def __init__(self, left_foot_id, 
-                 right_foot_id, num_joints, curriculum_phase=1):
+                 right_foot_id, num_joints,
+                 pam_states,
+                 curriculum_phase=1,
+                 num_pams=4):
 
         self.left_foot_id=left_foot_id
         self.right_foot_id=right_foot_id
         self.num_joints=num_joints
+        self.pam_states=pam_states
 
         self.parametros_adicionales
         self.curriculum_phase = curriculum_phase
+        self.num_pams=num_pams
 
     def set_curriculum_phase(self, phase: int):
         self.curriculum_phase = phase
@@ -227,13 +232,13 @@ class ImprovedRewardSystem:
 
     def _calculate_pam_efficiency_reward(self, action, pam_forces):
         """
-        Recompensa basada en la eficiencia de los músculos PAM
+            Recompensa basada en la eficiencia de los músculos PAM
+            usar 6 PAMs
         """
         if not hasattr(self, 'pam_states'):
             return 0.0
         
         pam_reward = 0.0
-        
         # 1. Eficiencia energética: penalizar presiones muy altas sin movimiento útil
         pressures = self.pam_states['pressures']
         forces = self.pam_states['forces']
@@ -247,28 +252,41 @@ class ImprovedRewardSystem:
             pam_reward += min(efficiency * 0.001, 2.0)  # Normalizar
             energy_penalty= 1e-7 * (total_pressure**2)
             pam_reward -=energy_penalty
-        
-        # 2. Coordinación muscular: premiar activación alternada
-        left_muscles = pressures[:2]  # hip, knee izquierdo
-        right_muscles = pressures[2:4]  # hip, knee derecho
-        
-        left_activation = np.mean(left_muscles)
-        right_activation = np.mean(right_muscles)
-        
-        # Premiar diferencia moderada (indicativo de marcha)
-        activation_diff = abs(left_activation - right_activation)
-        coordination_reward = max(0, 1.5 - abs(activation_diff - self.max_pressure * 0.3) * 0.000005)
-        pam_reward += coordination_reward
-        
-        # 3. Penalizar saturación (presiones máximas constantemente)
-        saturated_muscles = np.sum(pressures > self.max_pressure * 0.9)
-        if saturated_muscles > 3:  # Más de la mitad de músculos saturados
-            pam_reward -= 1.0
+
+        # 2. Coordinación antagónica (NUEVO para 6 PAMs)
+        if len(pressures) >= 6:
+            # Evaluar balance entre flexores y extensores de cadera
+            left_hip_balance = abs(pressures[0] - pressures[1])  # flexor vs extensor
+            right_hip_balance = abs(pressures[2] - pressures[3])
+            
+            # Recompensar activación balanceada (no extremos)
+            balance_reward = 2.0 - (left_hip_balance + right_hip_balance) * 0.1
+            pam_reward += max(0, balance_reward)
+            
+            # Coordinación entre piernas (alternancia)
+            left_leg_activation = np.mean([pressures[0], pressures[4]])  # hip_flex + knee
+            right_leg_activation = np.mean([pressures[2], pressures[5]])
+            
+            leg_coordination = abs(left_leg_activation - right_leg_activation)
+            coordination_reward = max(0, 1.0 - leg_coordination * 0.5)
+            pam_reward += coordination_reward
+        else:
+            # 2. Coordinación muscular: premiar activación alternada
+            left_muscles = pressures[:2]  # hip, knee izquierdo
+            right_muscles = pressures[2:4]  # hip, knee derecho
+            
+            left_activation = np.mean(left_muscles)
+            right_activation = np.mean(right_muscles)
+            
+            # Premiar diferencia moderada (indicativo de marcha)
+            activation_diff = abs(left_activation - right_activation)
+            coordination_reward = max(0, 1.5 - abs(activation_diff - self.max_pressure * 0.3) * 0.000005)
+            pam_reward += coordination_reward
         
         # 4. Suavidad en cambios de presión
         if hasattr(self, 'previous_action') and self.previous_action is not None:
             pressure_changes = np.abs(action - self.previous_action)
-            smoothness = max(0, 1.0 - np.mean(pressure_changes) * 2.0)
+            smoothness = max(0, 1.0 - np.mean(pressure_changes) * 1.5)
             pam_reward += smoothness
         self.previous_action = np.copy(action)
         

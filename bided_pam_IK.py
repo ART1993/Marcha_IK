@@ -38,11 +38,17 @@ class PAMIKBipedEnv(gym.Env):
         self.num_actors_per_leg=num_actors_per_leg
         self.num_articulaciones_pierna=num_articulaciones_pierna
 
+        # limites sistema
+        self.limites_sistema
+
+        # Variables_seguimiento
+
+        self.variables_seguimiento
+
         # conf simulacion
         self.configuracion_simulacion_1
 
-        # limites sistema
-        self.limites_sistema
+        
         
         base_obs_size = 28  # Expandido para incluir más información Paso de 34 a 26 ver si serían 28 (elimino 4 de PAM y de IK)
         self.observation_space = spaces.Box(
@@ -51,10 +57,6 @@ class PAMIKBipedEnv(gym.Env):
             shape=(base_obs_size,), 
             dtype=np.float32
         )
-
-        # Variables_seguimiento
-
-        self.variables_seguimiento
     
     def _setup_motors_for_force_control(self):
         """Configura motores para control de fuerza"""
@@ -635,7 +637,8 @@ class PAMIKBipedEnv(gym.Env):
         # Número total de joints articulados
         self.sistema_recompensas=ImprovedRewardSystem(self.left_foot_id, 
                                                     self.right_foot_id,
-                                                    self.num_joints)
+                                                    self.num_joints,
+                                                    self.pam_states)
         # Configuración de IK
         self.ik_solver = p.IK_DLS  # Damped Least Squares (más estable)
         self.max_ik_iterations = 100
@@ -858,4 +861,8 @@ def _safe_blend_actions(base_action, action, modulation_factor=1.0):
 
     # Fallback, por si acaso
     raise ValueError(f"No compatible shapes for blending: {base_action.shape}, {action.shape}")
+
+
+
+
 
