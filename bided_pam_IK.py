@@ -34,19 +34,19 @@ class PAMIKBipedEnv(gym.Env):
         self.render_mode = render_mode
         self.phase=0
 
-        self.generar_simplified_space
+        self.generar_simplified_space()
         self.num_actors_per_leg=num_actors_per_leg
         self.num_articulaciones_pierna=num_articulaciones_pierna
 
         # limites sistema
-        self.limites_sistema
+        self.limites_sistema()
 
         # Variables_seguimiento
 
-        self.variables_seguimiento
+        self.variables_seguimiento()
 
         # conf simulacion
-        self.configuracion_simulacion_1
+        self.configuracion_simulacion_1()
 
         
         
@@ -592,7 +592,6 @@ class PAMIKBipedEnv(gym.Env):
 ############################################################## Generacion Variables constantes ###############################################################
 ##############################################################################################################################################################
 
-    @property
     def generar_simplified_space(self):
         """Genera el espacio de acción simplificado y las propiedades del entorno."""
         self.urdf_path = "2_legged_human_like_robot.urdf"
@@ -613,7 +612,6 @@ class PAMIKBipedEnv(gym.Env):
 
         self.action_space=self._simplified_action_space(shape=action_dims)
 
-    @property
     def configuracion_simulacion_1(self):
         """Configuración de simulación inicial"""
         if self.render_mode == 'human':
@@ -652,7 +650,6 @@ class PAMIKBipedEnv(gym.Env):
             'z_range': (-0.3, 1.0)     # Altura del suelo
         }
 
-    @property
     def limites_sistema(self):
         """Define los límites del sistema y las propiedades de los músculos PAM."""
         # Configuración PAM
@@ -691,7 +688,6 @@ class PAMIKBipedEnv(gym.Env):
         self.joint_force_array = [150, 120, 150, 120]
         self.imitation_weight = 1.0
 
-    @property
     def variables_seguimiento(self):
         # Variables para seguimiento de rendimiento
         self.step_count = 0
