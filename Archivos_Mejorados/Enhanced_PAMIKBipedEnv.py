@@ -46,22 +46,15 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # Llamar al constructor padre pero sobrescribir configuración PAM
         super(Enhanced_PAMIKBipedEnv, self).__init__()
 
-        self.action_space=action_space
+        self.action_space = action_space
         self.render_mode = render_mode
         self.phase=0
         self.num_actors_per_leg=num_actors_per_leg
         self.num_articulaciones_pierna=num_articulaciones_pierna
-
+        # Conf inicial
         self.generar_simplified_space()
-
-        # limites sistema
         self.limites_sistema()
-
-        # Variables_seguimiento
-
         self.variables_seguimiento()
-
-        # conf simulacion
         self.configuracion_simulacion_1()
         
         # Redefinir para 6 actuadores activos
@@ -159,6 +152,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             shape=(total_obs_size,),
             dtype=np.float32
         )
+
     # Parece sustituir al antiguo _calculate_pam_forces
     def _calculate_antagonistic_forces(self, pam_pressures, joint_states):
         """
@@ -342,9 +336,17 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
     def step(self, action):
         """Step sobrescrito para usar el control mejorado"""
         self.step_count += 1
+
+        # Combinar acción del ciclo con RL si está habilitado
+        if self.walking_controller and self.use_walking_cycle:
+            base_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
+            modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
+            final_action = self._safe_blend_actions(base_action, action, modulation_factor)
+        else:
+            final_action = action
         
         # Aplicar control mejorado con 6 PAMs
-        joint_torques = self._apply_enhanced_control(action)
+        joint_torques = self._apply_enhanced_control(final_action)
         
         # Simular
         p.stepSimulation()
@@ -357,6 +359,13 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             action=action, 
             pam_forces=joint_torques  # Pasar los torques netos
         )
+
+        # Reward shaping por imitación si está habilitado
+        if self.imitation_weight > 0 and self.walking_controller:
+            expert_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
+            if expert_action is not None:
+                imitation_penalty = np.linalg.norm(final_action - expert_action)
+                reward -= self.imitation_weight * imitation_penalty
         
         # ZMP y otras métricas (código existente)
         if self.zmp_calculator is not None:
@@ -369,6 +378,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             reward += zmp_reward
         
         self.total_reward += reward
+
+        # Actualizar estado
+        current_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
+        self.previous_position = current_pos
         
         # Info de estado
         info = {
@@ -379,6 +392,23 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             'pam_pressures': self.pam_states['pressures'].tolist(),
             'joint_torques': joint_torques
         }
+
+        # Añadir información ZMP si está disponible
+        if self.zmp_calculator and self.zmp_history:
+            latest_zmp = self.zmp_history[-1]
+            info.update({
+                'zmp_stable': latest_zmp['stable'],
+                'zmp_margin': latest_zmp['margin'],
+                'zmp_reward': zmp_reward,
+                'zmp_position': latest_zmp['zmp'].tolist()
+            })
+
+        # Recompensa adicional basada en estabilidad del robot
+        stability = self.robot_data.get_stability_metrics
+        com_height = stability['com_height']
+        stable = stability['is_stable']
+        reward += 1.0 if stable else -5.0
+        reward += max(0, com_height - 0.4)
         
         done = self._is_done()
         
@@ -389,7 +419,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
 ##############################################################################################################################################################
 
     def generar_simplified_space(self):
-        """Genera el espacio de acción simplificado y las propiedades del entorno."""
+        """
+            Genera el espacio de acción simplificado 
+            y las propiedades del entorno.
+        """
         self.urdf_path = "2_legged_human_like_robot.urdf"
         self.time_step = 1.0 / 1500.0
 
@@ -398,22 +431,28 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.last_ik_error = 0.0
         self.last_hybrid_weight = 0.5
         # Número total de joints articulados que usan PAMS
+        # Control mode siempre PAM para enhanced version
+        self.control_mode = "pam"
         self.num_joints = 4
 
     def configuracion_simulacion_1(self):
-        """Configuración de simulación inicial"""
+        """MODIFICADO: IDs de articulaciones corregidos"""
         if self.render_mode == 'human':
             self.physics_client = p.connect(p.GUI)
         else:
             import threading
             self._thread_id = threading.get_ident()
             self.physics_client = p.connect(p.DIRECT)
+        # IDs corregidos para el robot bípedo
         self.left_hip_id = 0
         self.left_knee_id = 1
-        self.left_foot_id = 2   # ID Pie izquierdo
+        self.left_foot_id = 2   # ID Pie izquierdo End effector pie izquierdo
+        self.left_ankle_id=self.left_foot_id
+
         self.right_hip_id = 3
-        self.right_knee_id = 3
-        self.right_foot_id = 5  # ID pie derecho
+        self.right_knee_id = 4
+        self.right_foot_id = 5  # ID pie derecho End effector pie derecho
+        self.right_ankle_id=self.right_foot_id
         
         # Variables de tracking mejoradas
         self.velocity_history = deque(maxlen=10)
@@ -429,12 +468,8 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.sistema_recompensas=ImprovedRewardSystem(self.left_foot_id, 
                                                     self.right_foot_id,
                                                     self.num_joints,
-                                                    self.pam_states)
-        # Configuración de IK
-        self.ik_solver = p.IK_DLS  # Damped Least Squares (más estable)
-        self.max_ik_iterations = 100
-        self.ik_residual_threshold = 1e-3
-        self.ik_success_rate = deque(maxlen=100)
+                                                    None, # Se inicia después
+                                                    num_pams=6)
 
         # Límites más amplios
         self.foot_workspace = {
@@ -507,16 +542,50 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                     force=0  # Desactivar motores por defecto
                 )
 
+    def _apply_simplified_control(self, action):
+        """Control PAM simple - MÉTODO FALTANTE (adaptado para 6 PAMs)"""
+        action = np.asarray(action, dtype=np.float32)
+        
+        # Convertir acciones normalizadas a presiones PAM
+        pam_pressures = (action + 1.0) / 2.0 * self.max_pressure
+        
+        # Obtener estados articulares (solo articulaciones activas)
+        joint_states_pam = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
+        
+        # Calcular y aplicar fuerzas PAM
+        pam_forces = self._calculate_antagonistic_forces(pam_pressures, joint_states_pam)
+        joint_torques = self._calculate_joint_torques_from_pam_forces(pam_forces)
+        
+        # Aplicar torques
+        for i, torque in enumerate(joint_torques):
+            joint_idx = [0, 1, 3, 4][i]  # Mapear a índices reales
+            p.setJointMotorControl2(
+                self.robot_id,
+                joint_idx,
+                p.TORQUE_CONTROL,
+                force=torque
+            )
+        
+        # Aplicar elementos pasivos
+        self._apply_passive_spring_torques()
+        
+        return joint_torques
+
     def _validate_joint_limits(self, joint_positions):
         """Verifica que las posiciones articulares estén dentro de límites."""
-        joint_names = list(self.joint_limits.keys())
+        active_joints = [0, 1, 3, 4]
+        #antes joint positions de todos: joint_positions[0, 1, 3, 4]
+        joint_names = ['left_hip_joint', 'left_knee_joint', 'right_hip_joint', 'right_knee_joint']
         
-        for i, pos in enumerate(joint_positions[0, 1, 3, 4]):  # Solo caderas y rodillas
-            if i < len(joint_names):
+        for i, joint_id in enumerate(active_joints):  # Solo caderas y rodillas
+            if i < len(joint_positions) and i<len(joint_id):
                 joint_name = joint_names[i]
+                pos = joint_positions[i]
                 low, high = self.joint_limits[joint_name]
                 if pos < low or pos > high:
                     return False
+                
+        return True
                 
 
     def _is_done(self):
@@ -712,6 +781,55 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             orig_mass = p.getDynamicsInfo(self.robot_id, link_id)[0]
             rand_mass = orig_mass * np.random.uniform(0.8, 1.1)
             p.changeDynamics(self.robot_id, link_id, mass=rand_mass)
+
+    def _stable_observation(self):
+        """Observación base estable - MÉTODO FALTANTE"""
+        obs = []
+        
+        try:
+            # Estado del torso (8 elementos)
+            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+            lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            
+            # Sanitizar valores
+            pos = [x if not (math.isnan(x) or math.isinf(x)) else 0.0 for x in pos]
+            euler = [x if not (math.isnan(x) or math.isinf(x)) else 0.0 for x in euler]
+            lin_vel = [x if not (math.isnan(x) or math.isinf(x)) else 0.0 for x in lin_vel]
+            ang_vel = [x if not (math.isnan(x) or math.isinf(x)) else 0.0 for x in ang_vel]
+            
+            obs.extend([pos[0], pos[2], euler[0], euler[1], 
+                       lin_vel[0], lin_vel[1], ang_vel[0], ang_vel[1]])
+            
+            # Estados articulares (12 elementos - 6 articulaciones)
+            joint_states = p.getJointStates(self.robot_id, range(6))
+            for state in joint_states:
+                pos_val = state[0] if not (math.isnan(state[0]) or math.isinf(state[0])) else 0.0
+                vel_val = state[1] if not (math.isnan(state[1]) or math.isinf(state[1])) else 0.0
+                obs.extend([pos_val, vel_val])
+            
+            # Contactos y tiempo (4 elementos)
+            left_contact = len(p.getContactPoints(self.robot_id, 0, self.left_foot_id)) > 0
+            right_contact = len(p.getContactPoints(self.robot_id, 0, self.right_foot_id)) > 0
+            
+            normalized_time = (self.step_count % 200) / 200.0
+            obs.extend([float(left_contact), float(right_contact), 
+                       normalized_time, float(self.step_count > 0)])
+            
+            # Estados PAM básicos (4 elementos - compatibilidad)
+            if hasattr(self, 'pam_states'):
+                # Usar solo los primeros 4 para compatibilidad con observación base
+                normalized_pressures = self.pam_states['pressures'][:4] / self.max_pressure
+                obs.extend(normalized_pressures.tolist())
+            else:
+                obs.extend([0.0] * 4)
+            
+        except Exception as e:
+            print(f"Error en observación: {e}")
+            obs = [0.0] * 28
+        
+        return np.array(obs, dtype=np.float32)
+    
 
     def setup_physics_properties(self):
         """Configurar propiedades físicas de fricción para mayor estabilidad"""
