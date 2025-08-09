@@ -154,22 +154,59 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             dtype=np.float32
         )
 
+    def relacionar_musculo_con_joint(self, muscle_name, joint_data):
+        # ===== PASO 1: DETERMINAR QUÉ ARTICULACIÓN AFECTA ESTE MÚSCULO =====
+            
+        if muscle_name in ['left_hip_flexor', 'left_hip_extensor']:
+            joint_id = 0  # left_hip_joint
+            joint_state = joint_data[0]
+        elif muscle_name in ['right_hip_flexor', 'right_hip_extensor']:
+            joint_id = 3  # right_hip_joint (en PyBullet)
+            joint_state = joint_data[3]
+        elif muscle_name == 'left_knee_flexor':
+            joint_id = 1  # left_knee_joint
+            joint_state = joint_data[1]
+        elif muscle_name == 'right_knee_flexor':
+            joint_id = 4  # right_knee_joint (en PyBullet)
+            joint_state = joint_data[4]
+        else:
+            raise ValueError(f"Unknown muscle name: {muscle_name}")
+        #    print(f" Warning: Unknown muscle {muscle_name}")
+        #    forces.append(0.0)
+        #    continue
+        return joint_id, joint_state
+        
+
     # Parece sustituir al antiguo _calculate_pam_forces
     def _calculate_antagonistic_forces(self, pam_pressures, joint_states):
         """
         Calcula fuerzas considerando pares antagónicos en caderas
         """
+
+        # Verificar que tenemos exactamente 6 presiones PAM
+        if len(pam_pressures) != 6:
+            print(f"⚠️ Warning: Expected 6 PAM pressures, got {len(pam_pressures)}")
+            return [0.0] * 6
+        
+        joint_data = {
+            0: joint_states[0],  # left_hip_joint
+            1: joint_states[1],  # left_knee_joint  
+            3: joint_states[2],  # right_hip_joint
+            4: joint_states[3],  # right_knee_joint
+        }
         forces = []
         muscle_names = list(self.pam_muscles.keys())
         
         # Procesar por pares antagónicos y músculos individuales
-        for i, (pressure, joint_state) in enumerate(zip(pam_pressures, joint_states)):
+        for i, pressure in enumerate(pam_pressures):
             muscle_name = muscle_names[i]
             pam = self.pam_muscles[muscle_name]
+
+            joint_id, joint_state=self.relacionar_musculo_con_joint(muscle_name, joint_data)
             
             # Obtener información de la articulación
-            joint_pos = joint_state[0]
-            
+            joint_pos = joint_state[0] # Posición actual de la articulación
+            #print(f"{muscle_name=:}")
             # Calcular ratio de contracción según el tipo de músculo
             if 'hip' in muscle_name:
                 # Para caderas: calcular según si es flexor o extensor
@@ -182,7 +219,8 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                     
             elif 'knee' in muscle_name:
                 # Para rodillas: solo flexor, se activa con flexión
-                joint_range = self.joint_limits[f"{'left' if 'left' in muscle_name else 'right'}_knee_joint"]
+                side = 'left' if 'left' in muscle_name else 'right'
+                joint_range = self.joint_limits[f"{side}_knee_joint"]
                 normalized_pos = (joint_pos - joint_range[0]) / (joint_range[1] - joint_range[0])
             
             contraction_ratio = np.clip(normalized_pos, 0, 0.8)
@@ -200,7 +238,15 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             self.pam_states['pressures'][i] = pressure
             self.pam_states['contractions'][i] = contraction_ratio
             self.pam_states['forces'][i] = pam_force
-        
+
+            # Debug opcional: imprimir información cada ciertos pasos
+            if hasattr(self, 'step_count') and self.step_count % 1000 == 0 and i == 0:
+                print(f"🔧 PAM Debug - {muscle_name}: pressure={pressure:.0f}Pa, "
+                      f"contraction={contraction_ratio:.2f}, force={pam_force:.1f}N")
+        #print(f"   ✅ Calculated PAM forces: {forces}")
+        if len(forces) != 6:
+            print(f"❌ Error: Generated {len(forces)} forces instead of 6!")
+            return [0.0] * 6
         return forces
     
     def _calculate_joint_torques_from_pam_forces(self, pam_forces):
@@ -929,7 +975,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                                 if not entry['stable'])
             
             # Si 8 de los últimos 10 steps son inestables
-            print(recent_unstable)
+            print("recent_unstable",recent_unstable)
             if recent_unstable >= 8:
                 print("nivel inestabilidad",recent_unstable)
                 return True

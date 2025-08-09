@@ -184,7 +184,7 @@ class ZMPCalculator:
         try:
             zmp_point = self.calculate_zmp()
             is_stable = self.is_stable(zmp_point)
-            print(is_stable)
+            print("Es estable",is_stable)
             margin_distance = self.stability_margin_distance(zmp_point)
             
             # Guardar en historial

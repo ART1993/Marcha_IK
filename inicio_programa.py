@@ -82,7 +82,36 @@ def _setup_multiprocessing():
 # =================================================Testeo de la calidad de PAMBipedENV================================================================= #
 # ===================================================================================================================================================== #
 
-if __name__ == "__main__":
+def test_enhanced_6pam_system():
+    """Script de prueba para verificar el sistema de 6 PAMs"""
+    
+    print("🔧 Testing Enhanced PAM System (6 actuators)")
+    
+    env = Enhanced_PAMIKBipedEnv(render_mode='human', action_space="pam")
+    
+    obs, info = env.reset()
+    print(f"✅ Environment created successfully")
+    print(f"   - Action space: {env.action_space.shape}")
+    print(f"   - Observation space: {env.observation_space.shape}")
+    print(f"   - Active PAMs: {env.num_active_pams}")
+    
+    for step in range(100):
+        action = env.action_space.sample()
+        obs, reward, done, truncated, info = env.step(action)
+        
+        if step % 20 == 0:
+            print(f"   Step {step}: Reward = {reward:.2f}")
+            if 'pam_pressures' in info:
+                print(f"      PAM pressures = {info['pam_pressures']}")
+        
+        if done:
+            print(f"   Episode ended at step {step}")
+            obs, info = env.reset()
+    
+    env.close()
+    print("🎉 Test completed successfully!")
+
+def test_complete_integration_inicio():
     # Ejecutar test de integración si se ejecuta directamente
     success = test_complete_integration()
     
@@ -193,34 +222,7 @@ if __name__ == "__main__":
             )
 
 
-    def test_enhanced_6pam_system():
-        """Script de prueba para verificar el sistema de 6 PAMs"""
-        
-        print("🔧 Testing Enhanced PAM System (6 actuators)")
-        
-        env = Enhanced_PAMIKBipedEnv(render_mode='human', action_space="pam")
-        
-        obs, info = env.reset()
-        print(f"✅ Environment created successfully")
-        print(f"   - Action space: {env.action_space.shape}")
-        print(f"   - Observation space: {env.observation_space.shape}")
-        print(f"   - Active PAMs: {env.num_active_pams}")
-        
-        for step in range(100):
-            action = env.action_space.sample()
-            obs, reward, done, truncated, info = env.step(action)
-            
-            if step % 20 == 0:
-                print(f"   Step {step}: Reward = {reward:.2f}")
-                if 'pam_pressures' in info:
-                    print(f"      PAM pressures = {info['pam_pressures']}")
-            
-            if done:
-                print(f"   Episode ended at step {step}")
-                obs, info = env.reset()
-        
-        env.close()
-        print("🎉 Test completed successfully!")
+
 
 
 
