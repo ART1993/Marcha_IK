@@ -917,7 +917,7 @@ def test_enhanced_reward_system():
     print("🧪 Testing Enhanced Reward System for 6 PAMs...")
     
     # Crear sistema de prueba
-    reward_system = Enhanced_ImprovedRewardSystem(
+    reward_system = Enhanced_ImproveRewardSystem(
         left_foot_id=2,
         right_foot_id=5,
         num_joints=4,
