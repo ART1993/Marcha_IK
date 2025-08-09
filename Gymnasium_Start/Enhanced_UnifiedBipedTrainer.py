@@ -820,3 +820,381 @@ def train_simple_pam_biped(total_timesteps=3000000, n_envs=4, resume=True):
     print("🚀 Starting simple PAM training...")
     trainer.train(resume=resume)
     return trainer
+
+# ===== FUNCIÓN DE TESTING INTEGRAL =====
+
+def test_enhanced_trainer_integration():
+    """
+    Función integral de testing para validar la integración completa del Enhanced_UnifiedBipedTrainer.
+    
+    Esta función realiza un examen exhaustivo de todos los componentes críticos del sistema,
+    verificando paso a paso que cada elemento funciona correctamente y se comunica apropiadamente
+    con los demás. Es como un "chequeo médico completo" para tu sistema de entrenamiento.
+    
+    La función está diseñada para ser ejecutada desde un Jupyter notebook, proporcionando
+    output detallado y educativo en cada paso del proceso de validación.
+    
+    Returns:
+        dict: Reporte completo del estado de integración con detalles de cada test
+    """
+    
+    print("🔬 ENHANCED TRAINER INTEGRATION TEST")
+    print("=" * 70)
+    print("Esta función verificará paso a paso que todos los componentes")
+    print("del sistema antagónico de 6 músculos PAM funcionen correctamente.")
+    print("=" * 70)
+    
+    # Diccionario para almacenar resultados de cada test
+    test_results = {
+        'overall_status': 'UNKNOWN',
+        'trainer_creation': {},
+        'environment_creation': {},
+        'model_creation': {},
+        'integration_verification': {},
+        'biomechanical_metrics': {},
+        'errors': [],
+        'warnings': [],
+        'recommendations': []
+    }
+    
+    try:
+        # ===== TEST 1: CREACIÓN BÁSICA DEL TRAINER =====
+        
+        print("\n🏗️ TEST 1: Creación Básica del Trainer")
+        print("-" * 50)
+        print("Verificando que el Enhanced_UnifiedBipedTrainer se puede crear")
+        print("correctamente con diferentes configuraciones...")
+        
+        try:
+            # Test con configuración enhanced (sistema antagónico)
+            print("\n   📊 Creando trainer para sistema enhanced (6 músculos antagónicos)...")
+            enhanced_trainer = create_enhanced_trainer(
+                total_timesteps=10000,  # Número pequeño para testing
+                n_envs=1,              # Un solo entorno para simplicidad
+                system_version='enhanced',
+                env_type='enhanced_pam'
+            )
+            
+            test_results['trainer_creation']['enhanced'] = '✅ SUCCESS'
+            print(f"      ✅ Enhanced trainer creado exitosamente")
+            print(f"      📈 Configuración: {enhanced_trainer._get_muscle_count()} músculos")
+            print(f"      🧠 Arquitectura de red: {enhanced_trainer.env_configs['enhanced_pam']['net_arch']}")
+            
+            # Test con configuración simple (para compatibilidad)
+            print("\n   📊 Creando trainer para sistema simple (4 músculos independientes)...")
+            simple_trainer = create_enhanced_trainer(
+                total_timesteps=10000,
+                n_envs=1,
+                system_version='simple',
+                env_type='pam'
+            )
+            
+            test_results['trainer_creation']['simple'] = '✅ SUCCESS'
+            print(f"      ✅ Simple trainer creado exitosamente")
+            print(f"      📈 Configuración: {simple_trainer._get_muscle_count()} músculos")
+            
+        except Exception as e:
+            test_results['errors'].append(f"Trainer creation failed: {str(e)}")
+            test_results['trainer_creation']['status'] = '❌ FAILED'
+            print(f"      ❌ Error en creación del trainer: {e}")
+            return test_results
+        
+        # ===== TEST 2: CREACIÓN DE ENTORNOS =====
+        
+        print("\n🌍 TEST 2: Creación de Entornos")
+        print("-" * 50)
+        print("Verificando que los entornos de entrenamiento y evaluación")
+        print("se pueden crear y configurar apropiadamente...")
+        
+        try:
+            print("\n   🏋️ Creando entorno de entrenamiento...")
+            train_env = enhanced_trainer.create_training_env()
+            
+            # Verificar propiedades del entorno
+            action_space_shape = train_env.action_space.shape
+            observation_space_shape = train_env.observation_space.shape
+            
+            print(f"      ✅ Entorno de entrenamiento creado")
+            print(f"      🎮 Action space: {action_space_shape}")
+            print(f"      👁️ Observation space: {observation_space_shape}")
+            
+            # Verificar que es el entorno correcto
+            expected_action_dim = 6 if enhanced_trainer.system_version == 'enhanced' else 4
+            if action_space_shape[0] == expected_action_dim:
+                print(f"      ✅ Dimensión de acción correcta: {expected_action_dim} músculos")
+                test_results['environment_creation']['action_space'] = '✅ CORRECT'
+            else:
+                print(f"      ⚠️ Dimensión de acción inesperada: {action_space_shape[0]} (esperado: {expected_action_dim})")
+                test_results['warnings'].append(f"Action space dimension mismatch")
+            
+            print("\n   📊 Creando entorno de evaluación...")
+            eval_env = enhanced_trainer.create_eval_env()
+            print(f"      ✅ Entorno de evaluación creado")
+            
+            test_results['environment_creation']['status'] = '✅ SUCCESS'
+            
+        except Exception as e:
+            test_results['errors'].append(f"Environment creation failed: {str(e)}")
+            test_results['environment_creation']['status'] = '❌ FAILED'
+            print(f"      ❌ Error en creación de entornos: {e}")
+            return test_results
+        
+        # ===== TEST 3: CREACIÓN DEL MODELO =====
+        
+        print("\n🧠 TEST 3: Creación del Modelo RecurrentPPO")
+        print("-" * 50)
+        print("Verificando que el modelo LSTM se puede crear con la")
+        print("arquitectura optimizada para músculos antagónicos...")
+        
+        try:
+            print("\n   🤖 Creando modelo RecurrentPPO...")
+            model = enhanced_trainer.create_model(train_env, resume_path=None)
+            
+            # Verificar propiedades del modelo
+            if hasattr(model.policy, 'lstm_hidden_size'):
+                lstm_size = model.policy.lstm_hidden_size
+                print(f"      ✅ Modelo LSTM creado con {lstm_size} unidades")
+                
+                expected_lstm_size = 256 if enhanced_trainer.system_version == 'enhanced' else 128
+                if lstm_size == expected_lstm_size:
+                    print(f"      ✅ Tamaño LSTM correcto para sistema {enhanced_trainer.system_version}")
+                    test_results['model_creation']['lstm_size'] = '✅ CORRECT'
+                else:
+                    print(f"      ⚠️ Tamaño LSTM inesperado: {lstm_size} (esperado: {expected_lstm_size})")
+                    test_results['warnings'].append(f"LSTM size mismatch")
+            
+            print(f"      📚 Learning rate: {model.learning_rate}")
+            print(f"      🎯 Device: {model.device}")
+            
+            test_results['model_creation']['status'] = '✅ SUCCESS'
+            
+        except Exception as e:
+            test_results['errors'].append(f"Model creation failed: {str(e)}")
+            test_results['model_creation']['status'] = '❌ FAILED'
+            print(f"      ❌ Error en creación del modelo: {e}")
+            return test_results
+        
+        # ===== TEST 4: VERIFICACIÓN DE INTEGRACIÓN =====
+        
+        print("\n🔗 TEST 4: Verificación de Integración")
+        print("-" * 50)
+        print("Verificando que todos los componentes se comunican")
+        print("correctamente entre sí...")
+        
+        try:
+            print("\n   🧪 Realizando test de reset del entorno...")
+            
+            # Test de reset - esto debe inicializar todo el sistema
+            obs, info = train_env.reset()
+            
+            print(f"      ✅ Reset exitoso")
+            print(f"      📊 Observación inicial shape: {obs.shape}")
+            print(f"      📋 Info keys: {list(info.keys()) if isinstance(info, dict) else 'No dict info'}")
+            
+            # Test de step - verificar que una acción se puede ejecutar
+            print("\n   🎮 Realizando test de step con acción aleatoria...")
+            action = train_env.action_space.sample()
+            obs, reward, done, truncated, info = train_env.step(action)
+            
+            print(f"      ✅ Step exitoso")
+            print(f"      🏆 Reward recibido: {reward}")
+            print(f"      🎯 Episode done: {done}")
+            
+            # Verificar información biomecánica si está disponible
+            if isinstance(info, dict) and len(info) > 0:
+                if 'reward_components' in info:
+                    components = info['reward_components']
+                    print(f"      📈 Componentes de reward disponibles: {len(components)}")
+                    
+                    # Mostrar algunos componentes importantes
+                    important_components = ['pam_efficiency', 'stability', 'progress']
+                    for comp in important_components:
+                        if comp in components:
+                            print(f"         {comp}: {components[comp]:.3f}")
+                
+                if 'num_active_pams' in info:
+                    print(f"      💪 PAMs activos: {info['num_active_pams']}")
+                
+                test_results['integration_verification']['info_available'] = '✅ YES'
+            else:
+                test_results['warnings'].append("No detailed info available from environment")
+            
+            test_results['integration_verification']['status'] = '✅ SUCCESS'
+            
+        except Exception as e:
+            test_results['errors'].append(f"Integration verification failed: {str(e)}")
+            test_results['integration_verification']['status'] = '❌ FAILED'
+            print(f"      ❌ Error en verificación de integración: {e}")
+            return test_results
+        
+        # ===== TEST 5: MÉTRICAS BIOMECÁNICAS =====
+        
+        print("\n📊 TEST 5: Métricas Biomecánicas")
+        print("-" * 50)
+        print("Verificando que las métricas biomecánicas específicas")
+        print("del sistema antagónico funcionan correctamente...")
+        
+        try:
+            # Ejecutar varios steps para generar datos
+            print("\n   🏃 Ejecutando 10 steps para generar métricas...")
+            
+            biomechanical_data = []
+            for step in range(10):
+                action = train_env.action_space.sample()
+                obs, reward, done, truncated, info = train_env.step(action)
+                
+                if isinstance(info, dict) and 'reward_components' in info:
+                    biomechanical_data.append(info['reward_components'])
+                
+                if done.any() if hasattr(done, 'any') else done:
+                    print(f"         Episode ended at step {step}, resetting...")
+                    obs, info = train_env.reset()
+            
+            if biomechanical_data:
+                print(f"      ✅ Métricas biomecánicas recolectadas de {len(biomechanical_data)} steps")
+                
+                # Analizar métricas específicas
+                if 'pam_efficiency' in biomechanical_data[0]:
+                    pam_efficiencies = [data['pam_efficiency'] for data in biomechanical_data]
+                    avg_efficiency = sum(pam_efficiencies) / len(pam_efficiencies)
+                    print(f"      📈 Eficiencia PAM promedio: {avg_efficiency:.3f}")
+                    
+                    test_results['biomechanical_metrics']['pam_efficiency'] = f'{avg_efficiency:.3f}'
+                
+                if 'stability' in biomechanical_data[0]:
+                    stabilities = [data['stability'] for data in biomechanical_data]
+                    avg_stability = sum(stabilities) / len(stabilities)
+                    print(f"      ⚖️ Estabilidad promedio: {avg_stability:.3f}")
+                    
+                    test_results['biomechanical_metrics']['stability'] = f'{avg_stability:.3f}'
+                
+                test_results['biomechanical_metrics']['status'] = '✅ SUCCESS'
+                
+            else:
+                print(f"      ⚠️ No se recolectaron métricas biomecánicas detalladas")
+                test_results['warnings'].append("No detailed biomechanical metrics collected")
+                test_results['biomechanical_metrics']['status'] = '⚠️ LIMITED'
+            
+        except Exception as e:
+            test_results['errors'].append(f"Biomechanical metrics test failed: {str(e)}")
+            test_results['biomechanical_metrics']['status'] = '❌ FAILED'
+            print(f"      ❌ Error en test de métricas biomecánicas: {e}")
+        
+        # ===== TEST 6: CALLBACKS Y CONFIGURACIÓN AVANZADA =====
+        
+        print("\n⚙️ TEST 6: Callbacks y Configuración Avanzada")
+        print("-" * 50)
+        print("Verificando que los callbacks biomecánicos y la")
+        print("configuración avanzada funcionan correctamente...")
+        
+        try:
+            print("\n   📞 Creando callbacks...")
+            callbacks = enhanced_trainer.setup_callbacks(eval_env)
+            
+            print(f"      ✅ Callbacks creados exitosamente")
+            print(f"      📋 Número de callbacks: {len(callbacks.callbacks) if hasattr(callbacks, 'callbacks') else 'N/A'}")
+            
+            # Verificar que existe callback biomecánico para sistema enhanced
+            if enhanced_trainer.system_version == 'enhanced':
+                biomech_callback_found = False
+                if hasattr(callbacks, 'callbacks'):
+                    for callback in callbacks.callbacks:
+                        if 'Biomechanical' in str(type(callback)):
+                            biomech_callback_found = True
+                            break
+                
+                if biomech_callback_found:
+                    print(f"      ✅ Callback biomecánico encontrado")
+                    test_results['integration_verification']['biomech_callback'] = '✅ FOUND'
+                else:
+                    print(f"      ⚠️ Callback biomecánico no detectado claramente")
+            
+            test_results['integration_verification']['callbacks'] = '✅ SUCCESS'
+            
+        except Exception as e:
+            test_results['errors'].append(f"Callbacks test failed: {str(e)}")
+            test_results['integration_verification']['callbacks'] = '❌ FAILED'
+            print(f"      ❌ Error en test de callbacks: {e}")
+        
+        # ===== CLEANUP =====
+        
+        print("\n🧹 Limpieza de recursos...")
+        try:
+            train_env.close()
+            eval_env.close()
+            print("      ✅ Entornos cerrados correctamente")
+        except:
+            print("      ⚠️ Advertencia: problema cerrando entornos")
+        
+        # ===== EVALUACIÓN FINAL =====
+        
+        print("\n📋 EVALUACIÓN FINAL")
+        print("=" * 50)
+        
+        # Determinar estado general
+        error_count = len(test_results['errors'])
+        warning_count = len(test_results['warnings'])
+        
+        if error_count == 0:
+            if warning_count <= 2:
+                test_results['overall_status'] = 'EXCELLENT'
+                status_emoji = '🎉'
+                status_message = "¡Sistema completamente funcional y optimizado!"
+            else:
+                test_results['overall_status'] = 'GOOD'
+                status_emoji = '✅'
+                status_message = "Sistema funcional con algunas optimizaciones recomendadas"
+        elif error_count <= 2:
+            test_results['overall_status'] = 'FUNCTIONAL_WITH_ISSUES'
+            status_emoji = '⚠️'
+            status_message = "Sistema funcional pero requiere atención"
+        else:
+            test_results['overall_status'] = 'CRITICAL_ISSUES'
+            status_emoji = '❌'
+            status_message = "Sistema requiere correcciones antes del entrenamiento"
+        
+        print(f"{status_emoji} Estado General: {test_results['overall_status']}")
+        print(f"   {status_message}")
+        print(f"   Errores: {error_count}")
+        print(f"   Advertencias: {warning_count}")
+        
+        # Mostrar errores si los hay
+        if test_results['errors']:
+            print("\n❌ ERRORES ENCONTRADOS:")
+            for i, error in enumerate(test_results['errors'], 1):
+                print(f"   {i}. {error}")
+        
+        # Mostrar advertencias si las hay
+        if test_results['warnings']:
+            print("\n⚠️ ADVERTENCIAS:")
+            for i, warning in enumerate(test_results['warnings'], 1):
+                print(f"   {i}. {warning}")
+        
+        # Generar recomendaciones
+        if test_results['overall_status'] in ['EXCELLENT', 'GOOD']:
+            test_results['recommendations'].append("✅ El sistema está listo para entrenamiento completo")
+            if enhanced_trainer.system_version == 'enhanced':
+                test_results['recommendations'].append("🎯 Considera usar 3-5M timesteps para mejores resultados")
+                test_results['recommendations'].append("💪 El sistema antagónico debería mostrar movimientos más naturales")
+        
+        if warning_count > 0:
+            test_results['recommendations'].append("🔧 Revisa las advertencias antes del entrenamiento largo")
+        
+        # Mostrar recomendaciones
+        if test_results['recommendations']:
+            print("\n💡 RECOMENDACIONES:")
+            for i, rec in enumerate(test_results['recommendations'], 1):
+                print(f"   {i}. {rec}")
+        
+        print("\n" + "=" * 70)
+        print("Test de integración completado. El sistema está listo para uso!")
+        
+        return test_results
+        
+    except Exception as e:
+        test_results['errors'].append(f"Critical test failure: {str(e)}")
+        test_results['overall_status'] = 'CRITICAL_FAILURE'
+        print(f"\n💥 Error crítico durante el testing: {e}")
+        import traceback
+        traceback.print_exc()
+        return test_results

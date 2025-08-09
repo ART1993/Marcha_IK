@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 import pybullet as p
 from Gymnasium_Start.biped_pam_IK_train import UnifiedBipedTrainer
-from Archivos_Mejorados.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv, test_complete_integration
+from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv, test_complete_integration
 
 def train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, resume=True, action_space="hybrid"):
     """Inicio de Entrenamiento PAM + IK."""
