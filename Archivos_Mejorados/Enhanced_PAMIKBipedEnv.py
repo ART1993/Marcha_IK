@@ -13,6 +13,7 @@ from collections import deque
 from Archivos_Apoyo.dinamica_pam import PAMMcKibben
 from Archivos_Apoyo.ImproveRewards import ImprovedRewardSystem#, PAMTrainingConfig
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
+from Archivos_Mejorados.Enhanced_ImproveReward_system import Enhanced_ImproveReward_system
 from Archivos_Apoyo.SimplifiedWalkingController import SimplifiedWalkingController
 from Archivos_Mejorados.Enhanced_SimplifiedWalkingController import Enhanced_SimplifiedWalkingController
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
@@ -33,7 +34,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
     """
     
     def __init__(self, render_mode='human', action_space="pam", 
-                 num_actors_per_leg=3, num_articulaciones_pierna=2):
+                 num_actors_per_leg=3, num_articulaciones_pierna=2, phase=0):
         
         """
             Initialize the enhanced PAM biped environment.
@@ -49,7 +50,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
 
         self.action_space = action_space
         self.render_mode = render_mode
-        self.phase=0
+        self.phase=phase
         self.num_actors_per_leg=num_actors_per_leg
         self.num_articulaciones_pierna=num_articulaciones_pierna
         # Conf inicial

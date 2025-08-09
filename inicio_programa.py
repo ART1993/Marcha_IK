@@ -1,6 +1,6 @@
 import multiprocessing as mp
 import os
-from biped_pam_IK_train import UnifiedBipedTrainer
+from Gymnasium_Start.biped_pam_IK_train import UnifiedBipedTrainer
 
 def train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, resume=True, action_space="hybrid"):
     """Inicio de Entrenamiento PAM + IK."""

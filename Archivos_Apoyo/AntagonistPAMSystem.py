@@ -1,6 +1,6 @@
 import numpy as np
 import pybullet as p
-from dinamica_pam import PAMMcKibben
+from Archivos_Apoyo.dinamica_pam import PAMMcKibben
 
 class AntagonistPAMSystem:
     """

@@ -14,7 +14,7 @@ import json
 # Import your environments
 from Archivos_Apoyo.Generate_Prints import log_training_plan, error_load_model, \
                                 info_latest_checkpoint, print_info_env_pam
-from bided_pam_IK import PAMIKBipedEnv  # Assuming this is your PAM environment
+from Gymnasium_Start.bided_pam_IK import PAMIKBipedEnv  # Assuming this is your PAM environment
 from Archivos_Mejorados.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, phase_trainig_preparations
 from Curriculum_generator.Curriculum_Manager import ExpertCurriculumManager 
