@@ -14,6 +14,7 @@ from Archivos_Apoyo.dinamica_pam import PAMMcKibben
 from Archivos_Apoyo.ImproveRewards import ImprovedRewardSystem#, PAMTrainingConfig
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.SimplifiedWalkingController import SimplifiedWalkingController
+from Archivos_Mejorados.Enhanced_SimplifiedWalkingController import Enhanced_SimplifiedWalkingController
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 
 class Enhanced_PAMIKBipedEnv(gym.Env):
@@ -114,7 +115,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                 'damping': 2.0
             },
             
-            # Resortes de tobillo (estabilización pasiva)
+            # Resortes de tobillo (estabilización pasiva) # ¿Debería de usarse para el flexor y el extensor?
             'left_ankle_spring': {
                 'k_spring': 8.0,       # Más suave para permitir adaptación al terreno
                 'rest_angle': 0.0,     # Pie horizontal
@@ -131,7 +132,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         """Actualizar espacios para 6 PAMs activos"""
         
         # Espacio de acción: 6 presiones PAM normalizadas [-1, 1]
-        from gymnasium import spaces
+
         self.action_space = spaces.Box(
             low=-1.0, 
             high=1.0, 
@@ -168,7 +169,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             
             # Obtener información de la articulación
             joint_pos = joint_state[0]
-            joint_vel = joint_state[1]
+            #joint_vel = joint_state[1]
             #joint_range = self.joint_limits[list(self.joint_limits.keys())[i]]
             
             # Calcular ratio de contracción según el tipo de músculo
@@ -177,7 +178,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                 if 'flexor' in muscle_name:
                     # Flexor se activa con ángulos positivos (flexión)
                     normalized_pos = max(0, joint_pos) / 1.2  # Normalizar a rango [0,1]
-                else:  # extensor
+                else:  # extensor Ver si hay que cambiarlo para x, y, z
                     # Extensor se activa con ángulos negativos (extensión)
                     normalized_pos = max(0, -joint_pos) / 1.2
                     
@@ -290,6 +291,36 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self._apply_passive_spring_torques()
         
         return joint_torques
+
+    def set_training_phase(self, phase, phase_timesteps):
+        """Configurar fase de entrenamiento para currículo experto"""
+        self.phase = phase
+        self.total_phase_timesteps = phase_timesteps
+        
+        if phase == 0:
+            # Fase de equilibrio básico
+            self.use_walking_cycle = False
+            self.walking_controller = None
+            self.imitation_weight = 0.0
+        elif phase == 1:
+            # Fase de imitación con walking cycle
+            self.use_walking_cycle = True
+            if hasattr(self, 'walking_controller') and self.walking_controller:
+                self.walking_controller.mode = "pressure"
+            self.imitation_weight = 1.0
+        elif phase == 2:
+            # Fase de exploración guiada
+            self.use_walking_cycle = True
+            self.imitation_weight = 0.3
+        else:
+            # Fases avanzadas - RL puro
+            self.use_walking_cycle = False
+            self.walking_controller = None
+            self.imitation_weight = 0.0
+        
+        # Actualizar sistema de recompensas
+        if hasattr(self, 'sistema_recompensas'):
+            self.sistema_recompensas.set_curriculum_phase(phase)
     
     def _enhanced_observation(self):
         """
@@ -327,9 +358,25 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                 spring_obs.append(normalized_force)
         except:
             spring_obs = [0.0] * 4
+
+        # Información ZMP (4 elementos)
+        zmp_info = [0.0, 0.0, 0.0, 0.0]
+        if self.zmp_calculator:
+            try:
+                zmp_point = self.zmp_calculator.calculate_zmp()
+                is_stable = self.zmp_calculator.is_stable(zmp_point)
+                margin = self.zmp_calculator.stability_margin_distance(zmp_point)
+                
+                zmp_info = [
+                    zmp_point[0], zmp_point[1], 
+                    float(is_stable), 
+                    np.clip(margin, -1.0, 1.0)
+                ]
+            except:
+                pass
         
         # Combinar todas las observaciones
-        enhanced_obs = np.concatenate([base_obs, pam_obs, spring_obs])
+        enhanced_obs = np.concatenate([base_obs, pam_obs, spring_obs, zmp_info])
         
         return enhanced_obs
     
@@ -542,6 +589,28 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                     force=0  # Desactivar motores por defecto
                 )
 
+    def _safe_blend_actions(self, base_action, action, modulation_factor=1.0):
+        """Combina de forma segura acciones de base y RL"""
+        base_action = np.asarray(base_action)
+        action = np.asarray(action)
+
+        # Si shapes coinciden, suma directa
+        if base_action.shape == action.shape:
+            return base_action + modulation_factor * action
+
+        # Si base_action tiene menos dimensiones
+        if base_action.size < action.size:
+            new_base = np.zeros_like(action)
+            new_base[-base_action.size:] = base_action
+            return new_base + modulation_factor * action
+
+        # Si base_action tiene más dimensiones
+        if base_action.size > action.size:
+            base_trimmed = base_action[-action.size:]
+            return base_trimmed + modulation_factor * action
+
+        raise ValueError(f"Incompatible shapes: {base_action.shape}, {action.shape}")
+
     def _apply_simplified_control(self, action):
         """Control PAM simple - MÉTODO FALTANTE (adaptado para 6 PAMs)"""
         action = np.asarray(action, dtype=np.float32)
@@ -653,9 +722,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         )
 
         # (Opcional) Inclinación inicial hacia adelante
-        
-        self.walking_controller = SimplifiedWalkingController(self)
-        self.walking_controller.reset()
+        if self.use_walking_cycle:
+            # Usar enhanced walking controller para 6 PAMs
+            self.walking_controller = Enhanced_SimplifiedWalkingController(self)
+            self.walking_controller.reset()
 
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
@@ -675,11 +745,6 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         for i, pos in enumerate(initial_joint_positions):
             p.resetJointState(self.robot_id, i, pos)
 
-        
-        #roll, pitch, yaw = 0.0, np.random.uniform(0.08, 0.15), 0.0
-        #quat = p.getQuaternionFromEuler([0.0, 0.00, 0.0])
-        #p.resetBasePositionAndOrientation(self.robot_id, self.previous_position, quat)
-        # Impulso inicial hacia adelante De momento lo dejo nulo en caso de que sea la fuente de desequilibrios
         p.resetBaseVelocity(self.robot_id, [0.08, 0, 0], [0, 0, 0])
         
         # Configurar control de fuerza (solo para PAM)
@@ -687,9 +752,9 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             self._setup_motors_for_force_control()
             # Resetear estados PAM
             self.pam_states = {
-                'pressures': np.zeros(self.num_articulaciones_pierna*2),
-                'contractions': np.zeros(self.num_articulaciones_pierna*2),
-                'forces': np.zeros(self.num_articulaciones_pierna*2)
+                'pressures': np.zeros(6),
+                'contractions': np.zeros(6),
+                'forces': np.zeros(6)
             }
         
         # Resetear variables de seguimiento comunes
@@ -697,44 +762,16 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.total_reward = 0
         self.observation_history.clear()
         self.previous_position = [0,0,1.2]
-        self.ik_success_rate.clear()
-        
-        # Variables específicas de IK
-        self.last_ik_success = False
-        self.last_ik_error = 0.0
-        self.last_hybrid_weight = 0.5
         self.previous_contacts = [False, False]
         self.previous_action = None
+        self.repeat = 0
+        
+        self.zmp_history.clear()
 
-        left_contact = len(p.getContactPoints(self.robot_id, 0, self.left_foot_id)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, 0, self.right_foot_id)) > 0
-        print(f"Left contact: {left_contact}, Right contact: {right_contact}")
-
-        left_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
-        right_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
-        print(f"Left foot Z: {left_pos[2]:.4f}, Right foot Z: {right_pos[2]:.4f}")
-
-        # Inicializar calculador ZMP después de cargar el robot
-        if self.robot_id is None:
-            self.zmp_calculator = ZMPCalculator(
-                self.robot_id, 
-                self.left_foot_id, 
-                self.right_foot_id,
-                robot_data=self.robot_data
-            )
-            self.zmp_history.clear()
-
-        # Permitir estabilización inicial - ejecutar varios steps sin evaluar ZMP
-            for _ in range(20):  # Más pasos de estabilización
-                p.stepSimulation()
-        #if self.use_walking_cycle:
-        #    self.walking_controller = SimplifiedWalkingController(self)
-        # Obtener observación (compatible con ambos entornos)
         observation = self._stable_observation()
-        # Buscar como adaptar a EnhancedPAMIKBipedEnv
+
         info = {'episode_reward': 0, 'episode_length': 0}
-        #if self.use_walking_cycle:
-        #    self.walking_controller = SimplifiedWalkingController(self)
+
         return observation, info
     
     def close(self):
@@ -811,14 +848,16 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             # Contactos y tiempo (4 elementos)
             left_contact = len(p.getContactPoints(self.robot_id, 0, self.left_foot_id)) > 0
             right_contact = len(p.getContactPoints(self.robot_id, 0, self.right_foot_id)) > 0
-            
-            normalized_time = (self.step_count % 200) / 200.0
+            # Antes era 200 pero step_count es 1/1500 por lo que para normalizarlo deberái de ser 1500
+            # Normalizar el tiempo al rango [0, 1] para 1500 pasos
+            normalized_time = (self.step_count % 1500) / 1500.0
             obs.extend([float(left_contact), float(right_contact), 
                        normalized_time, float(self.step_count > 0)])
             
             # Estados PAM básicos (4 elementos - compatibilidad)
             if hasattr(self, 'pam_states'):
                 # Usar solo los primeros 4 para compatibilidad con observación base
+                # ¿Por qué no se pueden usar los seis?
                 normalized_pressures = self.pam_states['pressures'][:4] / self.max_pressure
                 obs.extend(normalized_pressures.tolist())
             else:
@@ -850,16 +889,17 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
 
     def _apply_joint_forces(self, forces):
         """
-        Aplica fuerzas tensoriales a las articulaciones usando PyBullet
+            Aplica fuerzas tensoriales a las articulaciones usando PyBullet
         """
+        active_joints = [0, 1, 3, 4]  # caderas y rodillas
         for i, force in enumerate(forces):
-            torque = force
-            p.setJointMotorControl2(
-                self.robot_id,
-                i,
-                p.TORQUE_CONTROL,
-                force=torque
-            )
+            if i < len(active_joints):
+                p.setJointMotorControl2(
+                    self.robot_id,
+                    active_joints[i],
+                    p.TORQUE_CONTROL,
+                    force=force
+                )
 
 
     def _apply_ankle_spring(self, k_spring=8.0):
@@ -870,11 +910,8 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         k_spring: rigidez del resorte [Nm/rad]
         """
         # Asegúrate de que los nombres/índices son correctos
-        left_ankle_joint = self.left_foot_id    # <-- Cambia si tu joint es diferente
-        right_ankle_joint = self.right_foot_id   # <-- Cambia si tu joint es diferente
-        # ¿No debería de ser dos por cada tobillo, Uno con valor + y otro negativo?
-        for ankle_joint in [left_ankle_joint, right_ankle_joint]:
-            theta = p.getJointState(self.robot_id, ankle_joint)[0]  # Ángulo actual [rad]
+        for ankle_joint in [2, 5]:  # left_ankle=2, right_ankle=5
+            theta = p.getJointState(self.robot_id, ankle_joint)[0]
             torque = -k_spring * theta
             p.setJointMotorControl2(
                 self.robot_id,
@@ -883,20 +920,6 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                 force=torque
             )
     # ¿Debería de crearse un set training phase?
-
-    # ¿Es necesario en esta nueva versión?
-    def _update_ik_tracking(self):
-        """Actualiza métricas de seguimiento IK"""
-        # Verificar si IK fue exitosa comparando posiciones actuales vs objetivos
-        left_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
-        right_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
-        
-        # Calcular error de posicionamiento (simplified)
-        self.last_ik_error = np.linalg.norm(np.array(left_pos) - np.array(right_pos))
-        self.last_ik_success = self.last_ik_error < 0.05  # 5cm de tolerancia
-        
-        # Actualizar tasa de éxito
-        self.ik_success_rate.append(float(self.last_ik_success))
     
 
 # ===================================================================================================================================================================== #
