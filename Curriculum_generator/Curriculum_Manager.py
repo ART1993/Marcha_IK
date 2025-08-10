@@ -11,7 +11,7 @@ class ExpertCurriculumManager:
         self.phases = self._define_curriculum_phases()
         self.phase_transitions = []  # Registro de transiciones
         
-    def _define_curriculum_phases(self):
+    def _define_curriculum_phases(self)-> list[CurriculumPhase]:
         """Define las fases del currículo experto optimizado para PAM"""
         
         phases = [
@@ -58,10 +58,34 @@ class ExpertCurriculumManager:
         # ==========================================
         # GRUPO 2: LEVANTAMIENTO PIERNA IZQUIERDA (18% total)
         # ==========================================
-        
-        # FASE 3: Imitación pura - levantar pierna izquierda
+
+        # FASE 3: Imitación de sentadilla parcial
         CurriculumPhase(
             phase_id=3,
+            name="Partial Squat Imitation",
+            description="Learn controlled partial squats with proper muscle coordination",
+            duration_ratio=0.08,  # 8% del tiempo total
+            expert_weight=0.85,   # Alta imitación para aprender el patrón
+            exploration_factor=0.15,
+            control_mode="pam",
+            difficulty_level=2
+        ),
+
+        # FASE 4: Sentadilla completa con exploración
+        CurriculumPhase(
+            phase_id=4,
+            name="Full Squat Exploration",
+            description="Master full squats with balance and smooth transitions",
+            duration_ratio=0.07,  # 7% del tiempo total
+            expert_weight=0.5,    # Balance entre guía y exploración
+            exploration_factor=0.5,
+            control_mode="pam",
+            difficulty_level=3
+        ),
+        
+        # FASE 5: Imitación pura - levantar pierna izquierda
+        CurriculumPhase(
+            phase_id=5,
             name="Left Leg Lift Imitation",
             description="Direct imitation of expert actions for left leg lifting",
             duration_ratio=0.10,  # 10%
@@ -71,7 +95,7 @@ class ExpertCurriculumManager:
             difficulty_level=2
         ),
         
-        # FASE 4: Exploración guiada - pierna izquierda
+        # FASE 6: Exploración guiada - pierna izquierda
         CurriculumPhase(
             phase_id=4,
             name="Left Leg Lift Exploration",
@@ -87,9 +111,9 @@ class ExpertCurriculumManager:
         # GRUPO 3: LEVANTAMIENTO PIERNA DERECHA (18% total)
         # ==========================================
         
-        # FASE 5: Imitación pura - levantar pierna derecha
+        # FASE 7: Imitación pura - levantar pierna derecha
         CurriculumPhase(
-            phase_id=5,
+            phase_id=7,
             name="Right Leg Lift Imitation",
             description="Direct imitation of expert actions for right leg lifting",
             duration_ratio=0.10,  # 10%
@@ -99,9 +123,9 @@ class ExpertCurriculumManager:
             difficulty_level=2
         ),
         
-        # FASE 6: Exploración guiada - pierna derecha  
+        # FASE 8: Exploración guiada - pierna derecha  
         CurriculumPhase(
-            phase_id=6,
+            phase_id=8,
             name="Right Leg Lift Exploration",
             description="Guided exploration of right leg lifting with balance maintenance",
             duration_ratio=0.08,  # 8%
@@ -115,9 +139,9 @@ class ExpertCurriculumManager:
         # GRUPO 4: PASO CON PIERNA IZQUIERDA (22% total)
         # ==========================================
         
-        # FASE 7: Imitación de paso con pierna izquierda
+        # FASE 9: Imitación de paso con pierna izquierda
         CurriculumPhase(
-            phase_id=7,
+            phase_id=9,
             name="Left Step Imitation",
             description="Imitate expert single forward step with left leg",
             duration_ratio=0.12,  # 12% - más tiempo para habilidad compleja
@@ -127,9 +151,9 @@ class ExpertCurriculumManager:
             difficulty_level=3
         ),
         
-        # FASE 8: Exploración de paso izquierdo
+        # FASE 10: Exploración de paso izquierdo
         CurriculumPhase(
-            phase_id=8,
+            phase_id=10,
             name="Left Step Exploration",
             description="Explore variations in left leg stepping while maintaining balance",
             duration_ratio=0.10,  # 10%
@@ -143,9 +167,9 @@ class ExpertCurriculumManager:
         # GRUPO 5: PASO CON PIERNA DERECHA (22% total)
         # ==========================================
         
-        # FASE 9: Imitación de paso con pierna derecha
+        # FASE 11: Imitación de paso con pierna derecha
         CurriculumPhase(
-            phase_id=9,
+            phase_id=11,
             name="Right Step Imitation", 
             description="Imitate expert single forward step with right leg",
             duration_ratio=0.12,  # 12% - misma complejidad que paso izquierdo
@@ -155,9 +179,9 @@ class ExpertCurriculumManager:
             difficulty_level=3
         ),
         
-        # FASE 10: Maestría y integración de ambos pasos
+        # FASE 12: Maestría y integración de ambos pasos
         CurriculumPhase(
-            phase_id=10,
+            phase_id=12,
             name="Bilateral Step Mastery",
             description="Master both left and right stepping with minimal guidance",
             duration_ratio=0.10,  # 10% - consolidación final
@@ -187,6 +211,7 @@ class ExpertCurriculumManager:
         """Calcula los timesteps para una fase específica"""
         if phase_id >= len(self.phases):
             return 0
+        # Viendo la clase debería de funcionar
         return int(self.total_timesteps * self.phases[phase_id].duration_ratio)
     
     def get_current_phase(self):

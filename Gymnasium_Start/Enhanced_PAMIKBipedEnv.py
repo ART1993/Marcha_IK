@@ -9,7 +9,8 @@ import numpy as np
 import math
 from collections import deque
 
-
+from Controlador.discrete_action_controller import ActionType
+from Controlador.discrete_action_controller import DiscreteActionController
 from Archivos_Apoyo.dinamica_pam import PAMMcKibben
 from Archivos_Apoyo.ImproveRewards import ImprovedRewardSystem#, PAMTrainingConfig
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
@@ -33,7 +34,8 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
     """
     
     def __init__(self, render_mode='human', action_space="pam", 
-                 num_actors_per_leg=3, num_articulaciones_pierna=2, phase=0):
+                 num_actors_per_leg=3, num_articulaciones_pierna=2, 
+                 phase=0, use_discrete_actions=True):
         
         """
             Initialize the enhanced PAM biped environment.
@@ -52,6 +54,8 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.phase=phase
         self.num_actors_per_leg=num_actors_per_leg
         self.num_articulaciones_pierna=num_articulaciones_pierna
+        self.use_discrete_actions = use_discrete_actions
+        self.current_action_type = None
         # Conf inicial
         self.generar_simplified_space()
         self.limites_sistema()
@@ -340,72 +344,47 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         """Configurar fase de entrenamiento para currículo experto"""
         self.phase = phase
         self.total_phase_timesteps = phase_timesteps
+
+        # Configuración base de pesos de imitación
+        phase_configs = {
+            0: {'imitation_weight': 0.0, 'use_walking_cycle': False},    # Equilibrio libre
+            1: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación equilibrio
+            2: {'imitation_weight': 0.3, 'use_walking_cycle': True},     # Exploración equilibrio
+            3: {'imitation_weight': 0.85, 'use_walking_cycle': True},    # Imitación sentadilla parcial
+            4: {'imitation_weight': 0.5, 'use_walking_cycle': True},     # Exploración sentadilla
+            5: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar izq
+            6: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar izq
+            7: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar der
+            8: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar der
+            9: {'imitation_weight': 0.8, 'use_walking_cycle': True},     # Imitación paso izq
+            10: {'imitation_weight': 0.5, 'use_walking_cycle': True},    # Exploración paso izq
+            11: {'imitation_weight': 0.8, 'use_walking_cycle': True},    # Imitación paso der
+            12: {'imitation_weight': 0.2, 'use_walking_cycle': True},    # Maestría bilateral
+        }
+
+        config = phase_configs.get(phase, {'imitation_weight': 0.0, 'use_walking_cycle': False})
+    
+        self.imitation_weight = config['imitation_weight']
+        self.use_walking_cycle = config['use_walking_cycle']
+
+        # Configurar la acción apropiada si usamos acciones discretas
+        if self.use_discrete_actions and self.walking_controller:
+            
+            action_type = self.walking_controller.get_action_for_phase(phase)
+            self.walking_controller.set_action(action_type)
+            print(f"   🎯 Phase {phase}: Training action type: {action_type.value}")
         
-        if phase == 0:
-            # Fase de equilibrio básico
-            self.use_walking_cycle = False
-            self.walking_controller = None
-            self.imitation_weight = 0.0
-        elif phase == 1:
-            # Fase de imitación con walking cycle
-            self.use_walking_cycle = True
-            if hasattr(self, 'walking_controller') and self.walking_controller:
-                self.walking_controller.mode = "pressure"
-            self.imitation_weight = 1.0
-        elif phase == 2:
-            # Fase de exploración guiada
-            self.use_walking_cycle = True
-            self.imitation_weight = 0.3
-        else:
-            # Fases avanzadas - RL puro
-            self.use_walking_cycle = False
-            self.walking_controller = None
-            self.imitation_weight = 0.0
-        
-        # ===== PASO 2: SINCRONIZAR SISTEMA DE RECOMPENSAS =====
-        
-        # ¡CRÍTICO! El sistema de recompensas debe adaptar sus prioridades
-        # Este es el momento donde el "entrenador" ajusta su estrategia
+        # Sincronizar sistema de recompensas
         if hasattr(self, 'sistema_recompensas'):
             self.sistema_recompensas.set_curriculum_phase(phase)
             print(f"   ✅ Reward system synchronized to phase {phase}")
-            
-            # Actualizar status de integración
-            self.reward_system_integration_status['curriculum_phase'] = phase
-            
-            # Mostrar los nuevos pesos de recompensa para transparencia
-            if hasattr(self.sistema_recompensas, 'weights'):
-                print("   📊 New reward weights:")
-                for component, weight in self.sistema_recompensas.weights.items():
-                    print(f"      {component}: {weight:.2f}")
-        else:
-            print("   ⚠️ Warning: Reward system not found during phase transition")
-
-        # ===== PASO 3: CONFIGURAR WALKING CONTROLLER SI APLICA =====
         
-        if self.use_walking_cycle and phase >= 1:
-            # Asegurar que tenemos el enhanced walking controller
-            if not hasattr(self, 'walking_controller') or self.walking_controller is None:
-                from Archivos_Mejorados.Enhanced_SimplifiedWalkingController import Enhanced_SimplifiedWalkingController
-                self.walking_controller = Enhanced_SimplifiedWalkingController(self)
-                print("   🔧 Enhanced walking controller initialized")
-            
-            # Configurar modo según la fase
-            if phase == 1:
-                self.walking_controller.mode = "pressure"
-                print("   🎯 Walking controller set to pressure mode")
-            elif phase == 2:
-                self.walking_controller.mode = "blend"
-                self.walking_controller.blend_factor = 0.5
-                print("   🎯 Walking controller set to blend mode (50%)")
-
-        # ===== PASO 4: LOGGING Y VALIDACIÓN =====
-        
-        print(f"   🎮 Environment configuration:")
+        print(f"   🎮 Environment configuration for phase {phase}:")
         print(f"      Use walking cycle: {self.use_walking_cycle}")
         print(f"      Imitation weight: {self.imitation_weight}")
-        print(f"      Control mode: {getattr(self, 'control_mode', 'pam')}")
         print(f"   🏁 Phase {phase} configuration completed\n")
+        
+
     
     def _enhanced_observation(self):
         """
@@ -481,7 +460,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # ===== FASE 1: PROCESAMIENTO DE ACCIÓN =====
         # Combinar acción del ciclo con RL si está habilitado
         if self.walking_controller and self.use_walking_cycle:
-            base_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
+            if self.use_discrete_actions:
+                base_action = self.walking_controller.get_expert_action(self.time_step)
+            else:
+                base_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
             modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
             final_action = self._safe_blend_actions(base_action, action, modulation_factor)
         else:
@@ -591,6 +573,12 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # ===== FASE 10: DETERMINACIÓN DE EPISODIO TERMINADO =====
         
         done = self._is_done()
+
+        # Añadir información de debug sobre la acción actual
+        if self.use_discrete_actions and self.walking_controller:
+            debug_info = self.walking_controller.get_debug_info()
+            info['current_discrete_action'] = debug_info['current_action']
+            info['action_progress'] = debug_info['action_progress']
 
         # ===== LOGGING PARA DEBUGGING (cada 100 pasos) =====
         
@@ -1003,11 +991,18 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             robot_data=self.robot_data
         )
 
-        # (Opcional) Inclinación inicial hacia adelante
-        if self.use_walking_cycle:
-            # Usar enhanced walking controller para 6 PAMs
+        # Inicializar controlador apropiado
+        if self.use_discrete_actions:
+            self.walking_controller = DiscreteActionController(self)
+            # Establecer acción inicial basada en la fase del currículo
+            if hasattr(self, 'phase'):
+                action_type = self.walking_controller.get_action_for_phase(self.phase)
+                self.walking_controller.set_action(action_type)
+        else:
+            # Usar el controlador de marcha original si es necesario
             self.walking_controller = Enhanced_SimplifiedWalkingController(self)
-            self.walking_controller.reset()
+
+        self.walking_controller.reset()
 
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
