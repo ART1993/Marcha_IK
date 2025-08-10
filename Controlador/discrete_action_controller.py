@@ -366,17 +366,19 @@ class DiscreteActionController:
             0: ActionType.BALANCE_STANDING,
             1: ActionType.BALANCE_STANDING,
             2: ActionType.BALANCE_STANDING,
-            3: ActionType.LIFT_LEFT_LEG,
-            4: ActionType.LIFT_LEFT_LEG,
-            5: ActionType.LIFT_RIGHT_LEG,
-            6: ActionType.LIFT_RIGHT_LEG,
-            7: ActionType.STEP_LEFT,
-            8: ActionType.STEP_LEFT,
-            9: ActionType.STEP_RIGHT,
-            10: ActionType.STEP_RIGHT,
             # Añadir fases para sentadillas si las agregas al currículo
-            11: ActionType.SQUAT,
-            12: ActionType.SQUAT,
+            3: ActionType.SQUAT,
+            4: ActionType.SQUAT,
+            # Resto de fases como antes
+            5: ActionType.LIFT_LEFT_LEG,
+            6: ActionType.LIFT_LEFT_LEG,
+            7: ActionType.LIFT_RIGHT_LEG,
+            8: ActionType.LIFT_RIGHT_LEG,
+            9: ActionType.STEP_LEFT,
+            10: ActionType.STEP_LEFT,
+            11: ActionType.STEP_RIGHT,
+            12: ActionType.STEP_RIGHT,
+            
         }
         
         return phase_to_action.get(curriculum_phase, ActionType.BALANCE_STANDING)

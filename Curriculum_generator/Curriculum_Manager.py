@@ -16,7 +16,7 @@ class ExpertCurriculumManager:
         
         phases = [
         # ==========================================
-        # GRUPO 1: EQUILIBRIO BÁSICO (20% total)
+        # GRUPO 1: EQUILIBRIO BÁSICO (14% total)
         # ==========================================
         
         # FASE 0: Equilibrio estático puro
@@ -24,7 +24,7 @@ class ExpertCurriculumManager:
             phase_id=0,
             name="Static Balance Foundation",
             description="Robot learns to maintain upright posture without movement",
-            duration_ratio=0.08,  # 8%
+            duration_ratio=0.05,  # 5%
             expert_weight=0.0,    # Sin acciones expertas - RL puro para equilibrio
             exploration_factor=0.3,
             control_mode="pam",
@@ -36,7 +36,7 @@ class ExpertCurriculumManager:
             phase_id=1,
             name="Balance Imitation",
             description="Imitate expert PAM pressures for stable standing",
-            duration_ratio=0.07,  # 7%
+            duration_ratio=0.05,  # 5%
             expert_weight=0.9,    # Alta imitación de presiones PAM para equilibrio
             exploration_factor=0.1,
             control_mode="pam",
@@ -48,15 +48,15 @@ class ExpertCurriculumManager:
             phase_id=2,
             name="Balance Exploration", 
             description="Explore variations in balance while maintaining stability",
-            duration_ratio=0.05,  # 5%
+            duration_ratio=0.04,  # 4%
             expert_weight=0.6,    # Moderada guía experta
             exploration_factor=0.4,
             control_mode="pam",
             difficulty_level=2
         ),
-        
+
         # ==========================================
-        # GRUPO 2: LEVANTAMIENTO PIERNA IZQUIERDA (18% total)
+        # GRUPO 2: Sentadillas (10% total)
         # ==========================================
 
         # FASE 3: Imitación de sentadilla parcial
@@ -64,7 +64,7 @@ class ExpertCurriculumManager:
             phase_id=3,
             name="Partial Squat Imitation",
             description="Learn controlled partial squats with proper muscle coordination",
-            duration_ratio=0.08,  # 8% del tiempo total
+            duration_ratio=0.05,  # 5% del tiempo total
             expert_weight=0.85,   # Alta imitación para aprender el patrón
             exploration_factor=0.15,
             control_mode="pam",
@@ -76,19 +76,23 @@ class ExpertCurriculumManager:
             phase_id=4,
             name="Full Squat Exploration",
             description="Master full squats with balance and smooth transitions",
-            duration_ratio=0.07,  # 7% del tiempo total
+            duration_ratio=0.05,  # 5% del tiempo total
             expert_weight=0.5,    # Balance entre guía y exploración
             exploration_factor=0.5,
             control_mode="pam",
             difficulty_level=3
         ),
+
+        # ==========================================
+        # GRUPO 3: LEVANTAMIENTO PIERNA IZQUIERDA (17% total)
+        # ==========================================
         
         # FASE 5: Imitación pura - levantar pierna izquierda
         CurriculumPhase(
             phase_id=5,
             name="Left Leg Lift Imitation",
             description="Direct imitation of expert actions for left leg lifting",
-            duration_ratio=0.10,  # 10%
+            duration_ratio=0.09,  # 9%
             expert_weight=0.9,    # Alta imitación para nueva habilidad
             exploration_factor=0.1,
             control_mode="pam",   # Control directo PAM
@@ -97,7 +101,7 @@ class ExpertCurriculumManager:
         
         # FASE 6: Exploración guiada - pierna izquierda
         CurriculumPhase(
-            phase_id=4,
+            phase_id=6,
             name="Left Leg Lift Exploration",
             description="Guided exploration of left leg lifting with balance maintenance",
             duration_ratio=0.08,  # 8%
@@ -108,7 +112,7 @@ class ExpertCurriculumManager:
         ),
         
         # ==========================================
-        # GRUPO 3: LEVANTAMIENTO PIERNA DERECHA (18% total)
+        # GRUPO 3: LEVANTAMIENTO PIERNA DERECHA (17% total)
         # ==========================================
         
         # FASE 7: Imitación pura - levantar pierna derecha
@@ -116,7 +120,7 @@ class ExpertCurriculumManager:
             phase_id=7,
             name="Right Leg Lift Imitation",
             description="Direct imitation of expert actions for right leg lifting",
-            duration_ratio=0.10,  # 10%
+            duration_ratio=0.09,  # 9%
             expert_weight=0.9,    # Alta imitación (transferencia desde pierna izquierda)
             exploration_factor=0.1,
             control_mode="pam",
@@ -136,7 +140,7 @@ class ExpertCurriculumManager:
         ),
         
         # ==========================================
-        # GRUPO 4: PASO CON PIERNA IZQUIERDA (22% total)
+        # GRUPO 4: PASO CON PIERNA IZQUIERDA (21% total)
         # ==========================================
         
         # FASE 9: Imitación de paso con pierna izquierda
@@ -144,7 +148,7 @@ class ExpertCurriculumManager:
             phase_id=9,
             name="Left Step Imitation",
             description="Imitate expert single forward step with left leg",
-            duration_ratio=0.12,  # 12% - más tiempo para habilidad compleja
+            duration_ratio=0.11,  # 11% - más tiempo para habilidad compleja
             expert_weight=0.8,    # Ligeramente menos que levantamiento (más complejo)
             exploration_factor=0.2,
             control_mode="hybrid", # Introducir IK para precisión de paso
@@ -164,7 +168,7 @@ class ExpertCurriculumManager:
         ),
         
         # ==========================================
-        # GRUPO 5: PASO CON PIERNA DERECHA (22% total)
+        # GRUPO 5: PASO CON PIERNA DERECHA (21% total)
         # ==========================================
         
         # FASE 11: Imitación de paso con pierna derecha
@@ -172,13 +176,13 @@ class ExpertCurriculumManager:
             phase_id=11,
             name="Right Step Imitation", 
             description="Imitate expert single forward step with right leg",
-            duration_ratio=0.12,  # 12% - misma complejidad que paso izquierdo
+            duration_ratio=0.11,  # 11% - misma complejidad que paso izquierdo
             expert_weight=0.8,    # Misma configuración que paso izquierdo
             exploration_factor=0.2,
             control_mode="hybrid", # Mantener IK para precisión
             difficulty_level=3
         ),
-        
+        # Cambiar a Right step exploration
         # FASE 12: Maestría y integración de ambos pasos
         CurriculumPhase(
             phase_id=12,
