@@ -507,7 +507,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
 
         # Reward shaping por imitación si está habilitado
         if self.imitation_weight > 0 and self.walking_controller:
-            expert_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
+            if self.use_discrete_actions:
+                expert_action = self.walking_controller.get_expert_action(self.time_step)
+            else:
+                expert_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
             if expert_action is not None:
                 imitation_penalty = np.linalg.norm(final_action - expert_action)
                 reward -= self.imitation_weight * imitation_penalty
