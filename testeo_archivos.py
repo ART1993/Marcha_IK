@@ -552,6 +552,8 @@ def run_quick_action_test(action_type_str='BALANCE_STANDING', duration_seconds=5
         
         # Configurar acción específica
         action_type = ActionType[action_type_str]
+        # Se ha ejecutado antes de iniciar 
+        env.generate_walking_controller()
         env.walking_controller.set_action(action_type)
         
         print(f"   Ejecutando {action_type_str} por {duration_seconds} segundos...")

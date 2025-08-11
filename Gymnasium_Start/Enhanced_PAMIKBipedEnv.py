@@ -12,7 +12,6 @@ from collections import deque
 from Controlador.discrete_action_controller import ActionType
 from Controlador.discrete_action_controller import DiscreteActionController
 from Archivos_Apoyo.dinamica_pam import PAMMcKibben
-from Archivos_Apoyo.ImproveRewards import ImprovedRewardSystem#, PAMTrainingConfig
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Mejorados.Enhanced_ImproveReward_system import Enhanced_ImproveRewardSystem
 from Archivos_Mejorados.Enhanced_SimplifiedWalkingController import Enhanced_SimplifiedWalkingController
@@ -56,6 +55,15 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.num_articulaciones_pierna=num_articulaciones_pierna
         self.use_discrete_actions = use_discrete_actions
         self.current_action_type = None
+
+        #self.walking_controller = None  # Se inicializará en reset()
+        # Por defecto, empezar con walking cycle habilitado si usamos acciones discretas
+        if use_discrete_actions:
+            self.use_walking_cycle = True
+            self.imitation_weight = 0.0  # Se ajustará según la fase
+        else:
+            self.use_walking_cycle = False
+            self.imitation_weight = 0.0
         # Conf inicial
         self.generar_simplified_space()
         self.limites_sistema()
@@ -352,13 +360,13 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             2: {'imitation_weight': 0.3, 'use_walking_cycle': True},     # Exploración equilibrio
             3: {'imitation_weight': 0.85, 'use_walking_cycle': True},    # Imitación sentadilla parcial
             4: {'imitation_weight': 0.5, 'use_walking_cycle': True},     # Exploración sentadilla
-            5: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar izq
-            6: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar izq
-            7: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar der
-            8: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar der
-            9: {'imitation_weight': 0.8, 'use_walking_cycle': True},     # Imitación paso izq
-            10: {'imitation_weight': 0.5, 'use_walking_cycle': True},    # Exploración paso izq
-            11: {'imitation_weight': 0.8, 'use_walking_cycle': True},    # Imitación paso der
+            5: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar izq.
+            6: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar izq.
+            7: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar der.
+            8: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar der.
+            9: {'imitation_weight': 0.8, 'use_walking_cycle': True},     # Imitación paso izq.
+            10: {'imitation_weight': 0.5, 'use_walking_cycle': True},    # Exploración paso izq.
+            11: {'imitation_weight': 0.8, 'use_walking_cycle': True},    # Imitación paso der.
             12: {'imitation_weight': 0.2, 'use_walking_cycle': True},    # Maestría bilateral
         }
 
@@ -368,11 +376,17 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.use_walking_cycle = config['use_walking_cycle']
 
         # Configurar la acción apropiada si usamos acciones discretas
-        if self.use_discrete_actions and self.walking_controller:
-            
-            action_type = self.walking_controller.get_action_for_phase(phase)
-            self.walking_controller.set_action(action_type)
-            print(f"   🎯 Phase {phase}: Training action type: {action_type.value}")
+        if self.use_discrete_actions and self.walking_controller is not None:
+            try:
+                # Verificar que el controlador es del tipo correcto
+                if hasattr(self.walking_controller, 'get_action_for_phase'):
+                    action_type = self.walking_controller.get_action_for_phase(phase)
+                    self.walking_controller.set_action(action_type)
+                    print(f"   🎯 Phase {phase}: Training action type: {action_type.value}")
+                else:
+                    print(f"   ⚠️ Walking controller doesn't support discrete actions")
+            except ImportError as e:
+                print(f"   ⚠️ Could not import ActionType: {e}")
         
         # Sincronizar sistema de recompensas
         if hasattr(self, 'sistema_recompensas'):
@@ -460,10 +474,13 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # ===== FASE 1: PROCESAMIENTO DE ACCIÓN =====
         # Combinar acción del ciclo con RL si está habilitado
         if self.walking_controller and self.use_walking_cycle:
-            if self.use_discrete_actions:
+            if self.use_discrete_actions and hasattr(self.walking_controller, 'get_expert_action'):
                 base_action = self.walking_controller.get_expert_action(self.time_step)
-            else:
+            elif hasattr(self.walking_controller, 'get_enhanced_walking_actions'):
                 base_action = self.walking_controller.get_enhanced_walking_actions(self.time_step)
+            else:
+                # Fallback si algo falla
+                base_action = action
             modulation_factor = 0.3 if self.imitation_weight > 0 else 1.0
             final_action = self._safe_blend_actions(base_action, action, modulation_factor)
         else:
@@ -978,6 +995,27 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             
         return False
     
+    def generate_walking_controller(self):
+        # Inicializar controlador apropiado
+        if self.use_discrete_actions:
+            try:
+                self.walking_controller = DiscreteActionController(self)
+                # Establecer acción inicial basada en la fase del currículo
+                if hasattr(self, 'phase'):
+                    action_type = self.walking_controller.get_action_for_phase(self.phase)
+                    self.walking_controller.set_action(action_type)
+                else:
+                    # Por defecto, empezar con equilibrio
+                    self.walking_controller.set_action(ActionType.BALANCE_STANDING)
+                    print(f"   🎯 DiscreteActionController initialized with default action: BALANCE_STANDING")
+            except ImportError as e:
+                print(f"   ❌ Error importing DiscreteActionController: {e}")
+                print("   ⚠️ Falling back to Enhanced walking controller")
+                self.walking_controller = Enhanced_SimplifiedWalkingController(self)
+        else:
+            # Usar el controlador de marcha original si es necesario
+            self.walking_controller = Enhanced_SimplifiedWalkingController(self)
+    
 
     def reset(self, seed=None, options=None):
         """Reset unificado para ambos entornos (base e híbrido PAM)."""
@@ -994,18 +1032,11 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             robot_data=self.robot_data
         )
 
-        # Inicializar controlador apropiado
-        if self.use_discrete_actions:
-            self.walking_controller = DiscreteActionController(self)
-            # Establecer acción inicial basada en la fase del currículo
-            if hasattr(self, 'phase'):
-                action_type = self.walking_controller.get_action_for_phase(self.phase)
-                self.walking_controller.set_action(action_type)
-        else:
-            # Usar el controlador de marcha original si es necesario
-            self.walking_controller = Enhanced_SimplifiedWalkingController(self)
+        self.generate_walking_controller()
 
-        self.walking_controller.reset()
+        # Solo resetear si el controlador existe
+        if self.walking_controller is not None:
+            self.walking_controller.reset()
 
         self.sistema_recompensas.redefine_robot(self.robot_id, self.plane_id)
         
