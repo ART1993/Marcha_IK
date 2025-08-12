@@ -32,7 +32,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             - right hip joint: 5
     """
     
-    def __init__(self, render_mode='human', action_space="pam", 
+    def __init__(self, render_mode='human', action_space="pam", env_type='enhanced_pam',
                  num_actors_per_leg=3, num_articulaciones_pierna=2, 
                  phase=0, use_discrete_actions=True):
         
@@ -55,6 +55,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.num_articulaciones_pierna=num_articulaciones_pierna
         self.use_discrete_actions = use_discrete_actions
         self.current_action_type = None
+        self.env_type = env_type
 
         #self.walking_controller = None  # Se inicializará en reset()
         # Por defecto, empezar con walking cycle habilitado si usamos acciones discretas
@@ -156,8 +157,9 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         base_obs_size = 28  # Tu observación base actual
         pam_obs_size = 6    # 6 presiones PAM normalizadas
         spring_obs_size = 4 # 4 fuerzas de resortes pasivos
-        
         total_obs_size = base_obs_size + pam_obs_size + spring_obs_size
+        if self.env_type == 'enhanced_pam':
+            total_obs_size += 4  # Información ZMP (x, y, estable, margen)
         
         self.observation_space = spaces.Box(
             low=-np.inf,

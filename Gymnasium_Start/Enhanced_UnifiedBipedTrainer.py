@@ -16,7 +16,8 @@ from Archivos_Apoyo.Generate_Prints import log_training_plan, error_load_model, 
 from Gymnasium_Start.bided_pam_IK import PAMIKBipedEnv  # Entorno original
 from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, phase_trainig_preparations
-from Curriculum_generator.Curriculum_Manager import ExpertCurriculumManager 
+from Curriculum_generator.Curriculum_Manager import ExpertCurriculumManager
+from Controlador.BiomechanicalMetricsCallback import BiomechanicalMetricsCallback
 
 class Enhanced_UnifiedBipedTrainer:
     """
@@ -227,7 +228,8 @@ class Enhanced_UnifiedBipedTrainer:
                 # Crear el entorno con la configuración apropiada
                 env = env_class(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
-                    action_space=self.action_space
+                    action_space=self.action_space,
+                    env_type=self.env_type,
                 )
                 
                 # Para sistemas enhanced, configurar métricas biomecánicas
@@ -359,7 +361,8 @@ class Enhanced_UnifiedBipedTrainer:
                 'max_grad_norm': 0.5,
                 'ent_coef': 0.01,
             }
-        
+        self.policy_kwargs_lstm=policy_kwargs_lstm
+        self.model_params=model_params
         # ===== CREACIÓN DEL MODELO =====
         
         model = RecurrentPPO(
@@ -439,60 +442,18 @@ class Enhanced_UnifiedBipedTrainer:
         y las registra para análisis posterior.
         """
         
-        class BiomechanicalMetricsCallback:
-            def __init__(self, trainer):
-                self.trainer = trainer
-                self.step_count = 0
-                self.last_log_step = 0
-                
-            def on_step(self, locals_, globals_):
-                self.step_count += 1
-                
-                # Log métricas cada 1000 pasos
-                if self.step_count - self.last_log_step >= 1000:
-                    self._log_biomechanical_metrics(locals_, globals_)
-                    self.last_log_step = self.step_count
-                
-                return True
-            
-            def _log_biomechanical_metrics(self, locals_, globals_):
-                """Registrar métricas biomecánicas específicas"""
-                try:
-                    # Obtener información del entorno si está disponible
-                    if 'infos' in locals_:
-                        infos = locals_['infos']
-                        
-                        # Extraer métricas biomecánicas de los infos
-                        coordination_scores = []
-                        energy_efficiency = []
-                        
-                        for info in infos:
-                            if isinstance(info, dict):
-                                if 'reward_components' in info:
-                                    components = info['reward_components']
-                                    if 'pam_efficiency' in components:
-                                        energy_efficiency.append(components['pam_efficiency'])
-                                
-                                if 'reward_system_status' in info:
-                                    # Aquí podríamos extraer métricas de coordinación
-                                    pass
-                        
-                        # Guardar métricas en el trainer
-                        if coordination_scores:
-                            self.trainer.biomechanical_metrics['coordination_scores'].extend(coordination_scores)
-                        if energy_efficiency:
-                            self.trainer.biomechanical_metrics['energy_efficiency'].extend(energy_efficiency)
-                        
-                        # Log cada cierto tiempo
-                        if len(self.trainer.biomechanical_metrics['energy_efficiency']) > 0:
-                            recent_efficiency = np.mean(self.trainer.biomechanical_metrics['energy_efficiency'][-10:])
-                            print(f"   📊 Recent energy efficiency: {recent_efficiency:.3f}")
-                
-                except Exception as e:
-                    # No fallar el entrenamiento por errores de logging
-                    pass
+        # Crear callback con configuración específica para sistemas antagónicos
+        log_frequency = 500 if self.system_version == 'enhanced' else 1000
+        verbosity = 1 if self.system_version == 'enhanced' else 0
         
-        return BiomechanicalMetricsCallback(self)
+        biomechanical_callback = BiomechanicalMetricsCallback(
+            trainer=self,
+            log_freq=log_frequency,
+            verbose=verbosity
+        )
+        
+        return biomechanical_callback
+        
     
     def train(self, resume=True):
         """
@@ -540,7 +501,7 @@ class Enhanced_UnifiedBipedTrainer:
         print(f"   Environment: {self.env_type} ({self.system_version})")
         print(f"   Parallel environments: {self.n_envs}")
         print(f"   Learning rate: {self.learning_rate}")
-        print(f"   LSTM architecture: {model.policy.lstm_hidden_size} units")
+        print(f"   LSTM architecture: {self.policy_kwargs_lstm['lstm_hidden_size']} units")
         print(f"   Target timesteps: {remaining_timesteps:,}")
         print(f"   Expert curriculum: {'✅ ENABLED' if self.enable_expert_curriculum else '❌ DISABLED'}")
         
@@ -764,7 +725,7 @@ class Enhanced_UnifiedBipedTrainer:
 
 # ===== FUNCIÓN DE CREACIÓN FÁCIL =====
 
-def create_enhanced_trainer(**kwargs):
+def create_enhanced_trainer(**kwargs) -> Enhanced_UnifiedBipedTrainer:
     """
     Función de conveniencia para crear un entrenador optimizado.
     
@@ -951,8 +912,8 @@ def test_enhanced_trainer_integration():
             model = enhanced_trainer.create_model(train_env, resume_path=None)
             
             # Verificar propiedades del modelo
-            if hasattr(model.policy, 'lstm_hidden_size'):
-                lstm_size = model.policy.lstm_hidden_size
+            if hasattr(enhanced_trainer, 'policy_kwargs_lstm'):
+                lstm_size = enhanced_trainer.policy_kwargs_lstm["lstm_hidden_size"]
                 print(f"      ✅ Modelo LSTM creado con {lstm_size} unidades")
                 
                 expected_lstm_size = 256 if enhanced_trainer.system_version == 'enhanced' else 128
