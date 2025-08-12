@@ -5,6 +5,7 @@ import numpy as np
 import pybullet as p
 from Gymnasium_Start.biped_pam_IK_train import UnifiedBipedTrainer
 from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv, test_complete_integration
+from Gymnasium_Start.Enhanced_UnifiedBipedTrainer import Enhanced_UnifiedBipedTrainer
 
 def train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, resume=True, action_space="hybrid"):
     """Inicio de Entrenamiento PAM + IK."""
@@ -66,6 +67,25 @@ def test_pam_biped(model_path=None, episodes=10, action_space="hybrid"):
         norm_path = None
     
     trainer.test_model(model_path, episodes=episodes, normalization_path=norm_path)
+
+
+def start_training():
+    """Función optimizada para iniciar entrenamiento"""
+    
+    # Crear trainer con configuración óptima
+    trainer = Enhanced_UnifiedBipedTrainer(
+        env_type='enhanced_pam',
+        system_version='enhanced', 
+        total_timesteps=5_000_000,
+        n_envs=6,
+        learning_rate=3e-4,
+        enable_expert_curriculum=True
+    )
+    
+    # Entrenar con resume automático
+    trainer.train(resume=True)
+    
+    return trainer
 
 
 

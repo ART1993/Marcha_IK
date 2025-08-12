@@ -146,7 +146,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # Espacio de acción: 6 presiones PAM normalizadas [-1, 1]
 
         self.action_space = spaces.Box(
-            low=-1.0, 
+            low=0.0, 
             high=1.0, 
             shape=(6,), 
             dtype=np.float32
