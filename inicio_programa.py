@@ -87,13 +87,13 @@ def start_training():
         print(f"❌ Error durante entrenamiento: {e}")
         
         # Si falla con múltiples entornos, intentar con uno solo
-        if target_envs > 1:
-            print("🔄 Reintentando con un solo entorno...")
-            trainer.n_envs = 1
-            trainer.train(resume=True)
-            return 
-        else:
-            raise
+        #if target_envs > 1:
+        #    print("🔄 Reintentando con un solo entorno...")
+        #    trainer.n_envs = 1
+        #    trainer.train(resume=True)
+        #    return 
+        #else:
+        #    raise
 
 # ===================================================================================================================================================== #
 # =================================================Testeo de la calidad de PAMBipedENV================================================================= #
