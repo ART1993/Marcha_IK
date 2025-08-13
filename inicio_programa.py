@@ -130,7 +130,8 @@ def test_enhanced_6pam_system():
 
 
 # Main execution
-#if __name__ == "__main__":
+if __name__ == "__main__":
+    start_training()
     # Choose training type
 #    training_type = 'pam'  # Change to 'standard' for standard biped
     
