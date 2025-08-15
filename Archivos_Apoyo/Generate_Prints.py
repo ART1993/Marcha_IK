@@ -59,6 +59,59 @@ def create_training_env_with_walking_cycle(self):
 
     return env
 
+def set_training_phase_print(phase, use_walking_cycle, imitation_weight):
+    print(f"   🎮 Environment configuration for phase {phase}:")
+    print(f"      Use walking cycle: {use_walking_cycle}")
+    print(f"      Imitation weight: {imitation_weight}")
+    print(f"   🏁 Phase {phase} configuration completed\n")
+
+
+def log_integration_status(self, reward, reward_components):
+    """
+    Log de estado de integración para debugging y análisis.
+    
+    Este método es como el "informe de progreso" que un entrenador da
+    periódicamente para mostrar cómo va el entrenamiento del atleta.
+    """
+    
+    if self.step_count % 500 == 0:  # Log cada 500 pasos (menos frecuente)
+        print(f"\n📊 Integration Status Report (Step {self.step_count})")
+        print(f"   Total reward: {reward:.3f}")
+        
+        # Mostrar componentes de recompensa
+        if reward_components:
+            print("   Reward breakdown:")
+            for component, value in reward_components.items():
+                print(f"      {component}: {value:.3f}")
+        
+        # Estado de los PAMs
+        if hasattr(self, 'pam_states') and self.pam_states is not None:
+            pressures = self.pam_states['pressures']
+            normalized_pressures = pressures / self.max_pressure
+            
+            print("   PAM status:")
+            muscle_names = ['L_hip_flex', 'L_hip_ext', 'R_hip_flex', 'R_hip_ext', 'L_knee', 'R_knee']
+            for i, (name, pressure) in enumerate(zip(muscle_names, normalized_pressures)):
+                print(f"      {name}: {pressure:.2f}")
+        
+        # Estado del currículo
+        curriculum_info = self.reward_system_integration_status
+        print(f"   Curriculum phase: {curriculum_info['curriculum_phase']}")
+        print(f"   Imitation weight: {self.imitation_weight}")
+        
+        # Métricas de coordinación si están disponibles
+        if hasattr(self.sistema_recompensas, 'coordination_metrics'):
+            coords = self.sistema_recompensas.coordination_metrics
+            print("   Coordination metrics:")
+            for metric, value in coords.items():
+                if value != 0.0:  # Solo mostrar métricas activas
+                    print(f"      {metric}: {value:.3f}")
+        
+        print("   ✅ Integration status: HEALTHY\n")
+
+# =========================================================================================================================================================================== #
+# ===================================================== Métodos de trayectorias y curvas Bézier caduco ====================================================================== #
+# =========================================================================================================================================================================== #
 
 def foot_bezier_parabola(start, end, ctrl1, ctrl2, alpha, height):
     """

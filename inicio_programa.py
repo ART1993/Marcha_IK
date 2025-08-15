@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 import pybullet as p
 from Gymnasium_Start.biped_pam_IK_train import UnifiedBipedTrainer
-from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv, test_complete_integration
+from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv
 from Gymnasium_Start.Enhanced_UnifiedBipedTrainer import Enhanced_UnifiedBipedTrainer
 
 from Archivos_Mejorados.Setup_multiprocessing import setup_multiprocessing_for_training
@@ -42,7 +42,7 @@ def start_training_min():
     trainer = Enhanced_UnifiedBipedTrainer(
         env_type='enhanced_pam',
         system_version='enhanced', 
-        total_timesteps=5_000_000,
+        total_timesteps=500000,
         n_envs=target_envs,
         learning_rate=3e-4,
         action_space='pam',

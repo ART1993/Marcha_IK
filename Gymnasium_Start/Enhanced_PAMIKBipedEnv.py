@@ -11,11 +11,14 @@ from collections import deque
 
 from Controlador.discrete_action_controller import ActionType
 from Controlador.discrete_action_controller import DiscreteActionController
-from Archivos_Apoyo.dinamica_pam import PAMMcKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Mejorados.Enhanced_ImproveReward_system import Enhanced_ImproveRewardSystem
 from Archivos_Mejorados.Enhanced_SimplifiedWalkingController import Enhanced_SimplifiedWalkingController
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
+from Archivos_Apoyo.Generate_Prints import set_training_phase_print, log_integration_status
+from Archivos_Apoyo.Configuraciones_adicionales import joint_forces, foot_workspace, reward_system_integration_status, PAM_McKibben,\
+                                                        joint_limits, pam_states_init, setup_passive_elements, relacionar_musculo_con_joint,\
+                                                        calculate_joint_torques_from_pam_forces, phase_configs_method, expected_joints_fun                    
 
 class Enhanced_PAMIKBipedEnv(gym.Env):
     """
@@ -57,9 +60,16 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.current_action_type = None
         self.env_type = env_type
 
+        self.metodos_adicionales_inicio_entrenamiento()
+
+# ========================================================================================================================================================================= #
+# ===================================================== Métodos de iniciacion de Enhanced_PAMIKBipedEnv =================================================================== #
+# ========================================================================================================================================================================= #
+    
+    def metodos_adicionales_inicio_entrenamiento(self):
         #self.walking_controller = None  # Se inicializará en reset()
         # Por defecto, empezar con walking cycle habilitado si usamos acciones discretas
-        if use_discrete_actions:
+        if self.use_discrete_actions:
             self.use_walking_cycle = True
             self.imitation_weight = 0.0  # Se ajustará según la fase
         else:
@@ -69,77 +79,130 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.generar_simplified_space()
         self.limites_sistema()
         self.variables_seguimiento()
-        self.configuracion_simulacion_1()
+        self.configuracion_simulacion()
         
         # Redefinir para 6 actuadores activos
         self.num_active_pams = 6
         self.redefine_pam_system()
-        self.setup_passive_elements()
+        self.passive_springs=setup_passive_elements()
         
         # Actualizar espacios de acción y observación
         self.update_action_observation_spaces()
-    
+
+    def generar_simplified_space(self):
+        """
+            Genera el espacio de acción simplificado 
+            y las propiedades del entorno.
+        """
+        self.urdf_path = "2_legged_human_like_robot.urdf"
+        self.time_step = 1.0 / 1500.0
+
+        # Variables específicas de IK
+        self.last_ik_success = False
+        self.last_ik_error = 0.0
+        self.last_hybrid_weight = 0.5
+        # Control mode siempre PAM para enhanced version
+        self.control_mode = "pam"
+        # uso 4 por nº de PAMS o 6 para incluir articulaciones con resortes (tobillos)
+        self.num_joints = 4
+
+    def variables_seguimiento(self):
+        # Variables para seguimiento de rendimiento
+        self.step_count = 0
+        self.total_reward = 0
+        self.previous_position = None
+        self.previous_velocity = None
+
+        # Parámetros mejorados para LSTM
+        self.history_length = 5  # Mantener historial de 5 observaciones pasadas
+        self.observation_history = deque(maxlen=self.history_length)
+        
+        # Variables para recompensas
+        self.previous_contacts = [False, False]
+        self.previous_action = None
+        
+        # IDs de objetos (se inicializan en reset)
+        self.robot_id = None
+        self.plane_id = None
+
+        self.zmp_calculator = None
+        self.zmp_history = []
+        self.max_zmp_history = 20
+        
+        # Parámetros para recompensas ZMP
+        self.zmp_reward_weight = 0.2
+        self.stability_bonus = 20.0
+        self.instability_penalty = -15.0
+
+        # Añadir al final:
+        self.walking_controller = None
+        self.use_walking_cycle = True
+
+    @property
+    def ids_robot_bipedo(self):
+        # IDs corregidos para el robot bípedo
+        self.left_hip_id = 0
+        self.left_knee_id = 1
+        self.left_foot_id = 2   # ID Pie izquierdo End effector pie izquierdo
+        self.left_ankle_id=self.left_foot_id
+
+        self.right_hip_id = 3
+        self.right_knee_id = 4
+        self.right_foot_id = 5  # ID pie derecho End effector pie derecho
+        self.right_ankle_id=self.right_foot_id
+
+        # Límites más amplios
+        self.foot_workspace = foot_workspace()
+
+    def configuracion_simulacion(self):
+        """MODIFICADO: IDs de articulaciones corregidos"""
+        if self.render_mode == 'human':
+            self.physics_client = p.connect(p.GUI)
+        else:
+            import threading
+            self._thread_id = threading.get_ident()
+            self.physics_client = p.connect(p.DIRECT)
+
+        self.ids_robot_bipedo
+        # Variables de tracking mejoradas
+        self.velocity_history = deque(maxlen=10)
+        self.previous_action = None
+        
+        # Fuerzas específicas para cada articulación (en Newtons)
+        p.setAdditionalSearchPath(pybullet_data.getDataPath())
+        # IDs de end-effectors (enlaces de pies)
+
+        # Número total de joints articulados
+        self.sistema_recompensas=Enhanced_ImproveRewardSystem(  self.left_foot_id, 
+                                                                self.right_foot_id,
+                                                                self.num_joints,
+                                                                None, # Se inicia después
+                                                                curriculum_phase=1,  # Fase inicial por defecto
+                                                                num_pams=6)
+        # Variable para tracking de integración - nos ayuda a debuggear
+        self.reward_system_integration_status = reward_system_integration_status(self.sistema_recompensas.curriculum_phase)
+
+    def limites_sistema(self):
+        """Define los límites del sistema y las propiedades de los músculos PAM."""
+        self.min_pressure = 101325 # 1 atm: Suponemos que esa es la presión ambiente
+        # Parámetros de control PAM
+        self.max_pressure = 5* self.min_pressure  # 5 atm en Pa
+        # Es esta variable realmente necesaria
+        self.joint_forces = joint_forces()
+        self.joint_force_array = [150, 120, 150, 120]
+        self.imitation_weight = 1.0
+
     def redefine_pam_system(self):
         """Reconfigurar el sistema PAM para 6 actuadores antagónicos"""
         
         # Definir los 6 PAMs activos con parámetros optimizados por articulación
-        self.pam_muscles = {
-            # Caderas - Control antagónico completo
-            'left_hip_flexor': PAMMcKibben(L0=0.6, r0=0.025, alpha0=np.pi/4),   # Más potente
-            'left_hip_extensor': PAMMcKibben(L0=0.6, r0=0.025, alpha0=np.pi/4),
-            'right_hip_flexor': PAMMcKibben(L0=0.6, r0=0.025, alpha0=np.pi/4),
-            'right_hip_extensor': PAMMcKibben(L0=0.6, r0=0.025, alpha0=np.pi/4),
-            
-            # Rodillas - Solo flexores (extensión pasiva)
-            'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
-            'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
-        }
+        self.pam_muscles = PAM_McKibben()
         
         # Actualizar límites articulares para el nuevo sistema
-        self.joint_limits = {
-            'left_hip_joint': (-1.2, 1.0),      # Rango ampliado para flexión/extensión
-            'left_knee_joint': (0.0, 1.571),    # Solo flexión (extensión por resorte)
-            'right_hip_joint': (-1.2, 1.0),
-            'right_knee_joint': (0.0, 1.571),
-            'left_ankle_joint': (-0.5, 0.5),    # Controlado por resortes
-            'right_ankle_joint': (-0.5, 0.5),
-        }
+        self.joint_limits = joint_limits()
         
         # Estados internos para 6 PAMs
-        self.pam_states = {
-            'pressures': np.zeros(6),
-            'contractions': np.zeros(6),
-            'forces': np.zeros(6)
-        }
-    
-    def setup_passive_elements(self):
-        """Configurar parámetros de elementos pasivos (resortes)"""
-        
-        self.passive_springs = {
-            # Resortes extensores de rodilla (devuelven la rodilla a posición neutra)
-            'left_knee_extensor': {
-                'k_spring': 15.0,      # Rigidez del resorte (Nm/rad)
-                'rest_angle': 0.1,     # Ángulo de reposo (ligeramente flexionado)
-                'damping': 2.0         # Amortiguación
-            },
-            'right_knee_extensor': {
-                'k_spring': 15.0,
-                'rest_angle': 0.1, 
-                'damping': 2.0
-            },
-            
-            # Resortes de tobillo (estabilización pasiva) # ¿Debería de usarse para el flexor y el extensor?
-            'left_ankle_spring': {
-                'k_spring': 8.0,       # Más suave para permitir adaptación al terreno
-                'rest_angle': 0.0,     # Pie horizontal
-                'damping': 1.5
-            },
-            'right_ankle_spring': {
-                'k_spring': 8.0,
-                'rest_angle': 0.0,
-                'damping': 1.5
-            }
-        }
+        self.pam_states = pam_states_init()
     
     def update_action_observation_spaces(self):
         """Actualizar espacios para 6 PAMs activos"""
@@ -168,28 +231,9 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             dtype=np.float32
         )
 
-    def relacionar_musculo_con_joint(self, muscle_name, joint_data):
-        # ===== PASO 1: DETERMINAR QUÉ ARTICULACIÓN AFECTA ESTE MÚSCULO =====
-            
-        if muscle_name in ['left_hip_flexor', 'left_hip_extensor']:
-            joint_id = 0  # left_hip_joint
-            joint_state = joint_data[0]
-        elif muscle_name in ['right_hip_flexor', 'right_hip_extensor']:
-            joint_id = 3  # right_hip_joint (en PyBullet)
-            joint_state = joint_data[3]
-        elif muscle_name == 'left_knee_flexor':
-            joint_id = 1  # left_knee_joint
-            joint_state = joint_data[1]
-        elif muscle_name == 'right_knee_flexor':
-            joint_id = 4  # right_knee_joint (en PyBullet)
-            joint_state = joint_data[4]
-        else:
-            raise ValueError(f"Unknown muscle name: {muscle_name}")
-        #    print(f" Warning: Unknown muscle {muscle_name}")
-        #    forces.append(0.0)
-        #    continue
-        return joint_id, joint_state
-        
+# ======================================================================================================================================================================== #
+# ===================================================== Métodos de control y cálculo de fuerzas PAM ====================================================================== #
+# ======================================================================================================================================================================== #
 
     # Parece sustituir al antiguo _calculate_pam_forces
     def _calculate_antagonistic_forces(self, pam_pressures, joint_states):
@@ -203,11 +247,11 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             return [0.0] * 6
         
         joint_data = {
-            0: joint_states[0],  # left_hip_joint
-            1: joint_states[1],  # left_knee_joint  
-            3: joint_states[2],  # right_hip_joint
-            4: joint_states[3],  # right_knee_joint
-        }
+                        0: joint_states[0],  # left_hip_joint
+                        1: joint_states[1],  # left_knee_joint  
+                        3: joint_states[2],  # right_hip_joint
+                        4: joint_states[3],  # right_knee_joint
+                     }
         forces = []
         muscle_names = list(self.pam_muscles.keys())
         
@@ -216,11 +260,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             muscle_name = muscle_names[i]
             pam = self.pam_muscles[muscle_name]
 
-            joint_id, joint_state=self.relacionar_musculo_con_joint(muscle_name, joint_data)
+            joint_id, joint_state=relacionar_musculo_con_joint(muscle_name, joint_data)
             
             # Obtener información de la articulación
             joint_pos = joint_state[0] # Posición actual de la articulación
-            #print(f"{muscle_name=:}")
             # Calcular ratio de contracción según el tipo de músculo
             if 'hip' in muscle_name:
                 # Para caderas: calcular según si es flexor o extensor
@@ -262,31 +305,6 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             print(f"❌ Error: Generated {len(forces)} forces instead of 6!")
             return [0.0] * 6
         return forces
-    
-    def _calculate_joint_torques_from_pam_forces(self, pam_forces):
-        """
-        Convierte fuerzas PAM individuales en torques articulares netos
-        considerando pares antagónicos
-        """
-        joint_torques = []
-        
-        # Cadera izquierda: combinar flexor y extensor
-        left_hip_torque = pam_forces[0] + pam_forces[1]  # flexor + extensor (extensor ya es negativo)
-        joint_torques.append(left_hip_torque)
-        
-        # Rodilla izquierda: solo flexor
-        left_knee_torque = pam_forces[4]
-        joint_torques.append(left_knee_torque)
-        
-        # Cadera derecha: combinar flexor y extensor  
-        right_hip_torque = pam_forces[2] + pam_forces[3]
-        joint_torques.append(right_hip_torque)
-        
-        # Rodilla derecha: solo flexor
-        right_knee_torque = pam_forces[5]
-        joint_torques.append(right_knee_torque)
-        
-        return joint_torques
     
     def _apply_passive_spring_torques(self):
         """
@@ -334,7 +352,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         pam_forces = self._calculate_antagonistic_forces(pam_pressures, joint_states_pam)
         
         # Convertir a torques articulares netos
-        joint_torques = self._calculate_joint_torques_from_pam_forces(pam_forces)
+        joint_torques = calculate_joint_torques_from_pam_forces(pam_forces)
         
         # Aplicar torques a las articulaciones activas
         for i, torque in enumerate(joint_torques):
@@ -356,21 +374,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         self.total_phase_timesteps = phase_timesteps
 
         # Configuración base de pesos de imitación
-        phase_configs = {
-            0: {'imitation_weight': 0.0, 'use_walking_cycle': False},    # Equilibrio libre
-            1: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación equilibrio
-            2: {'imitation_weight': 0.3, 'use_walking_cycle': True},     # Exploración equilibrio
-            3: {'imitation_weight': 0.85, 'use_walking_cycle': True},    # Imitación sentadilla parcial
-            4: {'imitation_weight': 0.5, 'use_walking_cycle': True},     # Exploración sentadilla
-            5: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar izq.
-            6: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar izq.
-            7: {'imitation_weight': 0.9, 'use_walking_cycle': True},     # Imitación levantar der.
-            8: {'imitation_weight': 0.6, 'use_walking_cycle': True},     # Exploración levantar der.
-            9: {'imitation_weight': 0.8, 'use_walking_cycle': True},     # Imitación paso izq.
-            10: {'imitation_weight': 0.5, 'use_walking_cycle': True},    # Exploración paso izq.
-            11: {'imitation_weight': 0.8, 'use_walking_cycle': True},    # Imitación paso der.
-            12: {'imitation_weight': 0.2, 'use_walking_cycle': True},    # Maestría bilateral
-        }
+        phase_configs = phase_configs_method()
 
         config = phase_configs.get(phase, {'imitation_weight': 0.0, 'use_walking_cycle': False})
     
@@ -395,12 +399,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             self.sistema_recompensas.set_curriculum_phase(phase)
             print(f"   ✅ Reward system synchronized to phase {phase}")
         
-        print(f"   🎮 Environment configuration for phase {phase}:")
-        print(f"      Use walking cycle: {self.use_walking_cycle}")
-        print(f"      Imitation weight: {self.imitation_weight}")
-        print(f"   🏁 Phase {phase} configuration completed\n")
-        
-
+        set_training_phase_print(phase, self.use_walking_cycle, self.imitation_weight)
     
     def _enhanced_observation(self):
         """
@@ -446,7 +445,6 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                 zmp_point = self.zmp_calculator.calculate_zmp()
                 is_stable = self.zmp_calculator.is_stable(zmp_point)
                 margin = self.zmp_calculator.stability_margin_distance(zmp_point)
-                
                 zmp_info = [
                     zmp_point[0], zmp_point[1], 
                     float(is_stable), 
@@ -459,6 +457,10 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         enhanced_obs = np.concatenate([base_obs, pam_obs, spring_obs, zmp_info])
         
         return enhanced_obs
+    
+# ========================================================================================================================================================================= #
+# ===================================================== Métodos de paso y control del entorno Enhanced_PAMIKBipedEnv ====================================================== #
+# ========================================================================================================================================================================= #
     
     def step(self, action):
         """
@@ -492,9 +494,6 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # Aplicar control mejorado con 6 PAMs
         joint_torques = self._apply_enhanced_control(final_action)
 
-        # ANTES de simular, asegurarnos que el sistema de recompensas tiene acceso
-        # a los estados PAM más recientes. Es como asegurar que el entrenador
-        # pueda ver exactamente lo que está haciendo el robot bipedo.
         if not self.reward_system_integration_status['pam_states_linked']:
             self._ensure_reward_system_integration()
 
@@ -605,52 +604,9 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         # ===== LOGGING PARA DEBUGGING (cada 100 pasos) =====
         
         if self.step_count % 100 == 0:
-            self._log_integration_status(reward, reward_components)
+            log_integration_status(self, reward, reward_components)
         
         return observation, reward, done, False, info
-    
-    def _log_integration_status(self, reward, reward_components):
-        """
-        Log de estado de integración para debugging y análisis.
-        
-        Este método es como el "informe de progreso" que un entrenador da
-        periódicamente para mostrar cómo va el entrenamiento del atleta.
-        """
-        
-        if self.step_count % 500 == 0:  # Log cada 500 pasos (menos frecuente)
-            print(f"\n📊 Integration Status Report (Step {self.step_count})")
-            print(f"   Total reward: {reward:.3f}")
-            
-            # Mostrar componentes de recompensa
-            if reward_components:
-                print("   Reward breakdown:")
-                for component, value in reward_components.items():
-                    print(f"      {component}: {value:.3f}")
-            
-            # Estado de los PAMs
-            if hasattr(self, 'pam_states') and self.pam_states is not None:
-                pressures = self.pam_states['pressures']
-                normalized_pressures = pressures / self.max_pressure
-                
-                print("   PAM status:")
-                muscle_names = ['L_hip_flex', 'L_hip_ext', 'R_hip_flex', 'R_hip_ext', 'L_knee', 'R_knee']
-                for i, (name, pressure) in enumerate(zip(muscle_names, normalized_pressures)):
-                    print(f"      {name}: {pressure:.2f}")
-            
-            # Estado del currículo
-            curriculum_info = self.reward_system_integration_status
-            print(f"   Curriculum phase: {curriculum_info['curriculum_phase']}")
-            print(f"   Imitation weight: {self.imitation_weight}")
-            
-            # Métricas de coordinación si están disponibles
-            if hasattr(self.sistema_recompensas, 'coordination_metrics'):
-                coords = self.sistema_recompensas.coordination_metrics
-                print("   Coordination metrics:")
-                for metric, value in coords.items():
-                    if value != 0.0:  # Solo mostrar métricas activas
-                        print(f"      {metric}: {value:.3f}")
-            
-            print("   ✅ Integration status: HEALTHY\n")
     
     def _ensure_reward_system_integration(self):
         """
@@ -685,13 +641,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             
             # ===== VERIFICACIÓN 2: COMUNICACIÓN CON REWARD SYSTEM =====
             
-            # Pasar los estados PAM al sistema de recompensas
-            self.sistema_recompensas.pam_states = self.pam_states
-            self.sistema_recompensas.max_pressure = self.max_pressure
-            
-            # Verificar que el sistema de recompensas puede acceder a los IDs del robot
-            self.sistema_recompensas.robot_id = self.robot_id
-            self.sistema_recompensas.plane_id = self.plane_id
+            self.reward_system_interaction()
             
             # ===== VERIFICACIÓN 3: TEST DE MÉTRICAS =====
             
@@ -706,12 +656,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             # ===== VERIFICACIÓN 4: MAPEO DE ARTICULACIONES =====
             
             # Verificar que los IDs de articulaciones son correctos
-            expected_joints = {
-                'left_hip': 0,
-                'left_knee': 1, 
-                'right_hip': 3,
-                'right_knee': 4
-            }
+            expected_joints = expected_joints_fun()
             
             # Verificar que las articulaciones existen en PyBullet
             for joint_name, joint_id in expected_joints.items():
@@ -736,133 +681,14 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
             print("   🔄 Will retry on next step...")
             return False
 
-    
-##############################################################################################################################################################
-############################################################## Generacion Variables constantes ###############################################################
-##############################################################################################################################################################
-
-    def generar_simplified_space(self):
-        """
-            Genera el espacio de acción simplificado 
-            y las propiedades del entorno.
-        """
-        self.urdf_path = "2_legged_human_like_robot.urdf"
-        self.time_step = 1.0 / 1500.0
-
-        # Variables específicas de IK
-        self.last_ik_success = False
-        self.last_ik_error = 0.0
-        self.last_hybrid_weight = 0.5
-        # Número total de joints articulados que usan PAMS
-        # Control mode siempre PAM para enhanced version
-        self.control_mode = "pam"
-        self.num_joints = 4
-
-    def configuracion_simulacion_1(self):
-        """MODIFICADO: IDs de articulaciones corregidos"""
-        if self.render_mode == 'human':
-            self.physics_client = p.connect(p.GUI)
-        else:
-            import threading
-            self._thread_id = threading.get_ident()
-            self.physics_client = p.connect(p.DIRECT)
-        # IDs corregidos para el robot bípedo
-        self.left_hip_id = 0
-        self.left_knee_id = 1
-        self.left_foot_id = 2   # ID Pie izquierdo End effector pie izquierdo
-        self.left_ankle_id=self.left_foot_id
-
-        self.right_hip_id = 3
-        self.right_knee_id = 4
-        self.right_foot_id = 5  # ID pie derecho End effector pie derecho
-        self.right_ankle_id=self.right_foot_id
-        
-        # Variables de tracking mejoradas
-        self.velocity_history = deque(maxlen=10)
-        self.previous_action = None
-        
-
-        # Fuerzas específicas para cada articulación (en Newtons)
-        p.setAdditionalSearchPath(pybullet_data.getDataPath())
-        # IDs de end-effectors (enlaces de pies)
-
-        # ===== INTEGRACIÓN CRÍTICA: Sistema de recompensas para 6 PAMs antagónicos =====
-        # 
-        # IMPORTANTE: Inicializamos con None para pam_states porque se crea antes de
-        # que tengamos los estados PAM inicializados. Se actualizará en reset().
-        # Esto es como tener un entrenador que espera a conocer al atleta antes de
-        # comenzar a evaluar su rendimiento.
-        
-
-        # Número total de joints articulados
-        self.sistema_recompensas=Enhanced_ImproveRewardSystem(self.left_foot_id, 
-                                                    self.right_foot_id,
-                                                    self.num_joints,
-                                                    None, # Se inicia después
-                                                    curriculum_phase=1,  # Fase inicial por defecto
-                                                    num_pams=6)
-        # Variable para tracking de integración - nos ayuda a debuggear
-        # Variable para tracking de integración - nos ayuda a debuggear
-        self.reward_system_integration_status = {
-            'initialized': True,
-            'pam_states_linked': False,
-            'curriculum_phase': self.sistema_recompensas.curriculum_phase,
-            'last_reward_components': None
-        }
-
-        # Límites más amplios
-        self.foot_workspace = {
-            'x_range': (-1.2, 1.2),    # Adelante/atrás
-            'y_range': (-0.8, 0.8),    # Izquierda/derecha 
-            'z_range': (-0.3, 1.0)     # Altura del suelo
-        }
-
-    def limites_sistema(self):
-        """Define los límites del sistema y las propiedades de los músculos PAM."""
-        self.min_pressure = 101325 # 1 atm: Suponemos que esa es la presión ambiente
-        # Parámetros de control PAM
-        self.max_pressure = 500000+ self.min_pressure  # 5 bar en Pa
-        # Es esta variable realmente necesaria
-        self.joint_forces = {
-            'left_hip_joint': 150,    # Cadera necesita más fuerza
-            'left_knee_joint': 120,   # Rodilla fuerza moderada
-            'right_hip_joint': 150,
-            'right_knee_joint': 120,
-        }
-        self.joint_force_array = [150, 120, 150, 120]
-        self.imitation_weight = 1.0
-
-    def variables_seguimiento(self):
-        # Variables para seguimiento de rendimiento
-        self.step_count = 0
-        self.total_reward = 0
-        self.previous_position = None
-        self.previous_velocity = None
-
-        # Parámetros mejorados para LSTM
-        self.history_length = 5  # Mantener historial de 5 observaciones pasadas
-        self.observation_history = deque(maxlen=self.history_length)
-        
-        # Variables para recompensas
-        self.previous_contacts = [False, False]
-        self.previous_action = None
-        
-        # IDs de objetos (se inicializan en reset)
-        self.robot_id = None
-        self.plane_id = None
-
-        self.zmp_calculator = None
-        self.zmp_history = []
-        self.max_zmp_history = 20
-        
-        # Parámetros para recompensas ZMP
-        self.zmp_reward_weight = 0.2
-        self.stability_bonus = 20.0
-        self.instability_penalty = -15.0
-
-        # Añadir al final:
-        self.walking_controller = None
-        self.use_walking_cycle = True
+    def reward_system_interaction(self):
+        # Pasar los estados PAM al sistema de recompensas
+            self.sistema_recompensas.pam_states = self.pam_states
+            self.sistema_recompensas.max_pressure = self.max_pressure
+            
+            # Verificar que el sistema de recompensas puede acceder a los IDs del robot
+            self.sistema_recompensas.robot_id = self.robot_id
+            self.sistema_recompensas.plane_id = self.plane_id
 
 
 # ===================================================================================================================================================================== #
@@ -915,7 +741,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         
         # Calcular y aplicar fuerzas PAM
         pam_forces = self._calculate_antagonistic_forces(pam_pressures, joint_states_pam)
-        joint_torques = self._calculate_joint_torques_from_pam_forces(pam_forces)
+        joint_torques = calculate_joint_torques_from_pam_forces(pam_forces)
         
         # Aplicar torques
         for i, torque in enumerate(joint_torques):
@@ -985,9 +811,9 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                                 if not entry['stable'])
             
             # Si 8 de los últimos 10 steps son inestables
-            print("recent_unstable",recent_unstable)
+            #print("recent_unstable",recent_unstable)
             if recent_unstable >= 8:
-                print("nivel inestabilidad",recent_unstable)
+            #    print("nivel inestabilidad",recent_unstable)
                 return True
             
         # Límite de tiempo
@@ -1441,171 +1267,9 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
         
         return "\n".join(summary)
 
-    
-
-# ===================================================================================================================================================================== #
-# =================================================Pruebo el testeo==================================================================================================== #
-# ===================================================================================================================================================================== #
-
-
-def test_complete_integration():
-    """
-    Función de testing integral que valida toda la integración entre
-    Enhanced_PAMIKBipedEnv y Enhanced_ImprovedRewardSystem.
-    
-    Esta función es como un "curso intensivo" que pone a prueba todos
-    los aspectos de la integración para asegurar que funciona correctamente.
-    """
-    
-    print("🧪 COMPREHENSIVE INTEGRATION TEST")
-    print("=" * 60)
-    
-    try:
-        # ===== PASO 1: CREAR ENTORNO =====
-        
-        print("1️⃣ Creating Enhanced PAM Environment...")
-        env = Enhanced_PAMIKBipedEnv(render_mode='direct', action_space="pam")
-        print("   ✅ Environment created successfully")
-        
-        # ===== PASO 2: RESET INICIAL =====
-        
-        print("\n2️⃣ Performing initial reset...")
-        obs, info = env.reset()
-        print(f"   ✅ Reset completed")
-        print(f"   📊 Observation shape: {obs.shape}")
-        print(f"   🎯 Action space: {env.action_space.shape}")
-        
-        # ===== PASO 3: VALIDACIÓN DE INTEGRACIÓN =====
-        
-        print("\n3️⃣ Validating integration...")
-        validation_report = env.validate_integration()
-        
-        print(f"   📋 Overall status: {validation_report['overall_status']}")
-        if validation_report['errors']:
-            print("   ❌ Errors found:")
-            for error in validation_report['errors']:
-                print(f"      - {error}")
-        if validation_report['warnings']:
-            print("   ⚠️ Warnings:")
-            for warning in validation_report['warnings']:
-                print(f"      - {warning}")
-        
-        # ===== PASO 4: TEST DE ACCIONES =====
-        
-        print("\n4️⃣ Testing PAM actions...")
-        
-        # Test con diferentes tipos de acciones
-        test_actions = [
-            np.zeros(6),                           # Acción nula
-            np.array([0.2, 0.3, 0.2, 0.3, 0.1, 0.1]),  # Activación balanceada
-            np.array([0.8, 0.1, 0.1, 0.8, 0.6, 0.6]),  # Activación alternada
-            env.action_space.sample()              # Acción aleatoria
-        ]
-        
-        for i, action in enumerate(test_actions):
-            print(f"   Testing action {i+1}/4...")
-            obs, reward, done, truncated, info = env.step(action)
-            
-            print(f"      Reward: {reward:.3f}")
-            if 'reward_components' in info:
-                components = info['reward_components']
-                print(f"      Components: {len(components)} metrics calculated")
-            
-            if done:
-                print("      Episode ended - resetting...")
-                obs, info = env.reset()
-        
-        # ===== PASO 5: TEST DE CURRÍCULO =====
-        
-        print("\n5️⃣ Testing curriculum phases...")
-        
-        for phase in [0, 1, 2]:
-            print(f"   Setting phase {phase}...")
-            env.set_training_phase(phase, 1000)  # 1000 steps por fase
-            
-            # Test rápido en cada fase
-            action = env.action_space.sample()
-            obs, reward, done, truncated, info = env.step(action)
-            print(f"      Phase {phase} reward: {reward:.3f}")
-        
-        # ===== PASO 6: ANÁLISIS DE COORDINACIÓN =====
-        
-        print("\n6️⃣ Testing muscle coordination...")
-        
-        # Simular 20 pasos para generar datos de coordinación
-        for step in range(20):
-            action = env.action_space.sample()
-            obs, reward, done, truncated, info = env.step(action)
-            
-            if done:
-                obs, info = env.reset()
-        
-        # Verificar métricas de coordinación
-        if hasattr(env.sistema_recompensas, 'coordination_metrics'):
-            coords = env.sistema_recompensas.coordination_metrics
-            print("   🤝 Coordination metrics:")
-            for metric, value in coords.items():
-                print(f"      {metric}: {value:.3f}")
-        
-        # ===== PASO 7: RESUMEN FINAL =====
-        
-        print("\n7️⃣ Integration summary:")
-        summary = env.get_integration_summary()
-        print(summary)
-        
-        # ===== RESULTADO =====
-        
-        env.close()
-        
-        if validation_report['overall_status'] in ['HEALTHY', 'FUNCTIONAL_WITH_ISSUES']:
-            print("\n🎉 INTEGRATION TEST PASSED!")
-            print("   The Enhanced PAM system is ready for training.")
-            return True
-        else:
-            print("\n❌ INTEGRATION TEST FAILED!")
-            print("   Please review the errors above before training.")
-            return False
-            
-    except Exception as e:
-        print(f"\n💥 Test failed with exception: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    
 
 
 
-
-# ===== FUNCIÓN DE PRUEBA =====
-
-def test_enhanced_6pam_system():
-    """Script de prueba para verificar el sistema de 6 PAMs"""
-    
-    print("🔧 Testing Enhanced PAM System (6 actuators)")
-    
-    env = Enhanced_PAMIKBipedEnv(render_mode='human', action_space="pam")
-    
-    obs, info = env.reset()
-    print(f"✅ Environment created successfully")
-    print(f"   - Action space: {env.action_space.shape}")
-    print(f"   - Observation space: {env.observation_space.shape}")
-    print(f"   - Active PAMs: {env.num_active_pams}")
-    
-    for step in range(100):
-        action = env.action_space.sample()
-        obs, reward, done, truncated, info = env.step(action)
-        
-        if step % 20 == 0:
-            print(f"   Step {step}: Reward = {reward:.2f}")
-            if 'pam_pressures' in info:
-                print(f"      PAM pressures = {info['pam_pressures']}")
-        
-        if done:
-            print(f"   Episode ended at step {step}")
-            obs, info = env.reset()
-    
-    env.close()
-    print("🎉 Test completed successfully!")
 
 if __name__ == "__main__":
-    test_enhanced_6pam_system()
+    pass
