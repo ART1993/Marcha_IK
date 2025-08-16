@@ -177,7 +177,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
                                                                 self.right_foot_id,
                                                                 self.num_joints,
                                                                 None, # Se inicia después
-                                                                curriculum_phase=1,  # Fase inicial por defecto
+                                                                curriculum_phase=self.phase,  # Fase inicial por defecto
                                                                 num_pams=6)
         # Variable para tracking de integración - nos ayuda a debuggear
         self.reward_system_integration_status = reward_system_integration_status(self.sistema_recompensas.curriculum_phase)
@@ -375,7 +375,7 @@ class Enhanced_PAMIKBipedEnv(gym.Env):
 
         # Configuración base de pesos de imitación
         phase_configs = phase_configs_method()
-
+        #para el caso phase=0
         config = phase_configs.get(phase, {'imitation_weight': 0.0, 'use_walking_cycle': False})
     
         self.imitation_weight = config['imitation_weight']

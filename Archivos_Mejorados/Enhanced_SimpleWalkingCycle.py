@@ -24,7 +24,7 @@ class Enhanced_SimpleWalkingCycle(SimpleWalkingCycle):
         left_knee = 0.2 + 0.6 * max(0, np.sin(left_phase))
         right_knee = 0.2 + 0.6 * max(0, np.sin(right_phase))
         
-        # Normalizar a [-1, 1]
+        # Normalizar a [0, 1]
         actions = [left_hip_flexor, left_hip_extensor, right_hip_flexor, 
                   right_hip_extensor, left_knee, right_knee]
         actions = [2.0 * p - 1.0 for p in actions]
