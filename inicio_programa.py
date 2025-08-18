@@ -3,8 +3,8 @@ import os
 from collections import deque
 import numpy as np
 import pybullet as p
-from Gymnasium_Start.biped_pam_IK_train import UnifiedBipedTrainer
-from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv
+
+from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv
 from Gymnasium_Start.Enhanced_UnifiedBipedTrainer import Enhanced_UnifiedBipedTrainer
 
 from Archivos_Mejorados.Setup_multiprocessing import setup_multiprocessing_for_training
@@ -16,22 +16,6 @@ def _setup_multiprocessing():
     elif mp.get_start_method() != 'spawn':
         print("⚠️ Multiprocessing already initialized with different method")
 
-def train_pam_biped(total_timesteps=3000000, n_envs=4, learning_rate=3e-4, resume=True, action_space="hybrid"):
-    """Inicio de Entrenamiento PAM + IK."""
-    _setup_multiprocessing()
-    
-    trainer = UnifiedBipedTrainer(
-        env_type='pam',
-        total_timesteps=total_timesteps,
-        n_envs=n_envs,
-        learning_rate=learning_rate,
-        action_space=action_space,
-        seleccion="simple"
-    )
-    
-    print("🚀 Starting PAM biped training...")
-    trainer.train(resume=resume)
-    return trainer
 
 def start_training_min():
     """Función optimizada para iniciar entrenamiento"""
@@ -104,7 +88,7 @@ def test_enhanced_6pam_system():
     
     print("🔧 Testing Enhanced PAM System (6 actuators)")
     
-    env = Enhanced_PAMIKBipedEnv(render_mode='human', action_space="pam")
+    env = Simple_BalanceSquat_BipedEnv(render_mode='human', action_space="pam")
     
     obs, info = env.reset()
     print(f"✅ Environment created successfully")

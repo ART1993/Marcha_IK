@@ -11,9 +11,8 @@ from datetime import datetime
 import json
 
 # Import your environments
-from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv  # Nuevo entorno mejorado
+from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
-from Controlador.BiomechanicalMetricsCallback import BiomechanicalMetricsCallback
 
 class Enhanced_UnifiedBipedTrainer:
     """
@@ -75,7 +74,7 @@ class Enhanced_UnifiedBipedTrainer:
         # Configuración optimizada para sistemas de 6 músculos antagónicos
         self.env_configs = {
             
-                'env_class': Enhanced_PAMIKBipedEnv,
+                'env_class': Simple_BalanceSquat_BipedEnv,
                 'clip_obs': 10.0,      # Solo se usa para balance
                 'clip_reward': 10.0,   # Solo se usa para balance
                 'model_prefix': 'balance_squat_pam',
@@ -120,7 +119,7 @@ class Enhanced_UnifiedBipedTrainer:
         def make_env():
             def _init():
                 # Crear el entorno con la configuración apropiada
-                env = Enhanced_PAMIKBipedEnv(
+                env = Simple_BalanceSquat_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
                     action_space=self.action_space,
                     env_type=self.env_type,
@@ -145,7 +144,7 @@ class Enhanced_UnifiedBipedTrainer:
         
         def make_eval_env():
             def _init():
-                env = Enhanced_PAMIKBipedEnv(render_mode='direct', 
+                env = Simple_BalanceSquat_BipedEnv(render_mode='direct', 
                                              action_space=self.action_space,
                                              env_type=self.env_type,
                                              phase=0)  # Fase de evaluación es balance

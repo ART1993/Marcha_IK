@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 from Controlador.discrete_action_controller import DiscreteActionController, ActionType
-from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv
+from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Enhanced_PAMIKBipedEnv
 
 def test_discrete_actions_integration():
     """
@@ -151,7 +151,7 @@ def test_discrete_actions_integration():
         print("-" * 50)
         
         try:
-            from Gymnasium_Start.Enhanced_PAMIKBipedEnv import Enhanced_PAMIKBipedEnv
+            from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Enhanced_PAMIKBipedEnv
             
             # Crear entorno con acciones discretas habilitadas
             env = Enhanced_PAMIKBipedEnv(
