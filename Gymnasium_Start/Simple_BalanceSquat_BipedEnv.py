@@ -12,7 +12,7 @@ from collections import deque
 from Controlador.discrete_action_controller import DiscreteActionController, ActionType
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
-from Archivos_Mejorados.Enhanced_ImproveReward_system import Enhanced_ImproveRewardSystem
+from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Enhanced_ImproveRewardSystem
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data                 
 
 class Simple_BalanceSquat_BipedEnv(gym.Env):

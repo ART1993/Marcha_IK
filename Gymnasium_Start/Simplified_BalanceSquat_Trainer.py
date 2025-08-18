@@ -14,7 +14,7 @@ import json
 from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 
-class Enhanced_UnifiedBipedTrainer:
+class Simplified_BalanceSquat_Trainer:
     """
     Entrenador unificado mejorado para sistemas de robot bípedo con músculos PAM antagónicos.
     

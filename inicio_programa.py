@@ -5,7 +5,7 @@ import numpy as np
 import pybullet as p
 
 from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv
-from Gymnasium_Start.Enhanced_UnifiedBipedTrainer import Enhanced_UnifiedBipedTrainer
+from Gymnasium_Start.Simplified_BalanceSquat_Trainer import Enhanced_UnifiedBipedTrainer
 
 from Archivos_Mejorados.Setup_multiprocessing import setup_multiprocessing_for_training
 

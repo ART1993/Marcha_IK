@@ -9,11 +9,17 @@ class ActionType(Enum):
 
 class DiscreteActionController:
     """
-    Controlador para acciones discretas del robot bípedo con PAMs.
-    
-    Este controlador genera patrones de presión PAM expertos para acciones
-    específicas en lugar de ciclos continuos de marcha. Cada acción tiene
-    su propio generador de patrones que considera la biomecánica del movimiento.
+        Controlador SIMPLIFICADO para balance y sentadillas con PAMs.
+        
+        OBJETIVO ESPECÍFICO:
+        - BALANCE_STANDING: Mantener equilibrio de pie
+        - SQUAT: Realizar sentadillas controladas
+        
+        ELIMINADO:
+        - Acciones de marcha (STEP_LEFT, STEP_RIGHT)
+        - Acciones de levantamiento de piernas
+        - Mapeo complejo de curriculum phases
+        - Múltiples fases complejas por acción
     """
     
     def __init__(self, env):
@@ -34,6 +40,9 @@ class DiscreteActionController:
         
         # Configurar patrones base para cada acción
         self.setup_action_patterns()
+
+        print(f"🎯 Simplified Balance & Squat Controller initialized")
+        print(f"   Available actions: BALANCE_STANDING, SQUAT")
         
     def setup_action_patterns(self):
         """Define los patrones de activación PAM para cada acción discreta"""
@@ -41,16 +50,16 @@ class DiscreteActionController:
         self.action_patterns = {
             ActionType.BALANCE_STANDING: {
                 'description': 'Mantener postura erguida estable',
-                'duration': 3.0,  # Más tiempo para practicar equilibrio
+                'duration': 5.0,  # Más tiempo para practicar equilibrio
                 'phases': [
                     # Fase única: co-activación moderada para estabilidad
                     {
                         'duration_ratio': 1.0,
                         'pressures': {
                             'left_hip_flexor': 0.25,
-                            'left_hip_extensor': 0.35,  # Ligeramente más para anti-gravedad
+                            'left_hip_extensor': 0.40,  # Ligeramente más para anti-gravedad
                             'right_hip_flexor': 0.25,
-                            'right_hip_extensor': 0.35,
+                            'right_hip_extensor': 0.40,
                             'left_knee_flexor': 0.15,
                             'right_knee_flexor': 0.15,
                         }
@@ -60,16 +69,16 @@ class DiscreteActionController:
             
             ActionType.SQUAT: {
                 'description': 'Sentadilla controlada',
-                'duration': 3.0,
+                'duration': 4.0, # Tiempo suficiente para movimiento completo
                 'phases': [
                     # Fase 1: Descenso controlado
                     {
                         'duration_ratio': 0.4,
                         'pressures': {
-                            'left_hip_flexor': 0.4,
-                            'left_hip_extensor': 0.5,  # Control excéntrico
-                            'right_hip_flexor': 0.4,
-                            'right_hip_extensor': 0.5,
+                            'left_hip_flexor': 0.5,
+                            'left_hip_extensor': 0.45,  # Control excéntrico
+                            'right_hip_flexor': 0.5,
+                            'right_hip_extensor': 0.45,
                             'left_knee_flexor': 0.6,   # Flexión controlada
                             'right_knee_flexor': 0.6,
                         }
@@ -78,10 +87,10 @@ class DiscreteActionController:
                     {
                         'duration_ratio': 0.2,
                         'pressures': {
-                            'left_hip_flexor': 0.5,
-                            'left_hip_extensor': 0.6,  # Co-activación para estabilidad
-                            'right_hip_flexor': 0.5,
-                            'right_hip_extensor': 0.6,
+                            'left_hip_flexor': 0.6,
+                            'left_hip_extensor': 0.55,  # Co-activación para estabilidad
+                            'right_hip_flexor': 0.60,
+                            'right_hip_extensor': 0.55,
                             'left_knee_flexor': 0.7,
                             'right_knee_flexor': 0.7,
                         }
@@ -91,54 +100,11 @@ class DiscreteActionController:
                         'duration_ratio': 0.4,
                         'pressures': {
                             'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.8,  # Fuerte extensión
+                            'left_hip_extensor': 0.7,  # Fuerte extensión
                             'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.8,
+                            'right_hip_extensor': 0.7,
                             'left_knee_flexor': 0.2,   # Los resortes ayudan
                             'right_knee_flexor': 0.2,
-                        }
-                    }
-                ]
-            },
-            
-            ActionType.STEP_LEFT: {
-                'description': 'Paso hacia adelante con pierna izquierda',
-                'duration': 2.0,
-                'phases': [
-                    # Fase 1: Preparación y shift de peso
-                    {
-                        'duration_ratio': 0.25,
-                        'pressures': {
-                            'left_hip_flexor': 0.35,
-                            'left_hip_extensor': 0.3,
-                            'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.5,
-                            'left_knee_flexor': 0.3,
-                            'right_knee_flexor': 0.25,
-                        }
-                    },
-                    # Fase 2: Swing de pierna izquierda
-                    {
-                        'duration_ratio': 0.35,
-                        'pressures': {
-                            'left_hip_flexor': 0.7,    # Flexión para avanzar
-                            'left_hip_extensor': 0.2,
-                            'right_hip_flexor': 0.25,
-                            'right_hip_extensor': 0.6,  # Empuje
-                            'left_knee_flexor': 0.7,    # Clearance
-                            'right_knee_flexor': 0.2,
-                        }
-                    },
-                    # Fase 3: Contacto y estabilización
-                    {
-                        'duration_ratio': 0.4,
-                        'pressures': {
-                            'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.5,   # Recepción del peso
-                            'right_hip_flexor': 0.4,
-                            'right_hip_extensor': 0.4,
-                            'left_knee_flexor': 0.2,
-                            'right_knee_flexor': 0.3,
                         }
                     }
                 ]
@@ -162,14 +128,20 @@ class DiscreteActionController:
             time_step: Paso de tiempo de simulación
             
         Returns:
-            np.array: 6 presiones PAM normalizadas [-1, 1]
+            np.array: 6 presiones PAM normalizadas [0, 1]
         """
         # Actualizar progreso de la acción
-        self.action_progress += time_step / self.action_duration
+        progress_increment = time_step / self.action_duration
+        self.action_progress += progress_increment
         
         # Si la acción terminó, mantener la última fase
         if self.action_progress > 1.0:
-            self.action_progress = 1.0
+            if self.current_action == ActionType.SQUAT:
+                # Después de sentadilla, volver a balance
+                self.set_action(ActionType.BALANCE_STANDING)
+            else:
+                # Reiniciar balance
+                self.action_progress = 0.0
         
         # Obtener patrón de la acción actual
         pattern = self.action_patterns[self.current_action]
@@ -177,82 +149,33 @@ class DiscreteActionController:
         
         # Determinar en qué fase estamos
         cumulative_duration = 0.0
-        current_phase_data = phases[-1]  # Por defecto, última fase
-        phase_local_progress = 1.0
+        #current_phase_data = phases[-1]  # Por defecto, última fase
+        #phase_local_progress = 1.0
+        current_phase = phases[0]  # Por defecto, primera fase
         
         for phase in phases:
             phase_end = cumulative_duration + phase['duration_ratio']
             if self.action_progress <= phase_end:
-                current_phase_data = phase
-                # Calcular progreso local dentro de esta fase
-                phase_start = cumulative_duration
-                phase_local_progress = (self.action_progress - phase_start) / phase['duration_ratio']
-                phase_local_progress = np.clip(phase_local_progress, 0.0, 1.0)
+                current_phase = phase
                 break
-            cumulative_duration = phase_end
+            cumulative_duration += phase['duration_ratio']
         
-        # Obtener presiones de la fase actual
-        current_pressures = current_phase_data['pressures']
+        # Generar array de presiones según mapeo PAM
+        pam_pressures = np.zeros(6, dtype=np.float32)
         
-        # Si hay una siguiente fase, interpolar suavemente
-        next_phase_idx = phases.index(current_phase_data) + 1
-        if next_phase_idx < len(phases) and phase_local_progress > 0.7:
-            # Comenzar transición suave en el último 30% de la fase
-            next_pressures = phases[next_phase_idx]['pressures']
-            blend_factor = (phase_local_progress - 0.7) / 0.3  # 0 a 1 en el último 30%
-            
-            # Interpolar entre fases
-            interpolated_pressures = {}
-            for muscle in current_pressures:
-                interpolated_pressures[muscle] = (
-                    current_pressures[muscle] * (1 - blend_factor) +
-                    next_pressures[muscle] * blend_factor
-                )
-            current_pressures = interpolated_pressures
+        for muscle_name, pressure in current_phase['pressures'].items():
+            if muscle_name in self.pam_mapping:
+                pam_index = self.pam_mapping[muscle_name]
+                pam_pressures[pam_index] = pressure
         
-        # Convertir a array de acciones
-        actions = np.zeros(6, dtype=np.float32)
-        for muscle_name, pressure in current_pressures.items():
-            idx = self.pam_mapping[muscle_name]
-            # Convertir de [0,1] a [-1,1]
-            actions[idx] = 2.0 * pressure - 1.0
-        
-        # Aplicar suavizado temporal si tenemos historial
+        # Aplicar variación suave para naturalidad
         if hasattr(self, 'last_action'):
-            # Suavizado para evitar cambios bruscos
-            smoothing = 0.9  # Factor de suavizado
-            actions = smoothing * self.last_action + (1 - smoothing) * actions
+            smoothing_factor = 0.1  # 10% de suavizado
+            pam_pressures = (1 - smoothing_factor) * pam_pressures + smoothing_factor * self.last_action
         
-        self.last_action = actions.copy()
+        self.last_action = pam_pressures.copy()
         
-        return actions
-    
-    def get_action_for_phase(self, curriculum_phase):
-        """
-        Retorna el tipo de acción apropiado para cada fase del currículo.
-        
-        Esto mapea las fases del ExpertCurriculumManager a acciones específicas.
-        """
-        phase_to_action = {
-            0: ActionType.BALANCE_STANDING,
-            1: ActionType.BALANCE_STANDING,
-            2: ActionType.BALANCE_STANDING,
-            # Añadir fases para sentadillas si las agregas al currículo
-            3: ActionType.SQUAT,
-            4: ActionType.SQUAT,
-            # Resto de fases como antes
-            5: ActionType.LIFT_LEFT_LEG,
-            6: ActionType.LIFT_LEFT_LEG,
-            7: ActionType.LIFT_RIGHT_LEG,
-            8: ActionType.LIFT_RIGHT_LEG,
-            9: ActionType.STEP_LEFT,
-            10: ActionType.STEP_LEFT,
-            11: ActionType.STEP_RIGHT,
-            12: ActionType.STEP_RIGHT,
-            
-        }
-        
-        return phase_to_action.get(curriculum_phase, ActionType.BALANCE_STANDING)
+        return pam_pressures
     
     def reset(self):
         """Reinicia el controlador a su estado inicial"""
@@ -260,9 +183,10 @@ class DiscreteActionController:
         self.action_progress = 0.0
         if hasattr(self, 'last_action'):
             del self.last_action
+        print(f"🔄 Controller reset - Starting with BALANCE_STANDING")
     
-    def get_debug_info(self):
-        """Retorna información útil para debugging"""
+    def get_current_action_info(self):
+        """Información sobre la acción actual para debugging"""
         pattern = self.action_patterns[self.current_action]
         phases = pattern['phases']
         
@@ -276,10 +200,152 @@ class DiscreteActionController:
             cumulative += phase['duration_ratio']
         
         return {
-            'current_action': self.current_action.value,
-            'action_progress': self.action_progress,
-            'current_phase': current_phase_idx,
+            'action': self.current_action.value,
+            'description': pattern['description'],
+            'progress': self.action_progress,
+            'current_phase': current_phase_idx + 1,
             'total_phases': len(phases),
-            'action_duration': self.action_duration,
-            'last_action': self.last_action.tolist() if hasattr(self, 'last_action') else None
+            'duration': self.action_duration
         }
+    
+
+# ===== FUNCIONES DE UTILIDAD =====
+
+def create_balance_squat_controller(env):
+    """Crear controlador simplificado para balance y sentadillas"""
+    
+    controller = DiscreteActionController(env)
+    
+    print(f"✅ Balance & Squat Controller created")
+    print(f"   Focus: Static balance + Dynamic squats")
+    print(f"   Actions: {len(controller.action_patterns)} patterns defined")
+    
+    return controller
+
+def test_controller_patterns(duration_seconds=10):
+    """Test básico de los patrones del controlador"""
+    
+    print("🧪 Testing Balance & Squat Controller Patterns...")
+    
+    # Mock environment para test
+    class MockEnv:
+        def __init__(self):
+            self.robot_id = 0
+            self.time_step = 1.0 / 150.0
+    
+    mock_env = MockEnv()
+    controller = create_balance_squat_controller(mock_env)
+    
+    # Test de balance
+    print(f"\n📊 Testing BALANCE_STANDING pattern:")
+    controller.set_action(ActionType.BALANCE_STANDING)
+    
+    steps = int(duration_seconds / mock_env.time_step)
+    actions_recorded = []
+    
+    for step in range(min(steps, 300)):  # Máximo 300 steps para test
+        action = controller.get_expert_action(mock_env.time_step)
+        actions_recorded.append(action.copy())
+        
+        if step % 50 == 0:
+            info = controller.get_current_action_info()
+            print(f"   Step {step}: Progress {info['progress']:.2%}, "
+                  f"Phase {info['current_phase']}/{info['total_phases']}")
+            print(f"      PAM pressures: {action[:4]} (first 4 PAMs)")
+    
+    # Test de sentadilla
+    print(f"\n📊 Testing SQUAT pattern:")
+    controller.set_action(ActionType.SQUAT)
+    
+    for step in range(min(steps, 600)):  # Más steps para sentadilla completa
+        action = controller.get_expert_action(mock_env.time_step)
+        
+        if step % 100 == 0:
+            info = controller.get_current_action_info()
+            print(f"   Step {step}: Progress {info['progress']:.2%}, "
+                  f"Phase {info['current_phase']}/{info['total_phases']}")
+            print(f"      PAM pressures: {action[:4]} (first 4 PAMs)")
+            
+            # Imprimir descripción de fase
+            if info['current_phase'] == 1:
+                print(f"      🔽 DESCENSO: Flexión controlada")
+            elif info['current_phase'] == 2:
+                print(f"      ⏸️ MANTENER: Posición baja estable")
+            elif info['current_phase'] == 3:
+                print(f"      🔼 ASCENSO: Extensión potente")
+        
+        if info['progress'] >= 1.0:
+            print(f"   ✅ Sentadilla completada en step {step}")
+            break
+    
+    print(f"\n🎉 Test completado - Patrones funcionando correctamente")
+    
+    return controller, actions_recorded
+
+
+# ===== EJEMPLO DE INTEGRACIÓN =====
+
+def integrate_with_simplified_env():
+    """Ejemplo de cómo integrar con el entorno simplificado"""
+    
+    print("🔗 Integration Example: Controller + Environment")
+    
+    # Crear entorno simplificado
+    from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import create_simple_balance_squat_env
+    
+    env = create_simple_balance_squat_env(render_mode='direct')  # Sin visualización para test
+    controller = create_balance_squat_controller(env)
+    
+    # Test de integración
+    obs, info = env.reset()
+    total_reward = 0
+    
+    print(f"\n🎯 Testing integration for 500 steps...")
+    
+    for step in range(500):
+        # Obtener acción experta del controlador
+        expert_action = controller.get_expert_action(env.time_step)
+        
+        # Ejecutar en el entorno
+        obs, reward, done, truncated, info = env.step(expert_action)
+        total_reward += reward
+        
+        if step % 100 == 0:
+            controller_info = controller.get_current_action_info()
+            print(f"   Step {step}: Reward = {reward:.2f}, "
+                  f"Action = {controller_info['action']}, "
+                  f"Progress = {controller_info['progress']:.2%}")
+        
+        # Cambiar a sentadilla a mitad del test
+        if step == 250:
+            controller.set_action(ActionType.SQUAT)
+        
+        if done:
+            print(f"   Episode terminado en step {step}")
+            break
+    
+    env.close()
+    
+    print(f"✅ Integration test completed")
+    print(f"   Total reward: {total_reward:.2f}")
+    print(f"   Final action: {controller_info['action']}")
+    
+    return total_reward
+
+
+if __name__ == "__main__":
+    
+    print("🎯 SIMPLIFIED BALANCE & SQUAT CONTROLLER")
+    print("=" * 60)
+    print("Controlador específico para balance y sentadillas")
+    print("Genera patrones PAM expertos para entrenar el robot")
+    print("=" * 60)
+    
+    # Test de patrones
+    test_controller_patterns(duration_seconds=5)
+    
+    # Test de integración (si el entorno está disponible)
+    try:
+        integrate_with_simplified_env()
+    except ImportError:
+        print("\n⚠️ Entorno simplificado no disponible para test de integración")
