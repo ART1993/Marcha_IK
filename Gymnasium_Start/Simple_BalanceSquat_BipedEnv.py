@@ -185,16 +185,26 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
     def _apply_pam_forces(self, pam_pressures):
         """
-        Convertir presiones PAM a torques articulares SIMPLIFICADO
-        
-        Mapeo básico: 6 PAMs -> 4 articulaciones
-        - PAM 0,1: cadera izquierda (flexor, extensor)
-        - PAM 2,3: cadera derecha (flexor, extensor)  
-        - PAM 4: rodilla izquierda (flexor)
-        - PAM 5: rodilla derecha (flexor)
+            Convertir presiones PAM a torques articulares usando FÍSICA REAL de PAM_McKibben
+            
+            ESTO ES FUNDAMENTAL - El corazón del control de actuadores PAM:
+            1. Usa PAM_McKibben para calcular fuerza real según presión
+            2. Considera contracción basada en ángulo articular  
+            3. Aplica física biomecánica real
+            
+            Mapeo: 6 PAMs -> 4 articulaciones
+            - PAM 0,1: cadera izquierda (flexor, extensor)
+            - PAM 2,3: cadera derecha (flexor, extensor)  
+            - PAM 4: rodilla izquierda (flexor)
+            - PAM 5: rodilla derecha (flexor)
         """
         # Obtener estados articulares actuales
         joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
+        # para joint states cada estado representa:
+        #0 es cadera izquierda
+        #1 es rodilla izquierda
+        #2 es cadera derecha
+        #3 es rodilla derecha
         joint_positions = [state[0] for state in joint_states]
         
         # Mapeo de PAMs a músculos específicos
@@ -213,22 +223,26 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             # Convertir presión normalizada [0,1] a presión real [Pa]
             real_pressure = self.min_pressure + pressure * (self.max_pressure - self.min_pressure)
-            
+            # Correlation ratio es la normalización de los parámetros entre 0 y 1 para los ángulos de trabajo
             # Calcular ratio de contracción basado en ángulo articular
             if 'hip' in muscle_name:
                 joint_idx = 0 if 'left' in muscle_name else 2
-                joint_pos = joint_positions[joint_idx if 'left' in muscle_name else joint_idx]
+                # joint_idx if 'left' in muscle_name else joint_idx
+                joint_pos = joint_positions[joint_idx]
                 
                 if 'flexor' in muscle_name:
                     # Flexor se activa con ángulos positivos (flexión)
                     contraction_ratio = max(0, joint_pos) / 1.2  # Normalizar
                 else:  # extensor
-                    # Extensor se activa con ángulos negativos (extensión) 
+                    # Extensor se activa con ángulos negativos (extensión)
+                    # Ver si esto esta bien o debería de ser mín
                     contraction_ratio = max(0, -joint_pos) / 1.2
                     
             elif 'knee' in muscle_name:
                 joint_idx = 1 if 'left' in muscle_name else 3
-                joint_pos = joint_positions[joint_idx if 'left' in muscle_name else joint_idx - 2]
+                # por que ha puesto esto: joint_idx if 'left' in muscle_name else joint_idx - 2
+                # SI lo aplico como esta escrito antes, ¿No sería siempre la rodilla izquierda?
+                joint_pos = joint_positions[joint_idx]
                 # Rodilla: solo flexor, se activa con flexión
                 contraction_ratio = max(0, joint_pos) / 1.571  # Normalizar a rango rodilla
             
@@ -419,7 +433,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
             
         # Límite de tiempo
-        if self.step_count > 1500*5:
+        if self.step_count > 1500*5: # 5 segundos a 1500 Hz
             print("fuera de t")
             return True
             
@@ -427,7 +441,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     
 
     def reset(self, seed=None, options=None):
-        """Reset unificado para ambos entornos (base e híbrido PAM)."""
+        """
+            Reset SIMPLIFICADO - Solo configuración esencial para balance
+        """
         super().reset(seed=seed)
         
         # ===== RESET FÍSICO BÁSICO =====
@@ -467,7 +483,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Desactivar motores por defecto - control por PAM
         # Solo las rodillas y caderas poseen actuadores
-        for i in [0, 1, 3, 4]:  # Solo caderas y rodillas
+        # Normalmente es [0,1,3,4] las articulaciones PAM, pero en caso de que los muelles den una velocidad o f
+        # a los tobillos lo uso para hacerlo cero y evitar problemas
+        for i, joint_value in neutral_positions.items():  # Solo caderas y rodillas
             p.setJointMotorControl2(
                 self.robot_id,
                 i,
