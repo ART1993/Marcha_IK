@@ -304,14 +304,7 @@ def test_discrete_actions_integration():
                     3: ActionType.SQUAT,
                     4: ActionType.SQUAT,
                     # Resto de fases como antes
-                    5: ActionType.LIFT_LEFT_LEG,
-                    6: ActionType.LIFT_LEFT_LEG,
-                    7: ActionType.LIFT_RIGHT_LEG,
-                    8: ActionType.LIFT_RIGHT_LEG,
-                    9: ActionType.STEP_LEFT,
-                    10: ActionType.STEP_LEFT,
-                    11: ActionType.STEP_RIGHT,
-                    12: ActionType.STEP_RIGHT,
+
                 
             }
             

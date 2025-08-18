@@ -5,11 +5,7 @@ from enum import Enum
 class ActionType(Enum):
     """Define los tipos de acciones discretas que el robot puede realizar"""
     BALANCE_STANDING = "balance_standing"
-    LIFT_LEFT_LEG = "lift_left_leg"
-    LIFT_RIGHT_LEG = "lift_right_leg"
     SQUAT = "squat"
-    STEP_LEFT = "step_left"
-    STEP_RIGHT = "step_right"
 
 class DiscreteActionController:
     """
@@ -57,90 +53,6 @@ class DiscreteActionController:
                             'right_hip_extensor': 0.35,
                             'left_knee_flexor': 0.15,
                             'right_knee_flexor': 0.15,
-                        }
-                    }
-                ]
-            },
-            
-            ActionType.LIFT_LEFT_LEG: {
-                'description': 'Levantar pierna izquierda manteniendo equilibrio',
-                'duration': 2.5,
-                'phases': [
-                    # Fase 1: Preparación - shift de peso a pierna derecha
-                    {
-                        'duration_ratio': 0.3,
-                        'pressures': {
-                            'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.3,
-                            'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.5,  # Mayor activación para soporte
-                            'left_knee_flexor': 0.2,
-                            'right_knee_flexor': 0.25,  # Estabilización
-                        }
-                    },
-                    # Fase 2: Levantamiento - flexión de cadera y rodilla izquierda
-                    {
-                        'duration_ratio': 0.4,
-                        'pressures': {
-                            'left_hip_flexor': 0.7,   # Alta activación para levantar
-                            'left_hip_extensor': 0.2,  # Mínima co-activación
-                            'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.6,  # Fuerte soporte
-                            'left_knee_flexor': 0.8,   # Flexión de rodilla
-                            'right_knee_flexor': 0.3,   # Estabilización aumentada
-                        }
-                    },
-                    # Fase 3: Mantenimiento - sostener posición
-                    {
-                        'duration_ratio': 0.3,
-                        'pressures': {
-                            'left_hip_flexor': 0.6,
-                            'left_hip_extensor': 0.25,
-                            'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.55,
-                            'left_knee_flexor': 0.7,
-                            'right_knee_flexor': 0.3,
-                        }
-                    }
-                ]
-            },
-            
-            ActionType.LIFT_RIGHT_LEG: {
-                'description': 'Levantar pierna derecha manteniendo equilibrio',
-                'duration': 2.5,
-                'phases': [
-                    # Simétrico a LIFT_LEFT_LEG pero invertido
-                    {
-                        'duration_ratio': 0.3,
-                        'pressures': {
-                            'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.5,  # Mayor para soporte
-                            'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.3,
-                            'left_knee_flexor': 0.25,
-                            'right_knee_flexor': 0.2,
-                        }
-                    },
-                    {
-                        'duration_ratio': 0.4,
-                        'pressures': {
-                            'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.6,  # Fuerte soporte
-                            'right_hip_flexor': 0.7,   # Alta activación
-                            'right_hip_extensor': 0.2,
-                            'left_knee_flexor': 0.3,
-                            'right_knee_flexor': 0.8,   # Flexión
-                        }
-                    },
-                    {
-                        'duration_ratio': 0.3,
-                        'pressures': {
-                            'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.55,
-                            'right_hip_flexor': 0.6,
-                            'right_hip_extensor': 0.25,
-                            'left_knee_flexor': 0.3,
-                            'right_knee_flexor': 0.7,
                         }
                     }
                 ]
@@ -227,47 +139,6 @@ class DiscreteActionController:
                             'right_hip_extensor': 0.4,
                             'left_knee_flexor': 0.2,
                             'right_knee_flexor': 0.3,
-                        }
-                    }
-                ]
-            },
-            
-            ActionType.STEP_RIGHT: {
-                'description': 'Paso hacia adelante con pierna derecha',
-                'duration': 2.0,
-                'phases': [
-                    # Simétrico a STEP_LEFT
-                    {
-                        'duration_ratio': 0.25,
-                        'pressures': {
-                            'left_hip_flexor': 0.3,
-                            'left_hip_extensor': 0.5,
-                            'right_hip_flexor': 0.35,
-                            'right_hip_extensor': 0.3,
-                            'left_knee_flexor': 0.25,
-                            'right_knee_flexor': 0.3,
-                        }
-                    },
-                    {
-                        'duration_ratio': 0.35,
-                        'pressures': {
-                            'left_hip_flexor': 0.25,
-                            'left_hip_extensor': 0.6,
-                            'right_hip_flexor': 0.7,
-                            'right_hip_extensor': 0.2,
-                            'left_knee_flexor': 0.2,
-                            'right_knee_flexor': 0.7,
-                        }
-                    },
-                    {
-                        'duration_ratio': 0.4,
-                        'pressures': {
-                            'left_hip_flexor': 0.4,
-                            'left_hip_extensor': 0.4,
-                            'right_hip_flexor': 0.3,
-                            'right_hip_extensor': 0.5,
-                            'left_knee_flexor': 0.3,
-                            'right_knee_flexor': 0.2,
                         }
                     }
                 ]

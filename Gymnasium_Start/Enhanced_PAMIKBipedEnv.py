@@ -13,9 +13,7 @@ from Controlador.discrete_action_controller import ActionType
 from Controlador.discrete_action_controller import DiscreteActionController
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Mejorados.Enhanced_ImproveReward_system import Enhanced_ImproveRewardSystem
-from Archivos_Mejorados.Enhanced_SimplifiedWalkingController import Enhanced_SimplifiedWalkingController
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-from Archivos_Apoyo.Generate_Prints import set_training_phase_print, log_integration_status
 from Archivos_Apoyo.Configuraciones_adicionales import joint_forces, foot_workspace, reward_system_integration_status, PAM_McKibben,\
                                                         joint_limits, pam_states_init, setup_passive_elements, relacionar_musculo_con_joint,\
                                                         calculate_joint_torques_from_pam_forces, phase_configs_method, expected_joints_fun                    
