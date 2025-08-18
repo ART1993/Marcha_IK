@@ -127,14 +127,14 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     
     def step(self, action):
         """
-            Step implementation for Enhanced PAM system with integrated biomechanical rewards.
+            Step SIMPLIFICADO - Solo física PAM básica + recompensa de balance
         
-            Este método es donde ocurre la "magia" de la integración. Cada paso de simulación:
-            1. Ejecuta las acciones PAM en el robot físico
-            2. El sistema de recompensas observa y evalúa el rendimiento biomecánico
-            3. Proporciona feedback educativo al algoritmo de RL
-            
-            Es como un entrenador observando cada movimiento y dando feedback inmediato.
+            ELIMINADO:
+            - 10 fases complejas de procesamiento
+            - Walking controller blending
+            - Expert action imitation
+            - Biomechanical metrics logging
+            - Complex reward components
         """
         self.step_count += 1
 
@@ -193,32 +193,84 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         - PAM 4: rodilla izquierda (flexor)
         - PAM 5: rodilla derecha (flexor)
         """
-        # Se ha cambiado el resorte pasivo de una función a una constante
+        # Obtener estados articulares actuales
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
+        joint_positions = [state[0] for state in joint_states]
         
-        # Factores de conversión simplificados
-        hip_force_factor = 0.5
-        knee_force_factor = 0.3
+        # Mapeo de PAMs a músculos específicos
+        pam_mapping = {
+            0: 'left_hip_flexor',    1: 'left_hip_extensor',
+            2: 'right_hip_flexor',   3: 'right_hip_extensor', 
+            4: 'left_knee_flexor',   5: 'right_knee_flexor'
+        }
+
+        # Calcular fuerzas reales usando PAM_McKibben
+        pam_forces = []
         
-        # Calcular torques netos por articulación
+        for i, pressure in enumerate(pam_pressures):
+            muscle_name = pam_mapping[i]
+            pam_muscle = self.pam_muscles[muscle_name]
+            
+            # Convertir presión normalizada [0,1] a presión real [Pa]
+            real_pressure = self.min_pressure + pressure * (self.max_pressure - self.min_pressure)
+            
+            # Calcular ratio de contracción basado en ángulo articular
+            if 'hip' in muscle_name:
+                joint_idx = 0 if 'left' in muscle_name else 2
+                joint_pos = joint_positions[joint_idx if 'left' in muscle_name else joint_idx]
+                
+                if 'flexor' in muscle_name:
+                    # Flexor se activa con ángulos positivos (flexión)
+                    contraction_ratio = max(0, joint_pos) / 1.2  # Normalizar
+                else:  # extensor
+                    # Extensor se activa con ángulos negativos (extensión) 
+                    contraction_ratio = max(0, -joint_pos) / 1.2
+                    
+            elif 'knee' in muscle_name:
+                joint_idx = 1 if 'left' in muscle_name else 3
+                joint_pos = joint_positions[joint_idx if 'left' in muscle_name else joint_idx - 2]
+                # Rodilla: solo flexor, se activa con flexión
+                contraction_ratio = max(0, joint_pos) / 1.571  # Normalizar a rango rodilla
+            
+            # Limitar contracción al máximo teórico del PAM
+            contraction_ratio = np.clip(contraction_ratio, 0, 0.8)
+            
+            # ¡AQUÍ ESTÁ LA FÍSICA REAL! Calcular fuerza usando modelo PAM_McKibben
+            pam_force = pam_muscle.force_model_new(real_pressure, contraction_ratio)
+            
+            # Aplicar dirección según tipo de músculo
+            if 'extensor' in muscle_name:
+                pam_force = -pam_force  # Extensores aplican fuerza negativa
+            
+            pam_forces.append(pam_force)
+            
+            # Actualizar estados internos para observación
+            self.pam_states['pressures'][i] = pressure  # Normalizado
+            self.pam_states['forces'][i] = abs(pam_force)  # Fuerza absoluta
+        
+        # Convertir fuerzas PAM a torques articulares
+        moment_arm = 0.05  # Brazo de palanca típico (5cm)
         joint_torques = np.zeros(4)
         
         # Cadera izquierda: diferencia entre extensor y flexor
-        joint_torques[0] = hip_force_factor * (pam_pressures[1] - pam_pressures[0])
+        joint_torques[0] = moment_arm  * (pam_pressures[1] + pam_pressures[0])
         
         # Rodilla izquierda: solo flexor + resorte pasivo de extensión
-        joint_torques[1] = knee_force_factor * pam_pressures[4] - 0.1  # resorte pasivo
+        passive_spring_force_left = -15.0 * (joint_positions[1] - 0.1)  # Resorte a posición neutral
+        joint_torques[1] = moment_arm  * (pam_pressures[4] + passive_spring_force_left)  # resorte pasivo
         
         # Cadera derecha: diferencia entre extensor y flexor  
-        joint_torques[2] = hip_force_factor * (pam_pressures[3] - pam_pressures[2])
+        joint_torques[2] = moment_arm  * (pam_pressures[3] + pam_pressures[2])
         
         # Rodilla derecha: solo flexor + resorte pasivo
-        joint_torques[3] = knee_force_factor * pam_pressures[5] - 0.1  # resorte pasivo
+        passive_spring_force_right = -15.0 * (joint_positions[3] - 0.1)
+        joint_torques[3] = moment_arm  * (pam_pressures[5] + passive_spring_force_right)  # resorte pasivo
         
         # Limitar torques
-        joint_torques = np.clip(joint_torques, -50.0, 50.0)
+        joint_torques = np.clip(joint_torques, -100.0, 100.0)
         
         # Actualizar fuerzas en estados PAM
-        self.pam_states['forces'] = np.abs(joint_torques)  # Simplificado
+        #self.pam_states['forces'] = np.abs(joint_torques)  # Simplificado
 
         return joint_torques
     
@@ -389,20 +441,23 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.robot_id = p.loadURDF(
             self.urdf_path,
             [0, 0, 1.2],  # Posición inicial de pie
+            # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
         
         # ===== CONFIGURACIÓN PARA BALANCE ESTÁTICO =====
         
         # Posiciones articulares para estar de pie (balance neutro)
-        neutral_positions = [
-            0.0,   # left_hip - neutral
-            0.1,   # left_knee - ligeramente flexionada para estabilidad
-            0.0,   # right_hip - neutral  
-            0.1,   # right_knee - ligeramente flexionada
-        ]
+        neutral_positions = {
+            0:0.0,   # left_hip - neutral
+            1:0.1,   # left_knee - ligeramente flexionada para estabilidad
+            2:0.0,   # left feet. Por si el resorte lo dejo con angulo no nulo
+            3:0.0,   # right_hip - neutral  
+            4:0.1,   # right_knee - ligeramente flexionada
+            5:0.0,   # right feet - lo mismo que antes
+        }
         
-        for i, pos in enumerate(neutral_positions):
+        for i, pos in neutral_positions.items():
             p.resetJointState(self.robot_id, i, pos)
         
         # SIN velocidad inicial - queremos balance estático
@@ -411,6 +466,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN PAM =====
         
         # Desactivar motores por defecto - control por PAM
+        # Solo las rodillas y caderas poseen actuadores
         for i in [0, 1, 3, 4]:  # Solo caderas y rodillas
             p.setJointMotorControl2(
                 self.robot_id,
@@ -474,7 +530,7 @@ def create_simple_balance_squat_env(render_mode='human'):
     Crear entorno simplificado para balance y sentadillas
     """
     
-    env = Enhanced_PAMIKBipedEnv(render_mode=render_mode)
+    env = Simple_BalanceSquat_BipedEnv(render_mode=render_mode)
     
     print(f"✅ Simple Balance & Squat Environment created")
     print(f"   Focus: Balance de pie + Sentadillas")
