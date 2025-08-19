@@ -21,10 +21,10 @@ class PAMMcKibben:
         self.alpha0 = alpha0
         self.a= 3/(np.tan(alpha0)**2) 
         self.b = 1 / (np.sin(alpha0)**2)  # geometría del hilo
-        self.limites_parametros
+        self._limites_parametros()
 
-    @property
-    def limites_parametros(self):
+    
+    def _limites_parametros(self):
         """
             Se usa en  para definir los límites de los parámetros
         """
@@ -32,9 +32,14 @@ class PAMMcKibben:
         # Estos valores son ejemplos, deben ajustarse según el diseño real del PAM
         #F_es máxima para epsilon=0
         self.F_max_factor= (self.a -self.b) # Fuerza máxima teórica (Pa) a 5 bar
-        self.epsilon_max=1-1/(np.sqrt(3)*np.cos(self.alpha0)) # Epsilon máximo teórico
+        self.epsilon_max = 1 - 1/(np.sqrt(3)*np.cos(self.alpha0)) # Epsilon máximo teórico
         self.max_radious = np.sqrt(2/3)*(self.r0/np.sin(self.alpha0)) # Radio máximo teórico
         self.theta_max = np.atan(np.sqrt(2))
+
+        # ✅ CORRECCIÓN: Validar que epsilon_max sea positivo
+        if self.epsilon_max <= 0:
+            print(f"⚠️ Warning: epsilon_max = {self.epsilon_max}, adjusting to 0.3")
+            self.epsilon_max = 0.3
     
     def current_radius(self, contraction_ratio):
         """
@@ -61,12 +66,25 @@ class PAMMcKibben:
             pressure: presión interna (Pa)
             contraction_ratio: ε = (L0 - L) / L0
         """
-        if contraction_ratio >= self.epsilon_max or contraction_ratio < 0:
+        if pressure <= 0:
             return 0.0
+        
+        # ✅ CORRECCIÓN: Validación mejorada de contraction_ratio
+        if contraction_ratio < 0:
+            contraction_ratio = 0.0
+        elif contraction_ratio >= self.epsilon_max:
+            contraction_ratio = self.epsilon_max - 0.01  # Pequeño margen
             
         epsilon = contraction_ratio
 
         force_factor = ((1-epsilon**2)*self.a - self.b)
+
+        print(f"DEBUG PAM: pressure={pressure:.0f}, epsilon={epsilon:.3f}," 
+                f"force_factor={force_factor:.3f}, a={self.a:.3f}, b={self.b:.3f}")
+        
+         # ✅ CORRECCIÓN: Si force_factor es negativo, usar mínimo
+        if force_factor <= 0:
+            force_factor = 0.1  # Mínima fuerza positiva
         
         Function = pressure * force_factor * self.area
         # Aseguramos que la fuerza no sea negativa  

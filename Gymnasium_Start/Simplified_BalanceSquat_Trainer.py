@@ -35,7 +35,7 @@ class Simplified_BalanceSquat_Trainer:
         
         # ===== CONFIGURACIÓN BÁSICA =====
         
-        self.env_type = "enhanced_pam"
+        self.env_type = "simplified_balance_squat"
         self.action_space = "pam"
         self.total_timesteps = total_timesteps
         self.n_envs = n_envs
@@ -44,11 +44,16 @@ class Simplified_BalanceSquat_Trainer:
         
 
         # Configurar el entorno y modelo según el tipo de sistema
-        self.configuracion_modelo_entrenamiento
+        self._configuracion_modelo_entrenamiento()
+
+        print(f"🤖 Simplified Balance & Squat Trainer initialized")
+        print(f"   Target: Balance + Sentadillas con 6 PAMs")
+        print(f"   Timesteps: {self.total_timesteps:,}")
+        print(f"   Parallel envs: {self.n_envs}")
+        print(f"   Learning rate: {self.learning_rate}")
     
 
-    @property
-    def configuracion_modelo_entrenamiento(self):
+    def _configuracion_modelo_entrenamiento(self):
         """
             Configuración del modelo de entrenamiento adaptada para sistemas antagónicos.
             
@@ -72,15 +77,14 @@ class Simplified_BalanceSquat_Trainer:
         # ===== CONFIGURACIONES ENTORNO =====
         
         # Configuración optimizada para sistemas de 6 músculos antagónicos
-        self.env_configs = {
-            
-                'env_class': Simple_BalanceSquat_BipedEnv,
+        self.env_config = {
                 'clip_obs': 10.0,      # Solo se usa para balance
                 'clip_reward': 10.0,   # Solo se usa para balance
                 'model_prefix': 'balance_squat_pam',
-                'description': 'simple action squat'
-            
+                'description': 'Balance and Squats with 6 PAMs'
         }
+        # También mantener el plural para compatibilidad interna
+        self.env_configs = self.env_config
 
         # ===== ARQUITECTURA LSTM Sencilla=====
         
@@ -99,12 +103,6 @@ class Simplified_BalanceSquat_Trainer:
             'training_start_time': None,
             'total_training_time': 0
         }
-        
-        print(f"🤖 Balance & Squat Trainer initialized")
-        print(f"   Target: Balance + Sentadillas con 6 PAMs")
-        print(f"   Timesteps: {self.total_timesteps:,}")
-        print(f"   Parallel envs: {self.n_envs}")
-        print(f"   Learning rate: {self.learning_rate}")
 
     def create_training_env(self):
         """
@@ -131,7 +129,7 @@ class Simplified_BalanceSquat_Trainer:
             return _init
         
         # Crear entornos paralelos con configuración optimizada
-        env = self.create_parallel_env(make_env=make_env, config=config)
+        env = self._create_parallel_env(make_env=make_env, config=config)
         
         return env
 
@@ -163,11 +161,11 @@ class Simplified_BalanceSquat_Trainer:
     
     def create_model(self, env, resume_path=None):
         """
-        Crear modelo RecurrentPPO optimizado para sistemas antagónicos.
-        
-        Los sistemas de músculos antagónicos requieren arquitecturas de red
-        más sofisticadas y hiperparámetros ajustados para manejar la complejidad
-        adicional de la coordinación muscular.
+            Crear modelo RecurrentPPO optimizado para sistemas antagónicos.
+            
+            Los sistemas de músculos antagónicos requieren arquitecturas de red
+            más sofisticadas y hiperparámetros ajustados para manejar la complejidad
+            adicional de la coordinación muscular.
         """
         
         # Intentar cargar modelo existente. Se escribe así para ahorrar espacio y legibilidad.
@@ -182,8 +180,8 @@ class Simplified_BalanceSquat_Trainer:
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
             'ent_coef': 0.01,          # Exploración moderada
-            'n_steps': 512,            # Reducido
-            'batch_size': 256,         # Reducido
+            'n_steps': 256,            # Reducido
+            'batch_size': 128,         # Reducido
             'n_epochs': 4,             # Reducido
             'gae_lambda': 0.95,        # Estándar
             'clip_range': 0.2,         # Estándar
@@ -269,7 +267,7 @@ class Simplified_BalanceSquat_Trainer:
         eval_env = self.create_eval_env()
         
         # Cargar normalizaciones existentes si las hay
-        train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
+        #train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
         
         # ===== CREACIÓN DEL MODELO =====
         
@@ -310,7 +308,7 @@ class Simplified_BalanceSquat_Trainer:
             
             # ===== GUARDAR INFORMACIÓN DE ENTRENAMIENTO =====
 
-            self.save_training_info()
+            self._save_training_info()
             
             print(f"\n🎉 Balance & Squat training completed successfully!")
             print(f"   Total timesteps: {self.total_timesteps:,}")
@@ -339,10 +337,13 @@ class Simplified_BalanceSquat_Trainer:
                     
                 return model
             except Exception as e:
-                raise RuntimeError(f"⚠️ Error loading model from {resume_path}: {e}")
+                print(f"⚠️ Error loading model: {e}")
+                print("🔄 Creating new model instead...")
+
+                
         return None
     
-    def save_training_info(self):
+    def _save_training_info(self):
         """Guardar información básica del entrenamiento"""
         
         info_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_info.json")
@@ -380,7 +381,7 @@ class Simplified_BalanceSquat_Trainer:
             else:
                 print(f"⚠️ Specified checkpoint not found: {self.resume_from}")
         elif resume:
-            latest_checkpoint, resume_timesteps = self.find_latest_checkpoint()
+            latest_checkpoint, resume_timesteps = self._find_latest_checkpoint()
             if latest_checkpoint:
                 resume_path = latest_checkpoint
         
@@ -397,7 +398,7 @@ class Simplified_BalanceSquat_Trainer:
         
         return resume_path, resume_timesteps, remaining_timesteps
 
-    def find_latest_checkpoint(self):
+    def _find_latest_checkpoint(self):
         """Find the most recent checkpoint based on timesteps."""
         model_prefix = self.env_configs['model_prefix']
         
@@ -423,7 +424,7 @@ class Simplified_BalanceSquat_Trainer:
 # =====================================creacion de entornos paralelos====================================== #
 # ========================================================================================================= #
 
-    def create_parallel_env(self, make_env, config):
+    def _create_parallel_env(self, make_env, config):
         """Creación de entornos paralelos optimizada"""
         if self.n_envs > 1:
             base_env = SubprocVecEnv([make_env() for _ in range(self.n_envs)])
@@ -443,11 +444,11 @@ class Simplified_BalanceSquat_Trainer:
         return env
     
 
-# ===== FUNCIÓN DE USO FÁCIL =====
+# ===== FUNCIONES DE UTILIDAD =====
 
 def create_balance_squat_trainer(total_timesteps=2000000, n_envs=4, learning_rate=3e-4):
     """
-    Función para crear fácilmente un entrenador de balance/sentadillas
+    Función para crear fácilmente un entrenador simplificado
     """
     
     trainer = Simplified_BalanceSquat_Trainer(
@@ -456,6 +457,10 @@ def create_balance_squat_trainer(total_timesteps=2000000, n_envs=4, learning_rat
         learning_rate=learning_rate
     )
     
+    print(f"✅ Simplified Trainer created")
+    print(f"   Focus: Balance de pie + Sentadillas")
+    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
+    
     return trainer
 
 def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
@@ -463,13 +468,13 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
     Función principal para entrenar balance y sentadillas
     """
     
-    print("🎯 BALANCE & SQUAT TRAINING")
-    print("=" * 50)
-    print("Objetivo: Entrenar robot bípedo para:")
-    print("  1. Mantener equilibrio de pie")
-    print("  2. Realizar sentadillas controladas")
-    print("  3. Usar 6 músculos PAM antagónicos")
-    print("=" * 50)
+    print("🎯 SIMPLIFIED BALANCE & SQUAT TRAINING")
+    print("=" * 60)
+    print("Objetivo específico:")
+    print("  ✅ Mantener equilibrio de pie estático")
+    print("  ✅ Realizar sentadillas controladas")
+    print("  ✅ Usar 6 músculos PAM antagónicos eficientemente")
+    print("=" * 60)
     
     trainer = create_balance_squat_trainer(
         total_timesteps=total_timesteps,
@@ -478,7 +483,66 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
     
     model = trainer.train(resume=resume)
     
-    print("\n🎉 ¡Entrenamiento completado!")
-    print(f"Modelo guardado en: {trainer.model_dir}")
+    if model:
+        print("\n🎉 ¡Entrenamiento completado exitosamente!")
+        print(f"📁 Modelo guardado en: {trainer.model_dir}")
+        print(f"📊 Logs disponibles en: {trainer.logs_dir}")
     
     return trainer, model
+
+
+# ===== TEST ESPECÍFICO PARA EL TRAINER =====
+
+def test_trainer_creation():
+    """
+    Test específico para verificar que el trainer se crea correctamente
+    """
+    
+    print("🧪 Testing Simplified Trainer Creation...")
+    
+    try:
+        # Crear trainer con configuración mínima
+        trainer = Simplified_BalanceSquat_Trainer(
+            total_timesteps=1000,
+            n_envs=1,
+            learning_rate=3e-4
+        )
+        
+        # Verificar atributos requeridos
+        checks = []
+        
+        checks.append(("total_timesteps", trainer.total_timesteps == 1000))
+        checks.append(("n_envs", trainer.n_envs == 1))
+        checks.append(("model_dir exists", hasattr(trainer, 'model_dir')))
+        checks.append(("logs_dir exists", hasattr(trainer, 'logs_dir')))
+        checks.append(("env_config exists", hasattr(trainer, 'env_config')))
+        checks.append(("model_dir created", os.path.exists(trainer.model_dir)))
+        checks.append(("logs_dir created", os.path.exists(trainer.logs_dir)))
+        
+        # Mostrar resultados
+        all_passed = True
+        for check_name, result in checks:
+            status = "✅" if result else "❌"
+            print(f"   {status} {check_name}")
+            if not result:
+                all_passed = False
+        
+        if all_passed:
+            print(f"\n🎉 Trainer test PASSED!")
+            print(f"   Timesteps: {trainer.total_timesteps}")
+            print(f"   Envs: {trainer.n_envs}")
+            print(f"   Model dir: {trainer.model_dir}")
+            return True
+        else:
+            print(f"\n❌ Trainer test FAILED - Some checks failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Trainer test FAILED - Exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+if __name__ == "__main__":
+    # Test de creación del trainer
+    test_trainer_creation()
