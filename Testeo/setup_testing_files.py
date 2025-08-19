@@ -217,11 +217,11 @@ def main():
     print()
     
     create_file_structure()
-    print()
+    print("Fin create file structure")
     save_simplified_classes()
-    print()
+    print("Fin save fimplified classes")
     create_main_test_script()
-    print()
+    print("Fin create test script")
     create_quick_start_script()
     
     print("\\n✅ SETUP INSTRUCTIONS COMPLETE!")
