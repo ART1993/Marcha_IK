@@ -267,7 +267,7 @@ class Simplified_BalanceSquat_Trainer:
         eval_env = self.create_eval_env()
         
         # Cargar normalizaciones existentes si las hay
-        #train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
+        train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
         
         # ===== CREACIÓN DEL MODELO =====
         
