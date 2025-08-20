@@ -265,11 +265,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             - PAM 2,3: cadera derecha (flexor, extensor)  
             - PAM 4: rodilla izquierda (flexor)
             - PAM 5: rodilla derecha (flexor)
-            joint states
-            #0 es cadera izquierda
-            #1 es rodilla izquierda
-            #2 es cadera derecha
-            #3 es rodilla derecha
+            # MAPEO CLARO: PAM → Joint
+            # joint_states[0] = left_hip (joint 0)
+            # joint_states[1] = left_knee (joint 1) 
+            # joint_states[2] = right_hip (joint 3)
+            # joint_states[3] = right_knee (joint 4)
         """
         # Obtener estados articulares actuales
         joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
@@ -277,56 +277,55 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         joint_positions = [state[0] for state in joint_states]
         
-        # Mapeo de PAMs a músculos específicos
-        pam_mapping = {
-            0: 'left_hip_flexor',    1: 'left_hip_extensor',
-            2: 'right_hip_flexor',   3: 'right_hip_extensor', 
-            4: 'left_knee_flexor',   5: 'right_knee_flexor'
-        }
-
-        # Calcular fuerzas reales usando PAM_McKibben
-        pam_forces = []
+        pam_forces = np.zeros(6)  # Fuerzas reales de cada PAM
+    
+        # ===== PASO 1: CALCULAR FUERZAS REALES USANDO MODELO PAM_MCKIBBEN =====
         
-        for i, pressure in enumerate(pam_pressures):
-            muscle_name = pam_mapping[i]
+        for i, pressure_normalized in enumerate(pam_pressures):
+            # Determinar qué músculo y articulación
+            if i in [0, 1]:  # Cadera izquierda
+                joint_angle = joint_positions[0]  # left_hip
+            elif i in [2, 3]:  # Cadera derecha  
+                joint_angle = joint_positions[2]  # right_hip
+            elif i == 4:  # Rodilla izquierda
+                joint_angle = joint_positions[1]  # left_knee
+            elif i == 5:  # Rodilla derecha
+                joint_angle = joint_positions[3]  # right_knee
+            # Convertir presión normalizada [0,1] a presión real [Pa]
+            real_pressure = self.min_pressure + pressure_normalized * (self.max_pressure - self.min_pressure)
+            
+            # Calcular ratio de contracción basado en ángulo articular
+            if i in [0, 2]:  # Flexores de cadera
+                contraction_ratio = max(0, joint_angle) / 1.2  # Flexión positiva
+            elif i in [1, 3]:  # Extensores de cadera  
+                contraction_ratio = max(0, -joint_angle) / 1.2  # Extensión negativa
+            elif i in [4, 5]:  # Flexores de rodilla
+                contraction_ratio = max(0, joint_angle) / 1.571  # Solo flexión
+            
+            # Limitar contracción
+            contraction_ratio = np.clip(contraction_ratio, 0, 0.3)  # Seguro
+            
+            # ===== CALCULAR FUERZA REAL USANDO PAM_MCKIBBEN =====
+            muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
+                        'right_hip_extensor', 'left_knee_flexor', 'right_knee_flexor']
+            muscle_name = muscle_names[i]
             pam_muscle = self.pam_muscles[muscle_name]
             
-            # Convertir presión normalizada [0,1] a presión real [Pa]
-            real_pressure = self.min_pressure + pressure * (self.max_pressure - self.min_pressure)
-            # Correlation ratio es la normalización de los parámetros entre 0 y 1 para los ángulos de trabajo
-            # Calcular ratio de contracción basado en ángulo articular
-            if 'hip' in muscle_name:
-                joint_idx = 0 if 'left' in muscle_name else 2
-                # joint_idx if 'left' in muscle_name else joint_idx
-                joint_pos = joint_positions[joint_idx]
-                
-                if 'flexor' in muscle_name:
-                    contraction_ratio = max(0, joint_pos) / 1.2  # Normalizar
-                else:  # extensor
-                    contraction_ratio = max(0, -joint_pos) / 1.2
-                    
-            elif 'knee' in muscle_name:
-                joint_idx = 1 if 'left' in muscle_name else 3
-                joint_pos = joint_positions[joint_idx]
-                # Rodilla: solo flexor, se activa con flexión
-                contraction_ratio = max(0, joint_pos) / 1.571  # Normalizar a rango rodilla
-            
-            # Limitar contracción al máximo teórico del PAM
-            contraction_ratio = np.clip(contraction_ratio, 0, 0.8)
-            
-            # ¡AQUÍ ESTÁ LA FÍSICA REAL! Calcular fuerza usando modelo PAM_McKibben
+            # ¡AQUÍ ESTÁ LA CLAVE! Usar el modelo físico real
             pam_force = pam_muscle.force_model_new(real_pressure, contraction_ratio)
-            scaled_force = pam_force / 2000.0  # Escala conservadora
             
-            # Aplicar dirección según tipo de músculo
+            # Aplicar dirección (extensores son negativos)
             if 'extensor' in muscle_name:
-                scaled_force = -scaled_force  # Extensores aplican fuerza negativa
+                pam_force = -pam_force
+                
+            pam_forces[i] = pam_force
             
-            pam_forces.append(pam_force)
-            
-            # Actualizar estados internos para observación
-            self.pam_states['pressures'][i] = pressure  # Normalizado
-            self.pam_states['forces'][i] = abs(pam_force)  # Fuerza absoluta
+            # Debug
+            if self.step_count % 1500 == 0:  # Debug cada segundo aprox
+                print(f"PAM {i} ({muscle_name}): P={real_pressure/101325:.1f}atm, "
+                    f"ε={contraction_ratio:.2f}, F={pam_force:.1f}N")
+                
+        # ===== PASO 2: CONVERTIR FUERZAS PAM A TORQUES ARTICULARES =====
         
         # Convertir fuerzas PAM a torques articulares
         moment_arm = 0.05  # Brazo de palanca típico (5cm)
@@ -346,11 +345,27 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         passive_spring_force_right = -15.0 * (joint_positions[3] - 0.1)
         joint_torques[3] = moment_arm  * (pam_pressures[5] + passive_spring_force_right)  # resorte pasivo
         
-        # Limitar torques
-        joint_torques = np.clip(joint_torques, -50.0, 50.0)
+        # Debug torques
+        if self.step_count % 1500 == 0:
+            print(f"Joint Torques: LH={joint_torques[0]:.1f}, LK={joint_torques[1]:.1f}, "
+                f"RH={joint_torques[2]:.1f}, RK={joint_torques[3]:.1f}")
         
-        # Actualizar fuerzas en estados PAM
-        #self.pam_states['forces'] = np.abs(joint_torques)  # Simplificado
+        # ===== PASO 3: APLICAR TORQUES CORRECTAMENTE =====
+    
+        # CRÍTICO: Usar índices correctos de PyBullet
+        joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
+        
+        for _, (joint_idx, torque) in enumerate(zip(joint_indices, joint_torques)):
+            p.setJointMotorControl2(
+                self.robot_id,
+                joint_idx,
+                p.TORQUE_CONTROL,
+                force=torque
+            )
+        
+        # Actualizar estados PAM para observación
+        self.pam_states['pressures'] = pam_pressures
+        self.pam_states['forces'] = np.abs(pam_forces)
 
         return joint_torques
     
@@ -400,7 +415,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
         right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
-        
+        print ("contacto pies", left_contact, right_contact)
         obs.extend([float(left_contact), float(right_contact)])
         
         return np.array(obs, dtype=np.float32)

@@ -262,3 +262,9 @@ def setup_multiprocessing_for_training(n_envs: int, verbose: bool = True) -> boo
         print("   ✅ Sistema preparado para entrenamiento paralelo")
     
     return True
+
+def simple_mp_setup():
+    import multiprocessing as mp
+    if mp.get_start_method(allow_none=True) is None:
+        mp.set_start_method('spawn')
+    return True
