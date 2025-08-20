@@ -138,46 +138,114 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
         self.step_count += 1
 
+        # ✅ VERIFICAR CONTACTO BILATERAL SIMPLE
+        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
+        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
+
+        both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
+
+        # ✅ LÓGICA DE TRANSICIÓN DE CONTROL
+        if both_feet_contact and not self.pam_control_active:
+            # 🎯 PRIMERA VEZ CON CONTACTO BILATERAL → Activar PAMs
+            print(f"   🔥 Step {self.step_count}: Contacto bilateral detectado - ACTIVANDO PAMs")
+            self.contact_established = True
+            self.pam_control_active = True
+            
+        elif not both_feet_contact and self.pam_control_active:
+            # ⚠️ PERDIDO CONTACTO → Volver a standing position
+            print(f"   ⚠️ Step {self.step_count}: Contacto perdido - VOLVIENDO A STANDING POSITION")
+            self.pam_control_active = False
+            
+        # ✅ APLICAR CONTROL SEGÚN MODO
+        if self.pam_control_active:
+            # 🔥 MODO PAM: Control por torques
+            self._apply_pam_control(action)
+            control_mode = 'PAM_TORQUE'
+            
+        else:
+            # 🤖 MODO STANDING: Control por posición
+            self._apply_standing_position_control()
+            control_mode = 'POSITION_STANDING'
+
+        # ===== SIMULACIÓN FÍSICA =====
+        
+        p.stepSimulation()
+
+        # ✅ CALCULAR RECOMPENSA (solo si PAMs activos)
+        if self.pam_control_active:
+            reward = self._calculate_simple_balance_reward()
+        else:
+            # Sin penalización mientras se establece contacto
+            reward = 0.0
+
+        observation = self._get_simple_observation()
+        done = self._is_done()
+
         # ===== APLICAR ACCIÓN PAM =====
         
-        # Normalizar y aplicar presiones PAM
-        normalized_pressures = np.clip(action, 0.0, 1.0)
-        pam_pressures = self.min_pressure + normalized_pressures * (self.max_pressure - self.min_pressure)
-        self.pam_states['pressures'] = pam_pressures
+        # Info básico
+        info = {
+                'step_count': self.step_count,
+                'reward': reward,
+                'contact_established': self.contact_established,
+                'pam_control_active': self.pam_control_active,
+                'control_mode': control_mode,
+                'both_feet_contact': both_feet_contact
+            }
         
-        # Convertir presiones a fuerzas articulares básicas
-        joint_torques = self._apply_pam_forces(pam_pressures)
+        return observation, reward, done, False, info
+    
+    def _apply_standing_position_control(self):
+        """
+        ✅ CONTROL DE POSICIÓN: Mantener standing position
+        """
         
-        # Aplicar torques a las articulaciones
-        for i, torque in enumerate([0, 1, 3, 4]):  # caderas y rodillas
+        for i, target_pos in self.neutral_positions.items():
             p.setJointMotorControl2(
                 self.robot_id,
-                torque,
+                i,
+                p.POSITION_CONTROL,
+                targetPosition=target_pos,
+                force=50,  # Fuerza suficiente para mantener posición
+                maxVelocity=0.5
+            )
+        
+        # Actualizar estados PAM (inactivos)
+        self.pam_states['pressures'] = np.zeros(6)
+        self.pam_states['forces'] = np.zeros(6)
+
+    def _apply_pam_control(self, action):
+        """
+        ✅ CONTROL PAM: Aplicar torques calculados desde presiones PAM
+        """
+        
+        # Normalizar acción
+        normalized_pressures = np.clip(action, 0.0, 1.0)
+        
+        # Calcular torques PAM
+        joint_torques = self._apply_pam_forces(normalized_pressures)
+        
+        # Aplicar torques a articulaciones principales
+        for i, joint_idx in enumerate([0, 1, 3, 4]):  # caderas y rodillas
+            p.setJointMotorControl2(
+                self.robot_id,
+                joint_idx,
                 p.TORQUE_CONTROL,
                 force=joint_torques[i]
             )
         
-        # ===== SIMULACIÓN FÍSICA =====
+        # Los tobillos pueden mantener control de posición suave
+        for ankle_idx in [2, 5]:
+            p.setJointMotorControl2(
+                self.robot_id,
+                ankle_idx,
+                p.POSITION_CONTROL,
+                targetPosition=0.0,  # Neutral
+                force=10  # Muy suave
+            )
         
-        p.stepSimulation()
-        
-        # ===== CALCULAR RECOMPENSA SIMPLE =====
-        
-        reward = self._calculate_simple_balance_reward()
-
-        # ===== OBSERVACIÓN Y TERMINACIÓN =====
-        
-        observation = self._get_simple_observation()
-        done = self._is_done()
-        
-        # Info básico
-        info = {
-            'step_count': self.step_count,
-            'reward': reward,
-            'pam_pressures': normalized_pressures.tolist()
-        }
-        
-        return observation, reward, done, False, info
+        # Actualizar estados PAM
+        self.pam_states['pressures'] = normalized_pressures
 
 # ==================================================================================================================================================================== #
 # =================================================== Métodos de Aplicación de fuerzas PAM =========================================================================== #
@@ -197,14 +265,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             - PAM 2,3: cadera derecha (flexor, extensor)  
             - PAM 4: rodilla izquierda (flexor)
             - PAM 5: rodilla derecha (flexor)
+            joint states
+            #0 es cadera izquierda
+            #1 es rodilla izquierda
+            #2 es cadera derecha
+            #3 es rodilla derecha
         """
         # Obtener estados articulares actuales
         joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
         # para joint states cada estado representa:
-        #0 es cadera izquierda
-        #1 es rodilla izquierda
-        #2 es cadera derecha
-        #3 es rodilla derecha
+        
         joint_positions = [state[0] for state in joint_states]
         
         # Mapeo de PAMs a músculos específicos
@@ -231,17 +301,12 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 joint_pos = joint_positions[joint_idx]
                 
                 if 'flexor' in muscle_name:
-                    # Flexor se activa con ángulos positivos (flexión)
                     contraction_ratio = max(0, joint_pos) / 1.2  # Normalizar
                 else:  # extensor
-                    # Extensor se activa con ángulos negativos (extensión)
-                    # Ver si esto esta bien o debería de ser mín
                     contraction_ratio = max(0, -joint_pos) / 1.2
                     
             elif 'knee' in muscle_name:
                 joint_idx = 1 if 'left' in muscle_name else 3
-                # por que ha puesto esto: joint_idx if 'left' in muscle_name else joint_idx - 2
-                # SI lo aplico como esta escrito antes, ¿No sería siempre la rodilla izquierda?
                 joint_pos = joint_positions[joint_idx]
                 # Rodilla: solo flexor, se activa con flexión
                 contraction_ratio = max(0, joint_pos) / 1.571  # Normalizar a rango rodilla
@@ -251,10 +316,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             # ¡AQUÍ ESTÁ LA FÍSICA REAL! Calcular fuerza usando modelo PAM_McKibben
             pam_force = pam_muscle.force_model_new(real_pressure, contraction_ratio)
+            scaled_force = pam_force / 2000.0  # Escala conservadora
             
             # Aplicar dirección según tipo de músculo
             if 'extensor' in muscle_name:
-                pam_force = -pam_force  # Extensores aplican fuerza negativa
+                scaled_force = -scaled_force  # Extensores aplican fuerza negativa
             
             pam_forces.append(pam_force)
             
@@ -281,7 +347,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         joint_torques[3] = moment_arm  * (pam_pressures[5] + passive_spring_force_right)  # resorte pasivo
         
         # Limitar torques
-        joint_torques = np.clip(joint_torques, -100.0, 100.0)
+        joint_torques = np.clip(joint_torques, -50.0, 50.0)
         
         # Actualizar fuerzas en estados PAM
         #self.pam_states['forces'] = np.abs(joint_torques)  # Simplificado
@@ -456,7 +522,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.2],  # Posición inicial de pie
+            [0, 0, 1.3],  # Posición inicial de pie
             # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
@@ -464,40 +530,34 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN PARA BALANCE ESTÁTICO =====
         
         # Posiciones articulares para estar de pie (balance neutro)
-        neutral_positions = {
+        self.neutral_positions = {
             0:0.0,   # left_hip - neutral
             1:0.1,   # left_knee - ligeramente flexionada para estabilidad
-            2:0.0,   # left feet. Por si el resorte lo dejo con angulo no nulo
+            2:0.0,   # left_anckle. Por si el resorte lo dejo con angulo no nulo
             3:0.0,   # right_hip - neutral  
             4:0.1,   # right_knee - ligeramente flexionada
-            5:0.0,   # right feet - lo mismo que antes
+            5:0.0,   # right_anckle - lo mismo que antes
         }
         
-        for i, pos in neutral_positions.items():
+        for i, pos in self.neutral_positions.items():
             p.resetJointState(self.robot_id, i, pos)
         
         # SIN velocidad inicial - queremos balance estático
         p.resetBaseVelocity(self.robot_id, [0, 0, 0], [0, 0, 0])
         
         # ===== CONFIGURACIÓN PAM =====
-        
-        # Desactivar motores por defecto - control por PAM
-        # Solo las rodillas y caderas poseen actuadores
-        # Normalmente es [0,1,3,4] las articulaciones PAM, pero en caso de que los muelles den una velocidad o f
-        # a los tobillos lo uso para hacerlo cero y evitar problemas
-        for i, joint_value in neutral_positions.items():  # Solo caderas y rodillas
+
+        for i, target_pos in self.neutral_positions.items():  # Solo caderas y rodillas
             p.setJointMotorControl2(
                 self.robot_id,
                 i,
-                p.VELOCITY_CONTROL,
-                force=0
+                p.POSITION_CONTROL,
+                targetPosition=target_pos,
+                force=50,
+                maxVelocity=0.5
             )
         
-        # Resetear estados PAM a neutro
-        self.pam_states = {
-            'pressures': np.full(6, 0.3),  # Presión base para mantener postura
-            'forces': np.zeros(6)
-        }
+        
 
         # ===== Sistemas de apoyo ===== #
         # Robot data para métricas básicas
@@ -521,14 +581,32 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         self.step_count = 0
         self.total_reward = 0
+        self.contact_established = False
+        self.pam_control_active = False  # Nueva variable clave
+
+        # Resetear estados PAM a neutro
+        self.pam_states = {
+            'pressures': np.zeros(6),  # Presión base para mantener postura
+            'forces': np.zeros(6)
+        }
+
+        print(f"   🤖 Robot inicializado en modo STANDING POSITION")
+        print(f"   🦶 Esperando contacto bilateral para activar PAMs...")
         
         # Estabilización inicial
-        for _ in range(50):
-            p.stepSimulation()
+        #for _ in range(50):
+        #    p.stepSimulation()
         
         # Obtener observación inicial
         observation = self._get_simple_observation()
-        info = {'episode_reward': 0, 'episode_length': 0}
+        info = {
+                    'episode_reward': 0,
+                    'episode_length': 0,
+                    'contact_established': self.contact_established,
+                    'pam_control_active': self.pam_control_active,
+                    'initial_height': pos[2],
+                    'control_mode': 'POSITION_STANDING'
+                }
         
         print(f"   🔄 Environment reset - Ready for balance/squat training")
         
