@@ -369,12 +369,12 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # ===== ESTADO DEL TORSO (8 elementos) =====
         
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación
-        obs.extend([pos[0], pos[2], euler[0], euler[1]])  # x, z, roll, pitch
+        obs.extend([self.pos[0], self.pos[2], euler[0], euler[1]])  # x, z, roll, pitch
         
         # Velocidades
         obs.extend([lin_vel[0], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
@@ -420,11 +420,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # ===== RECOMPENSA POR ESTAR DE PIE =====
         
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         # Altura del torso (mantenerse erguido)
-        height_reward = max(0, pos[2] - 0.8) * 10.0  # Recompensar altura > 0.8m
+        height_reward = max(0, self.pos[2] - 0.8) * 10.0  # Recompensar altura > 0.8m
         reward += height_reward
         
         # Orientación vertical (roll y pitch pequeños)
@@ -481,11 +481,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     def _is_done(self):
         """Condiciones de terminación unificadas"""
 
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
-        if pos[2] < 0.4 or pos[2] > 3.0:
-            print("to high or too low", euler, pos)
+        if self.pos[2] < 0.4 or self.pos[2] > 3.0:
+            print("to high or too low", euler, self.pos)
             return True
             
         # Terminar si la inclinación lateral es excesiva  
@@ -494,7 +494,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             return True
         
         # Desplazamiento lateral excesivo
-        if abs(pos[1]) > 2.0:
+        if abs(self.pos[1]) > 2.0:
             return True
 
             
@@ -604,7 +604,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                     'episode_length': 0,
                     'contact_established': self.contact_established,
                     'pam_control_active': self.pam_control_active,
-                    'initial_height': pos[2],
+                    'initial_height': self.pos[2],
                     'control_mode': 'POSITION_STANDING'
                 }
         
