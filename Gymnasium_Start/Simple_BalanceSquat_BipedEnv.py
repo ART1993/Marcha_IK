@@ -129,14 +129,20 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
             Step SIMPLIFICADO - Solo física PAM básica + recompensa de balance
         
-            ELIMINADO:
-            - 10 fases complejas de procesamiento
-            - Walking controller blending
-            - Expert action imitation
-            - Biomechanical metrics logging
-            - Complex reward components
+            1. ✅ Usar torques calculados correctamente desde PAMs
+            2. ✅ Aplicar en las articulaciones correctas
+            3. ✅ Configuración de fricción en PyBullet
+            4. ✅ Mejor integración con sistema de recompensas
         """
         self.step_count += 1
+
+        # ===== PASO 1: NORMALIZAR Y VALIDAR ACCIÓN =====
+    
+        normalized_pressures = np.clip(action, 0.0, 1.0)
+
+        # Validar que tenemos 6 presiones PAM
+        if len(normalized_pressures) != 6:
+            raise ValueError(f"Expected 6 PAM pressures, got {len(normalized_pressures)}")
 
         # ✅ VERIFICAR CONTACTO BILATERAL SIMPLE
         left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
@@ -144,6 +150,135 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
         both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
 
+        # ===== PASO 2: CONVERTIR PRESIONES A TORQUES USANDO FÍSICA PAM =====
+    
+        joint_torques = self._apply_pam_forces(normalized_pressures)
+
+        # ===== PASO 3: APLICAR TORQUES A ARTICULACIONES ESPECÍFICAS =====
+    
+        # Mapeo claro: joint_torques -> PyBullet joint indices
+        torque_mapping = [
+            (0, joint_torques[0]),  # left_hip_joint
+            (1, joint_torques[1]),  # left_knee_joint  
+            (3, joint_torques[2]),  # right_hip_joint
+            (4, joint_torques[3])   # right_knee_joint
+        ]
+
+        for joint_id, torque in torque_mapping:
+            p.setJointMotorControl2(
+                self.robot_id,
+                joint_id,
+                p.TORQUE_CONTROL,
+                force=torque
+            )
+
+        # ===== PASO 4: CONFIGURAR PROPIEDADES DE FRICCIÓN DINÁMICAMENTE =====
+    
+        # Configurar fricción de contacto para pies si no se ha hecho
+        if not hasattr(self, '_friction_configured'):
+            self._configure_contact_friction()
+            self._friction_configured = True
+
+        
+
+        # ===== Paso 5: SIMULACIÓN FÍSICA =====
+        
+        p.stepSimulation()
+
+        # ===== PASO 6: CALCULAR RECOMPENSA MEJORADA =====
+    
+        # Pasar información PAM al sistema de recompensas
+        self.reward_system.pam_states = self.pam_states
+        reward, reward_components = self.reward_system.calculate_simple_reward(
+            action=normalized_pressures,
+            pam_forces=self.pam_states['forces']
+        )
+
+        # ===== PASO 7: OBSERVACIÓN Y TERMINACIÓN =====
+
+        observation = self._get_simple_observation()
+        done = self._is_done()
+
+        # ===== APLICAR ACCIÓN PAM =====
+        
+        # Info básico
+        info = {
+                'step_count': self.step_count,
+                'reward': reward,
+                'reward_components': reward_components,
+                'pam_pressures': normalized_pressures.tolist(),
+                'pam_forces': self.pam_states['forces'].tolist(),
+                'joint_torques': joint_torques.tolist(),
+                'total_pam_activation': np.sum(normalized_pressures)
+            }
+        
+        return observation, reward, done, False, info
+    
+
+    def _configure_contact_friction(self):
+        """
+        Configurar propiedades de fricción dinámicamente en PyBullet
+        (Complementa las propiedades del URDF)
+        """
+        
+        # ===== FRICCIÓN ESPECÍFICA PARA PIES =====
+        
+        # Pie izquierdo - alta fricción para agarre
+        p.changeDynamics(
+            self.robot_id, 
+            self.left_foot_id,
+            lateralFriction=1.2,        # Fricción lateral alta
+            spinningFriction=0.8,       # Fricción rotacional
+            rollingFriction=0.1,        # Fricción de rodadura baja
+            restitution=0.05,           # Poco rebote
+            contactDamping=50,          # Amortiguación de contacto
+            contactStiffness=10000      # Rigidez de contacto
+        )
+        
+        # Pie derecho - mismas propiedades
+        p.changeDynamics(
+            self.robot_id,
+            self.right_foot_id, 
+            lateralFriction=1.2,
+            spinningFriction=0.8,
+            rollingFriction=0.1,
+            restitution=0.05,
+            contactDamping=50,
+            contactStiffness=10000
+        )
+        
+        # ===== FRICCIÓN PARA OTROS LINKS =====
+        
+        # Links de piernas - fricción moderada
+        leg_links = [0, 1, 3, 4]  # caderas y rodillas (si tienen collision)
+        for link_id in leg_links:
+            p.changeDynamics(
+                self.robot_id,
+                link_id,
+                lateralFriction=0.6,
+                spinningFriction=0.4,
+                rollingFriction=0.05,
+                restitution=0.1
+            )
+        
+        # ===== FRICCIÓN DEL SUELO =====
+        
+        # Configurar fricción del plano del suelo
+        p.changeDynamics(
+            self.plane_id,
+            -1,  # -1 for base link
+            lateralFriction=1.0,        # Fricción estándar del suelo
+            spinningFriction=0.5,
+            rollingFriction=0.01
+        )
+        
+        print(f"🔧 Contact friction configured:")
+        print(f"   Feet: μ=1.2 (high grip)")
+        print(f"   Legs: μ=0.6 (moderate)")
+        print(f"   Ground: μ=1.0 (standard)")
+    
+
+    def aplicar_logica_control(self, action, both_feet_contact):
         # ✅ LÓGICA DE TRANSICIÓN DE CONTROL
         if both_feet_contact and not self.pam_control_active:
             # 🎯 PRIMERA VEZ CON CONTACTO BILATERAL → Activar PAMs
@@ -166,34 +301,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             # 🤖 MODO STANDING: Control por posición
             self._apply_standing_position_control()
             control_mode = 'POSITION_STANDING'
-
-        # ===== SIMULACIÓN FÍSICA =====
-        
-        p.stepSimulation()
-
-        # ✅ CALCULAR RECOMPENSA (solo si PAMs activos)
-        if self.pam_control_active:
-            reward = self._calculate_simple_balance_reward()
-        else:
-            # Sin penalización mientras se establece contacto
-            reward = 0.0
-
-        observation = self._get_simple_observation()
-        done = self._is_done()
-
-        # ===== APLICAR ACCIÓN PAM =====
-        
-        # Info básico
-        info = {
-                'step_count': self.step_count,
-                'reward': reward,
-                'contact_established': self.contact_established,
-                'pam_control_active': self.pam_control_active,
-                'control_mode': control_mode,
-                'both_feet_contact': both_feet_contact
-            }
-        
-        return observation, reward, done, False, info
     
     def _apply_standing_position_control(self):
         """
@@ -351,17 +458,17 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 f"RH={joint_torques[2]:.1f}, RK={joint_torques[3]:.1f}")
         
         # ===== PASO 3: APLICAR TORQUES CORRECTAMENTE =====
-    
+        # Aplico en step para mayor visibilidad
         # CRÍTICO: Usar índices correctos de PyBullet
-        joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
+        #joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
         
-        for _, (joint_idx, torque) in enumerate(zip(joint_indices, joint_torques)):
-            p.setJointMotorControl2(
-                self.robot_id,
-                joint_idx,
-                p.TORQUE_CONTROL,
-                force=torque
-            )
+        #for _, (joint_idx, torque) in enumerate(zip(joint_indices, joint_torques)):
+        #    p.setJointMotorControl2(
+        #        self.robot_id,
+        #        joint_idx,
+        #        p.TORQUE_CONTROL,
+        #        force=torque
+        #    )
         
         # Actualizar estados PAM para observación
         self.pam_states['pressures'] = pam_pressures
@@ -532,12 +639,22 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         p.resetSimulation()
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.time_step)
+
+        # Configurar solver para mejor estabilidad
+        p.setPhysicsEngineParameter(
+            numSolverIterations=10,        # Más iteraciones = más estable
+            numSubSteps=4,                 # Más substeps = más preciso
+            contactBreakingThreshold=0.001, # Umbral de contacto más sensible
+            erp=0.8,                       # Error Reduction Parameter
+            contactERP=0.9,                # ERP específico para contactos
+            frictionERP=0.8,               # ERP para fricción
+        )
         
         # Cargar entorno
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.3],  # Posición inicial de pie
+            [0, 0, 1.25],  # Posición inicial de pie
             # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
@@ -566,10 +683,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             p.setJointMotorControl2(
                 self.robot_id,
                 i,
-                p.POSITION_CONTROL,
-                targetPosition=target_pos,
-                force=50,
-                maxVelocity=0.5
+                p.VELOCITY_CONTROL,
+                force=0
             )
         
         
@@ -596,8 +711,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         self.step_count = 0
         self.total_reward = 0
-        self.contact_established = False
-        self.pam_control_active = False  # Nueva variable clave
+        self._friction_configured = False  # Flag para configuración de fricción
+
+        # Estabilización inicial con física mejorada
+        for _ in range(100):  # Más steps para estabilización
+            p.stepSimulation()
 
         # Resetear estados PAM a neutro
         self.pam_states = {
@@ -617,10 +735,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         info = {
                     'episode_reward': 0,
                     'episode_length': 0,
-                    'contact_established': self.contact_established,
-                    'pam_control_active': self.pam_control_active,
-                    'initial_height': self.pos[2],
-                    'control_mode': 'POSITION_STANDING'
                 }
         
         print(f"   🔄 Environment reset - Ready for balance/squat training")
