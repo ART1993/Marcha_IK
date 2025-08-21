@@ -56,48 +56,49 @@ class DiscreteActionController:
                     {
                         'duration_ratio': 1.0,
                         'pressures': {
-                            'left_hip_flexor': 0.25,
-                            'left_hip_extensor': 0.40,  # Ligeramente más para anti-gravedad
-                            'right_hip_flexor': 0.25,
-                            'right_hip_extensor': 0.40,
-                            'left_knee_flexor': 0.15,
-                            'right_knee_flexor': 0.15,
+                            'left_hip_flexor': 0.20,
+                            'left_hip_extensor': 0.45,  # Ligeramente más para anti-gravedad
+                            'right_hip_flexor': 0.20,
+                            'right_hip_extensor': 0.45,
+                            # Si se flexiona demasiado entonces pone a cero
+                            'left_knee_flexor': 0.12,
+                            'right_knee_flexor': 0.12,
                         }
                     }
                 ]
             },
             
             ActionType.SQUAT: {
-                'description': 'Sentadilla controlada',
-                'duration': 4.0, # Tiempo suficiente para movimiento completo
+                'description': 'Sentadilla controlada - después de balance estable',
+                'duration': 6.0, # Tiempo suficiente para movimiento completo
                 'phases': [
-                    # Fase 1: Descenso controlado
+                    # Fase 1: Preparación
                     {
-                        'duration_ratio': 0.4,
+                        'duration_ratio': 0.15,
                         'pressures': {
-                            'left_hip_flexor': 0.5,
-                            'left_hip_extensor': 0.45,  # Control excéntrico
-                            'right_hip_flexor': 0.5,
-                            'right_hip_extensor': 0.45,
-                            'left_knee_flexor': 0.6,   # Flexión controlada
-                            'right_knee_flexor': 0.6,
+                            'left_hip_flexor': 0.3,
+                            'left_hip_extensor': 0.5,  # Control excéntrico
+                            'right_hip_flexor': 0.3,
+                            'right_hip_extensor': 0.5,
+                            'left_knee_flexor': 0.15,   # Flexión controlada
+                            'right_knee_flexor': 0.15,
                         }
                     },
-                    # Fase 2: Posición baja - mantener
+                    # Fase 2: Descenso controlado
                     {
-                        'duration_ratio': 0.2,
+                        'duration_ratio': 0.35,
                         'pressures': {
-                            'left_hip_flexor': 0.6,
-                            'left_hip_extensor': 0.55,  # Co-activación para estabilidad
-                            'right_hip_flexor': 0.60,
-                            'right_hip_extensor': 0.55,
-                            'left_knee_flexor': 0.7,
-                            'right_knee_flexor': 0.7,
+                            'left_hip_flexor': 0.55,
+                            'left_hip_extensor': 0.40,  # Co-activación para estabilidad
+                            'right_hip_flexor': 0.55,
+                            'right_hip_extensor': 0.40,
+                            'left_knee_flexor': 0.50,
+                            'right_knee_flexor': 0.50,
                         }
                     },
-                    # Fase 3: Ascenso - extensión potente
+                    # Fase 3: Posición baja, Mantener
                     {
-                        'duration_ratio': 0.4,
+                        'duration_ratio': 0.15,
                         'pressures': {
                             'left_hip_flexor': 0.3,
                             'left_hip_extensor': 0.7,  # Fuerte extensión
@@ -106,10 +107,24 @@ class DiscreteActionController:
                             'left_knee_flexor': 0.2,   # Los resortes ayudan
                             'right_knee_flexor': 0.2,
                         }
+                    },
+                        # Fase 4: Ascenso - Extensión potente
+                    {
+                    'duration_ratio': 0.35,  # 35% del tiempo
+                    'pressures': {
+                        'left_hip_flexor': 0.25,    # Reducir flexión
+                        'left_hip_extensor': 0.75,  # Extensión potente
+                        'right_hip_flexor': 0.25,
+                        'right_hip_extensor': 0.75,
+                        'left_knee_flexor': 0.15,   # Los resortes ayudan
+                        'right_knee_flexor': 0.15,
                     }
-                ]
-            }
+                    
+                }
+            ]
         }
+    }
+    
     
     def set_action(self, action_type: ActionType):
         """Cambia la acción actual que el controlador debe generar"""
@@ -122,20 +137,20 @@ class DiscreteActionController:
     
     def get_expert_action(self, time_step):
         """
-        Genera las presiones PAM expertas para la acción actual.
-        
-        Args:
-            time_step: Paso de tiempo de simulación
+            Genera las presiones PAM expertas para la acción actual.
             
-        Returns:
-            np.array: 6 presiones PAM normalizadas [0, 1]
+            Args:
+                time_step: Paso de tiempo de simulación
+                
+            Returns:
+                np.array: 6 presiones PAM normalizadas [0, 1]
         """
         # Actualizar progreso de la acción
         progress_increment = time_step / self.action_duration
         self.action_progress += progress_increment
         
         # Si la acción terminó, mantener la última fase
-        if self.action_progress > 1.0:
+        if self.action_progress >= 1.0:
             if self.current_action == ActionType.SQUAT:
                 # Después de sentadilla, volver a balance
                 self.set_action(ActionType.BALANCE_STANDING)
@@ -149,18 +164,20 @@ class DiscreteActionController:
         
         # Determinar en qué fase estamos
         cumulative_duration = 0.0
-        #current_phase_data = phases[-1]  # Por defecto, última fase
-        #phase_local_progress = 1.0
         current_phase = phases[0]  # Por defecto, primera fase
+        phase_local_progress = 0.0
         
         for phase in phases:
             phase_end = cumulative_duration + phase['duration_ratio']
             if self.action_progress <= phase_end:
-                current_phase = phase
+                # Calcular progreso dentro de la fase
+                phase_start = cumulative_duration
+                phase_local_progress = (self.action_progress - phase_start) / phase['duration_ratio']
                 break
             cumulative_duration += phase['duration_ratio']
         
-        # Generar array de presiones según mapeo PAM
+        # ===== GENERAR PRESIONES PAM =====
+    
         pam_pressures = np.zeros(6, dtype=np.float32)
         
         for muscle_name, pressure in current_phase['pressures'].items():
@@ -170,8 +187,20 @@ class DiscreteActionController:
         
         # Aplicar variación suave para naturalidad
         if hasattr(self, 'last_action'):
-            smoothing_factor = 0.1  # 10% de suavizado
+            smoothing_factor = 0.15  # 15% de suavizado
             pam_pressures = (1 - smoothing_factor) * pam_pressures + smoothing_factor * self.last_action
+        
+        # ===== APLICAR VARIACIÓN NATURAL =====
+    
+        # Añadir pequeña variación para simular control biológico natural
+        if self.current_action == ActionType.BALANCE_STANDING:
+            # Variación muy pequeña para balance
+            noise_amplitude = 0.02
+            natural_variation = np.random.normal(0, noise_amplitude, 6)
+            pam_pressures += natural_variation
+        
+        # Asegurar límites
+        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
         
         self.last_action = pam_pressures.copy()
         
@@ -207,6 +236,39 @@ class DiscreteActionController:
             'total_phases': len(phases),
             'duration': self.action_duration
         }
+    
+    def get_balance_optimized_action(self, time_step):
+        """
+        ✅ NUEVO MÉTODO: Acción específicamente optimizada para balance inicial
+        
+        Esta acción está diseñada para establecer contacto rápido y estable
+        antes de la transición a control PAM completo.
+        """
+        
+        # Patrón específico para establecimiento de contacto
+        contact_pattern = {
+            'left_hip_flexor': 0.15,     # Mínimo para no caer hacia atrás
+            'left_hip_extensor': 0.50,   # Fuerte para mantener postura erecta
+            'right_hip_flexor': 0.15,    # Simétrico
+            'right_hip_extensor': 0.50,
+            'left_knee_flexor': 0.10,    # Muy suave - solo estabilización
+            'right_knee_flexor': 0.10,
+        }
+        
+        pam_pressures = np.zeros(6, dtype=np.float32)
+        
+        for muscle_name, pressure in contact_pattern.items():
+            if muscle_name in self.pam_mapping:
+                pam_index = self.pam_mapping[muscle_name]
+                pam_pressures[pam_index] = pressure
+        
+        # Variación temporal muy suave para micro-ajustes
+        time_factor = np.sin(time_step * 0.5) * 0.01  # ±1% variación lenta
+        pam_pressures += time_factor
+        
+        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
+        
+        return pam_pressures
     
 
 # ===== FUNCIONES DE UTILIDAD =====
