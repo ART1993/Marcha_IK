@@ -120,8 +120,7 @@ class Simplified_BalanceSquat_Trainer:
                 env = Simple_BalanceSquat_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
                     action_space=self.action_space,
-                    env_type=self.env_type,
-                    phase=0 # Fase de entrenamiento inicial es balance
+                    
                 )
                 
                 env = Monitor(env, self.logs_dir)
@@ -143,9 +142,8 @@ class Simplified_BalanceSquat_Trainer:
         def make_eval_env():
             def _init():
                 env = Simple_BalanceSquat_BipedEnv(render_mode='direct', 
-                                             action_space=self.action_space,
-                                             env_type=self.env_type,
-                                             phase=0)  # Fase de evaluación es balance
+                                             action_space=self.action_space
+                                            )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env
             return _init

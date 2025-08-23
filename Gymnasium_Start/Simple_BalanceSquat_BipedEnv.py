@@ -772,9 +772,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             return True
             
         # Terminar si la inclinación lateral es excesiva  
-        if abs(euler[1]) > math.pi/4 + 0.2 or abs(euler[1]) > math.pi/4 + 0.2:
-            print("rotated", euler)
-            return True
+        #if abs(euler[1]) > math.pi/4 + 0.2 or abs(euler[0]) > math.pi/4 + 0.2:
+        #    print("rotated", euler)
+        #    return True
         
         # Desplazamiento lateral excesivo
         if abs(self.pos[1]) > 2.0:
@@ -824,7 +824,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.24],  # Posición inicial de pie
+            [0, 0, 1.20],  # Posición inicial de pie
             # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
