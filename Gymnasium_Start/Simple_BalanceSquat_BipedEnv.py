@@ -556,22 +556,15 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             # Calcular fuerza base del modelo físico
             raw_force = pam_muscle.force_model_new(real_pressure, contraction_ratio)
-            
-            # ===== PASO 4: APLICAR DIRECCIÓN Y MODULACIÓN =====
-        
-            # Los extensores generan torque en dirección opuesta
-            if 'extensor' in muscle_name:
-                pam_force = -raw_force
-            else:
-                pam_force = raw_force
+    
                 
             # Modular por velocidad articular (damping biomecánico)
             velocity_damping = 1.0 - 0.1 * abs(joint_velocity)  # Reducir fuerza con velocidad alta
             velocity_damping = np.clip(velocity_damping, 0.5, 1.0)
             
-            pam_force *= velocity_damping
+            raw_force *= velocity_damping
             
-            pam_forces[i] = pam_force
+            pam_forces[i] = raw_force
             
             # Debug detallado cada 1500 pasos (1 segundo aprox)
             if self.step_count % 1500 == 0 and i < 2:  # Solo primeros 2 PAMs para no saturar
@@ -579,7 +572,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                     f"P={real_pressure/101325:.1f}atm, "
                     f"θ={joint_angle:.2f}rad, "
                     f"ε={contraction_ratio:.3f}, "
-                    f"F={pam_force:.1f}N")
+                    f"F={raw_force:.1f}N")
                 
         # ===== PASO 2: CONVERTIR FUERZAS PAM A TORQUES ARTICULARES =====
         
