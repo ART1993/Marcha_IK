@@ -10,6 +10,7 @@ import math
 from collections import deque
 
 from Controlador.discrete_action_controller import DiscreteActionController, ActionType
+from Controlador.CurriculumAuctionSelector import CurriculumActionSelector
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
@@ -30,7 +31,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             - right hip joint: 5
     """
     
-    def __init__(self, render_mode='human', action_space="pam"):
+    def __init__(self, render_mode='human', action_space="pam", enable_curriculum=True):
         
         """
             Initialize the enhanced PAM biped environment.
@@ -47,6 +48,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         self.render_mode = render_mode
         self.action_space_type = action_space  # Solo "pam"
+        self.enable_curriculum=enable_curriculum
+        if enable_curriculum:
+            self.curriculum = CurriculumActionSelector()
+        else:
+            self.curriculum = None
 
         self.pam_control_active = False
         self.contact_established = False
@@ -117,6 +123,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.zmp_calculator = None
         self.robot_data = None
         self.controller = None
+
+        # Variables para tracking
+        self.episode_reward = 0
+        self.episode_start_step = 0
         
         # Sistema de recompensas simplificado
         self.reward_system = Simplified_BalanceSquat_RewardSystem()
@@ -196,11 +206,31 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             3. ✅ Configuración de fricción en PyBullet
             4. ✅ Mejor integración con sistema de recompensas
         """
+        # ===== DECISIÓN: EXPERTO vs RL =====
+        
+        if self.curriculum and self.curriculum.should_use_expert_action(self.step_count):
+            # 🎓 Usar acción EXPERTA
+            actual_action = self.controller.get_expert_action(self.time_step)
+            action_source = "EXPERT"
+        else:
+            # 🤖 Usar acción de la RED NEURONAL
+            actual_action = action
+            action_source = "RL_AGENT"
+        
+        # ===== DECISIÓN: BALANCE vs SQUAT =====
+        
+        if self.curriculum and self.curriculum.should_transition_to_squat():
+            if self.controller.current_action != ActionType.SQUAT:
+                self.controller.set_action(ActionType.SQUAT)
+                print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
+
+
+
         self.step_count += 1
 
         # ===== PASO 1: NORMALIZAR Y VALIDAR ACCIÓN =====
     
-        normalized_pressures = np.clip(action, 0.0, 1.0)
+        normalized_pressures = np.clip(actual_action, 0.0, 1.0)
 
         # Validar que tenemos 6 presiones PAM
         if len(normalized_pressures) != 6:
@@ -212,23 +242,42 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
         both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
 
-        # ===== PASO 2: CONVERTIR PRESIONES A TORQUES USANDO FÍSICA PAM =====
     
         # ===== PASO 2: APLICAR LÓGICA DE CONTROL SEGÚN ESTADO =====
-        control_mode, action_applied = self._apply_control_logic(action, both_feet_contact)
+        #control_mode, action_applied = self._apply_control_logic(action, both_feet_contact)
+        #print(control_mode, type(action_applied))
+        joint_torques = self._apply_pam_forces(normalized_pressures)
+        # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
-        # ===== Paso 5: SIMULACIÓN FÍSICA =====
+        # Aplicar torques
+        torque_mapping = [
+            (0, joint_torques[0]),  # left_hip_joint
+            (1, joint_torques[1]),  # left_knee_joint  
+            (3, joint_torques[2]),  # right_hip_joint
+            (4, joint_torques[3])   # right_knee_joint
+        ]
+
+        for joint_id, torque in torque_mapping:
+            p.setJointMotorControl2(
+                self.robot_id,
+                joint_id,
+                p.TORQUE_CONTROL,
+                force=torque
+            )
         
         p.stepSimulation()
 
-        # ===== PASO 6: CALCULAR RECOMPENSA MEJORADA =====
     
         # Pasar información PAM al sistema de recompensas
         self.reward_system.pam_states = self.pam_states
-        reward, reward_components = self._calculate_reward(action_applied)
+        #reward, reward_components = self._calculate_reward(action_applied)
+        reward, reward_components = self.reward_system.calculate_simple_reward(
+            action=normalized_pressures,
+            pam_forces=self.pam_states['forces']
+        )
 
-        # ===== PASO 7: OBSERVACIÓN Y TERMINACIÓN =====
-
+        # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
+        self.episode_reward += reward
         observation = self._get_simple_observation()
         done = self._is_done()
 
@@ -236,17 +285,17 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Info básico
         info = {
-                'step_count': self.step_count,
-                'control_mode': control_mode,
-                'pam_control_active': self.pam_control_active,
-                'contact_established': self.contact_established,
-                'contact_stable_steps': self.contact_stable_steps,
-                'both_feet_contact': both_feet_contact,
-                'reward': reward,
-                'reward_components': reward_components,
-                'pam_pressures': action_applied.tolist() if self.pam_control_active else [0]*6,
-                'joint_torques': self.pam_states['forces'].tolist() if hasattr(self, 'pam_states') else [0]*6
-            }
+            'step_count': self.step_count,
+            'reward': reward,
+            'reward_components': reward_components,
+            'action_source': action_source,  # ✅ NUEVO
+            'pam_pressures': normalized_pressures.tolist(),
+            'episode_reward': self.episode_reward
+        }
+        
+        # Añadir info de curriculum
+        if self.curriculum:
+            info['curriculum'] = self.curriculum.get_curriculum_info()
         
         return observation, reward, done, False, info
     
@@ -353,6 +402,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             action_applied = self._apply_pam_control(action)
             control_mode = 'PAM_TORQUE'
             
+            
         else:
             # 🤖 MODO STANDING: Control por posición
             action_applied = self._apply_standing_position_control()
@@ -372,7 +422,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 i,
                 p.POSITION_CONTROL,
                 targetPosition=target_pos,
-                force=80,  # Fuerza suficiente para mantener posición
+                force=50,  # Fuerza suficiente para mantener posición
                 maxVelocity=1.0  # Velocidad moderada
             )
         
@@ -417,6 +467,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Actualizar estados PAM
         self.pam_states['pressures'] = normalized_pressures
+
+        return normalized_pressures
 
 # ==================================================================================================================================================================== #
 # =================================================== Métodos de Aplicación de fuerzas PAM =========================================================================== #
@@ -742,6 +794,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             Reset SIMPLIFICADO - Solo configuración esencial para balance
         """
         super().reset(seed=seed)
+
+        # Actualizar curriculum con rendimiento del episodio anterior
+        if self.curriculum and hasattr(self, 'episode_reward'):
+            episode_length = self.step_count - self.episode_start_step
+            self.curriculum.update_after_episode(self.episode_reward, episode_length)
         
         # ===== RESET FÍSICO BÁSICO =====
         
@@ -767,7 +824,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.25],  # Posición inicial de pie
+            [0, 0, 1.24],  # Posición inicial de pie
             # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
@@ -812,7 +869,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             right_foot_id=self.right_foot_id,
             robot_data=self.robot_data
         )
-
+        self._configure_contact_friction()
         # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
         self.controller = DiscreteActionController(self)
         self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance

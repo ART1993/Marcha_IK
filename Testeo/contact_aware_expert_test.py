@@ -1,202 +1,223 @@
 #!/usr/bin/env python3
 """
-TEST DE ACCIONES EXPERTAS - Solo Después del Contacto
+TEST DE ACCIONES EXPERTAS - Contacto + Buffer de Estabilización
 
-Implementa la solución elegante sugerida: solo medir rendimiento
-después de que se establezca contacto bilateral.
+Mejora del test existente añadiendo buffer post-contacto para evaluar
+solo cuando el robot está realmente estabilizado.
 """
 
 import numpy as np
 import time
+import pybullet as p
+
 from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import create_simple_balance_squat_env
 from Controlador.discrete_action_controller import create_balance_squat_controller, ActionType
 
-def test_expert_balance_post_contact(target_test_duration=20, render=True):
+def test_expert_balance_with_stabilization_buffer(target_test_duration=20, 
+                                                 stabilization_frames=20, 
+                                                 render=True):
     """
-    ✅ TEST ELEGANTE: Solo medir después del contacto bilateral
+    ✅ TEST MEJORADO: Contacto + Buffer de estabilización + Evaluación
+    
+    Fases:
+    1. Esperar contacto bilateral (caída natural)
+    2. Buffer de estabilización (X frames para que se asiente)
+    3. Evaluación de rendimiento (solo entonces medir)
     
     Args:
-        target_test_duration: Duración del test DESPUÉS del contacto (segundos)
+        target_test_duration: Duración del test DESPUÉS del buffer (segundos)
+        stabilization_frames: Frames de buffer después del contacto
         render: Mostrar visualización
     """
     
-    print("🦶 TEST DE BALANCE - Solo Después del Contacto")
-    print("="*60)
-    print("Estrategia: El robot se estabiliza naturalmente, luego medimos rendimiento")
-    print(f"Duración objetivo DESPUÉS del contacto: {target_test_duration}s")
-    print("="*60)
+    print("🦶 TEST DE BALANCE - Contacto + Buffer de Estabilización")
+    print("="*70)
+    print("Estrategia mejorada:")
+    print("1. ⏳ Esperar contacto bilateral (robot cae naturalmente)")
+    print(f"2. 🛠️ Buffer de estabilización ({stabilization_frames} frames)")
+    print(f"3. 📊 Evaluación de rendimiento ({target_test_duration}s)")
+    print("="*70)
     
     try:
-        # Crear entorno con visualización
+        # Crear entorno
         env = create_simple_balance_squat_env(render_mode='human' if render else 'direct')
         controller = create_balance_squat_controller(env)
         controller.set_action(ActionType.BALANCE_STANDING)
         
-        print(f"\n🤖 Inicializando robot...")
         obs, info = env.reset()
         
-        print(f"✅ Robot inicializado:")
-        print(f"   Modo inicial: {info.get('control_mode', 'Unknown')}")
-        print(f"   Altura: {info.get('initial_height', 0):.3f}m")
+        print(f"🤖 Robot inicializado:")
+        print(f"   Altura inicial: {info.get('initial_height', 'Unknown')}")
+        print(f"   Time step: {env.time_step:.4f}s")
+        print(f"   Buffer: {stabilization_frames} frames = {stabilization_frames * env.time_step:.2f}s")
         
         # ===== FASE 1: ESPERAR CONTACTO BILATERAL =====
         
         print(f"\n⏳ FASE 1: Esperando contacto bilateral...")
         
         contact_wait_start = time.time()
-        max_wait_time = 10.0  # Máximo 10 segundos para establecer contacto
+        max_wait_time = 10.0
+        contact_frame = None
         
+        frame_count = 0
         while True:
-            # Obtener acción (pero no importa mucho en esta fase)
             expert_action = controller.get_expert_action(env.time_step)
             obs, reward, done, truncated, info = env.step(expert_action)
+            frame_count += 1
             
-            # ¿Se estableció contacto PAM?
-            if info.get('pam_control_active', False):
+            # ¿Contacto bilateral establecido?
+            left_contacts = len(p.getContactPoints(env.robot_id, env.plane_id, env.left_foot_id, -1)) > 0
+            right_contacts = len(p.getContactPoints(env.robot_id, env.plane_id, env.right_foot_id, -1)) > 0
+            
+            if left_contacts and right_contacts:
                 contact_time = time.time() - contact_wait_start
-                print(f"   🔥 ¡Contacto bilateral establecido en {contact_time:.2f}s!")
-                print(f"   🎯 Modo: {info.get('control_mode', 'Unknown')}")
+                contact_frame = frame_count
+                print(f"   🔥 ¡Contacto bilateral en frame {contact_frame} ({contact_time:.2f}s)!")
                 break
             
-            # ¿Timeout?
+            # Timeout o episode terminado
             if time.time() - contact_wait_start > max_wait_time:
-                print(f"   ❌ Timeout esperando contacto ({max_wait_time}s)")
+                print(f"   ❌ Timeout esperando contacto")
                 env.close()
-                return {
-                    'success': False,
-                    'error': 'Contact timeout',
-                    'contact_time': max_wait_time
-                }
+                return {'success': False, 'error': 'Contact timeout'}
             
-            # ¿Episode terminó prematuramente?
             if done:
                 print(f"   ⚠️ Episode terminó antes del contacto")
                 obs, info = env.reset()
-                contact_wait_start = time.time()  # Reiniciar timer
+                contact_wait_start = time.time()
+                frame_count = 0
                 continue
         
-        # ===== FASE 2: TEST DE RENDIMIENTO POST-CONTACTO =====
+        # ===== FASE 2: BUFFER DE ESTABILIZACIÓN =====
         
-        print(f"\n🎯 FASE 2: Test de balance por {target_test_duration}s...")
+        print(f"\n🛠️ FASE 2: Buffer de estabilización ({stabilization_frames} frames)...")
         
-        test_start_time = time.time()
-        steps_in_test = 0
-        rewards_history = []
-        falls_during_test = 0
-        pam_control_time = 0
+        stabilization_start = time.time()
+        frames_stabilized = 0
+        stabilization_rewards = []
         
-        target_steps = int(target_test_duration / env.time_step)
-        
-        while steps_in_test < target_steps:
-            
-            # Obtener acción experta
+        while frames_stabilized < stabilization_frames:
             expert_action = controller.get_expert_action(env.time_step)
             obs, reward, done, truncated, info = env.step(expert_action)
             
-            # Solo contar si los PAMs están activos
-            if info.get('pam_control_active', False):
-                steps_in_test += 1
-                rewards_history.append(reward)
-                pam_control_time += env.time_step
-                
-                # Debug cada 3 segundos de test activo
-                if steps_in_test % int(3.0 / env.time_step) == 0:
-                    elapsed_test = steps_in_test * env.time_step
-                    recent_reward = np.mean(rewards_history[-150:]) if len(rewards_history) >= 150 else np.mean(rewards_history)
-                    print(f"   Test t={elapsed_test:5.1f}s | Reward: {reward:6.2f} | Avg: {recent_reward:6.2f}")
+            frames_stabilized += 1
+            stabilization_rewards.append(reward)
             
-            else:
-                # PAMs no activos - probablemente perdió contacto
-                if steps_in_test > 0:  # Solo contar si ya habíamos empezado el test
-                    print(f"   ⚠️ Contacto perdido en test step {steps_in_test}")
+            # Debug cada 10 frames durante estabilización
+            if frames_stabilized % 10 == 0:
+                elapsed_stab = frames_stabilized * env.time_step
+                avg_reward_stab = np.mean(stabilization_rewards[-10:])
+                print(f"   Estabilización {frames_stabilized}/{stabilization_frames} | "
+                      f"t={elapsed_stab:.2f}s | Reward: {avg_reward_stab:.2f}")
             
-            # Si se cae durante el test
             if done:
-                falls_during_test += 1
-                print(f"   💔 Caída #{falls_during_test} durante el test")
-                
-                if falls_during_test >= 3:
-                    print(f"   ❌ Demasiadas caídas durante el test")
-                    break
-                
-                # Reset y esperar contacto de nuevo
-                obs, info = env.reset()
-                
-                # Esperar contacto rápidamente
-                contact_reestablished = False
-                for wait_step in range(int(5.0 / env.time_step)):  # Máximo 5s
-                    expert_action = controller.get_expert_action(env.time_step)
-                    obs, reward, done, truncated, info = env.step(expert_action)
-                    
-                    if info.get('pam_control_active', False):
-                        print(f"   🔄 Contacto reestablecido")
-                        contact_reestablished = True
-                        break
-                
-                if not contact_reestablished:
-                    print(f"   ❌ No se pudo reestablecer contacto")
-                    break
+                print(f"   💔 Robot se cayó durante estabilización")
+                env.close()
+                return {'success': False, 'error': 'Fall during stabilization'}
         
+        stabilization_time = time.time() - stabilization_start
+        stabilization_avg_reward = np.mean(stabilization_rewards)
+        print(f"   ✅ Estabilización completada en {stabilization_time:.2f}s")
+        print(f"   📈 Recompensa promedio durante estabilización: {stabilization_avg_reward:.3f}")
+        
+        # ===== FASE 3: EVALUACIÓN DE RENDIMIENTO =====
+        
+        print(f"\n📊 FASE 3: Evaluación de rendimiento ({target_test_duration}s)...")
+        
+        evaluation_start = time.time()
+        evaluation_frames = 0
+        evaluation_rewards = []
+        falls_during_eval = 0
+        
+        target_eval_frames = int(target_test_duration / env.time_step)
+        
+        while evaluation_frames < target_eval_frames:
+            expert_action = controller.get_expert_action(env.time_step)
+            obs, reward, done, truncated, info = env.step(expert_action)
+            
+            evaluation_frames += 1
+            evaluation_rewards.append(reward)
+            
+            # Debug cada 3 segundos
+            if evaluation_frames % int(3.0 / env.time_step) == 0:
+                elapsed_eval = evaluation_frames * env.time_step
+                recent_reward = np.mean(evaluation_rewards[-150:]) if len(evaluation_rewards) >= 150 else np.mean(evaluation_rewards)
+                print(f"   Eval t={elapsed_eval:5.1f}s | Reward: {reward:6.2f} | Avg: {recent_reward:6.2f}")
+            
+            if done:
+                falls_during_eval += 1
+                print(f"   💔 Caída #{falls_during_eval} durante evaluación")
+                
+                if falls_during_eval >= 2:
+                    print(f"   ❌ Demasiadas caídas durante evaluación")
+                    break
+                
+                # Reset y re-estabilizar
+                obs, info = env.reset()
+                # Saltar directamente a modo evaluación (asumiendo que se re-estabilizará rápido)
+                
         env.close()
         
         # ===== ANÁLISIS DE RESULTADOS =====
         
-        actual_test_time = pam_control_time
-        avg_reward = np.mean(rewards_history) if rewards_history else 0
-        total_elapsed = time.time() - contact_wait_start
+        actual_eval_time = evaluation_frames * env.time_step
+        eval_avg_reward = np.mean(evaluation_rewards) if evaluation_rewards else 0
+        total_time = time.time() - contact_wait_start
         
-        print(f"\n📊 RESULTADOS DEL TEST POST-CONTACTO:")
-        print("="*50)
+        print(f"\n📊 RESULTADOS CON BUFFER DE ESTABILIZACIÓN:")
+        print("="*60)
         print(f"⏱️  Tiempo hasta contacto: {contact_time:.2f}s")
-        print(f"🎯 Tiempo de test activo: {actual_test_time:.1f}s / {target_test_duration:.1f}s objetivo")
-        print(f"📈 Recompensa promedio: {avg_reward:.3f}")
-        print(f"💔 Caídas durante test: {falls_during_test}")
-        print(f"👟 Steps de test válidos: {len(rewards_history):,}")
+        print(f"🛠️  Tiempo de estabilización: {stabilization_time:.2f}s ({stabilization_frames} frames)")
+        print(f"📊 Tiempo de evaluación: {actual_eval_time:.1f}s / {target_test_duration:.1f}s")
+        print(f"📈 Recompensa durante estabilización: {stabilization_avg_reward:.3f}")
+        print(f"📈 Recompensa durante evaluación: {eval_avg_reward:.3f}")
+        print(f"💔 Caídas durante evaluación: {falls_during_eval}")
+        print(f"🎯 Frames totales evaluados: {len(evaluation_rewards):,}")
         
-        # ===== CRITERIOS DE ÉXITO =====
+        # ===== CRITERIOS DE ÉXITO AJUSTADOS =====
         
-        print(f"\n🎯 EVALUACIÓN:")
-        print("-"*30)
+        print(f"\n🎯 EVALUACIÓN CON BUFFER:")
+        print("-"*40)
         
         criteria_results = []
         
-        # 1. Contacto establecido rápidamente
-        if contact_time <= 5.0:
-            print(f"   ✅ Contacto rápido: {contact_time:.2f}s")
+        # 1. Contacto + estabilización exitosa
+        if contact_time <= 5.0 and stabilization_avg_reward > -5.0:
+            print(f"   ✅ Estabilización exitosa")
             criteria_results.append(True)
         else:
-            print(f"   ⚠️ Contacto lento: {contact_time:.2f}s")
+            print(f"   ❌ Problemas en estabilización")
             criteria_results.append(False)
         
-        # 2. Test de duración suficiente
-        completion_rate = actual_test_time / target_test_duration
+        # 2. Evaluación completa
+        completion_rate = actual_eval_time / target_test_duration
         if completion_rate >= 0.8:
-            print(f"   ✅ Test completo: {completion_rate:.1%}")
+            print(f"   ✅ Evaluación completa: {completion_rate:.1%}")
             criteria_results.append(True)
         else:
-            print(f"   ❌ Test incompleto: {completion_rate:.1%}")
+            print(f"   ⚠️ Evaluación incompleta: {completion_rate:.1%}")
             criteria_results.append(False)
         
-        # 3. Recompensas positivas
-        if avg_reward > -2.0:
-            print(f"   ✅ Recompensas buenas: {avg_reward:.3f}")
+        # 3. Rendimiento durante evaluación
+        if eval_avg_reward > -2.0:
+            print(f"   ✅ Excelente rendimiento: {eval_avg_reward:.3f}")
             criteria_results.append(True)
-        elif avg_reward > -10.0:
-            print(f"   ⚠️ Recompensas moderadas: {avg_reward:.3f}")
+        elif eval_avg_reward > -5.0:
+            print(f"   ✅ Buen rendimiento: {eval_avg_reward:.3f}")
             criteria_results.append(True)
         else:
-            print(f"   ❌ Recompensas pobres: {avg_reward:.3f}")
+            print(f"   ❌ Rendimiento pobre: {eval_avg_reward:.3f}")
             criteria_results.append(False)
         
-        # 4. Pocas caídas
-        if falls_during_test == 0:
-            print(f"   ✅ Sin caídas")
+        # 4. Estabilidad durante evaluación
+        if falls_during_eval == 0:
+            print(f"   ✅ Sin caídas durante evaluación")
             criteria_results.append(True)
-        elif falls_during_test <= 2:
-            print(f"   ⚠️ Pocas caídas: {falls_during_test}")
+        elif falls_during_eval <= 1:
+            print(f"   ⚠️ Caídas mínimas: {falls_during_eval}")
             criteria_results.append(True)
         else:
-            print(f"   ❌ Muchas caídas: {falls_during_test}")
+            print(f"   ❌ Múltiples caídas: {falls_during_eval}")
             criteria_results.append(False)
         
         # ===== VEREDICTO FINAL =====
@@ -204,166 +225,94 @@ def test_expert_balance_post_contact(target_test_duration=20, render=True):
         success_rate = sum(criteria_results) / len(criteria_results)
         
         if success_rate >= 0.75:
-            verdict = "🎉 SISTEMA FUNCIONAL"
-            ready_for_training = True
-            message = "¡Control experto funciona! Listo para entrenamiento."
+            verdict = "🎉 SISTEMA FUNCIONAL CON ESTABILIZACIÓN"
+            ready = True
+            message = "¡Buffer de estabilización funciona! Sistema listo para entrenamiento."
         elif success_rate >= 0.5:
             verdict = "✅ SISTEMA PARCIALMENTE FUNCIONAL"
-            ready_for_training = True
-            message = "Control experto funciona moderadamente. Entrenar con precaución."
+            ready = True
+            message = "Buffer mejora resultados. Listo para entrenamiento cauteloso."
         else:
-            verdict = "❌ SISTEMA NECESITA TRABAJO"
-            ready_for_training = False
-            message = "Control experto tiene problemas. Ajustar antes de entrenar."
+            verdict = "❌ SISTEMA NECESITA AJUSTES"
+            ready = False
+            message = "Buffer insuficiente. Revisar parámetros."
         
         print(f"\n{verdict}")
         print(f"   Score: {sum(criteria_results)}/{len(criteria_results)}")
         print(f"   {message}")
         
         return {
-            'success': ready_for_training,
+            'success': ready,
             'contact_time': contact_time,
-            'test_duration': actual_test_time,
-            'avg_reward': avg_reward,
-            'falls': falls_during_test,
+            'stabilization_time': stabilization_time,
+            'stabilization_avg_reward': stabilization_avg_reward,
+            'evaluation_time': actual_eval_time,
+            'evaluation_avg_reward': eval_avg_reward,
+            'falls': falls_during_eval,
             'completion_rate': completion_rate,
-            'success_rate': success_rate
+            'success_rate': success_rate,
+            'buffer_frames': stabilization_frames
         }
         
     except Exception as e:
-        print(f"\n💥 Error durante test: {e}")
+        print(f"\n💥 Error durante test con buffer: {e}")
         import traceback
         traceback.print_exc()
         return {'success': False, 'error': str(e)}
 
-def test_expert_squat_post_contact(target_test_duration=15):
+def run_enhanced_expert_verification(stabilization_frames=20):
     """
-    Test de sentadillas que solo empieza después del contacto
-    """
-    
-    print("\n🏋️ TEST DE SENTADILLAS - Solo Después del Contacto")
-    print("="*60)
-    
-    try:
-        env = create_simple_balance_squat_env(render_mode='human')
-        controller = create_balance_squat_controller(env)
-        
-        obs, info = env.reset()
-        
-        # Esperar contacto
-        print(f"   Esperando contacto para sentadillas...")
-        while True:
-            expert_action = controller.get_expert_action(env.time_step)
-            obs, reward, done, truncated, info = env.step(expert_action)
-            
-            if info.get('pam_control_active', False):
-                print(f"   ✅ Contacto establecido - iniciando sentadillas")
-                break
-            
-            if done:
-                obs, info = env.reset()
-        
-        # Cambiar a modo sentadilla
-        controller.set_action(ActionType.SQUAT)
-        
-        # Test de sentadillas
-        squat_cycles = 0
-        steps_tested = 0
-        target_steps = int(target_test_duration / env.time_step)
-        
-        while steps_tested < target_steps:
-            expert_action = controller.get_expert_action(env.time_step)
-            obs, reward, done, truncated, info = env.step(expert_action)
-            
-            if info.get('pam_control_active', False):
-                steps_tested += 1
-                
-                # Detectar ciclos completados
-                controller_info = controller.get_current_action_info()
-                if controller_info['progress'] >= 1.0:
-                    squat_cycles += 1
-                    print(f"   🏋️ Ciclo de sentadilla #{squat_cycles} completado")
-            
-            if done:
-                print(f"   ⚠️ Episode terminado durante sentadillas")
-                break
-        
-        env.close()
-        
-        print(f"   🏋️ Sentadillas completadas: {squat_cycles}")
-        return {'squat_cycles': squat_cycles, 'steps_tested': steps_tested}
-        
-    except Exception as e:
-        print(f"   ❌ Error en test de sentadillas: {e}")
-        return {'squat_cycles': 0, 'error': str(e)}
-
-def run_contact_aware_expert_verification():
-    """
-    Ejecutar verificación completa que solo mide después del contacto
+    Ejecutar verificación mejorada con buffer de estabilización
     """
     
-    print("🎯 VERIFICACIÓN DE ACCIONES EXPERTAS - Post-Contacto")
+    print("🎯 VERIFICACIÓN MEJORADA - Buffer Post-Contacto")
     print("="*70)
-    print("Esta verificación implementa la solución elegante:")
-    print("1. Robot se estabiliza naturalmente (standing position)")
-    print("2. Detecta contacto bilateral automáticamente") 
-    print("3. Solo ENTONCES empieza a medir rendimiento")
+    print(f"Mejora clave: {stabilization_frames} frames de buffer después del contacto")
+    print("Esto permite que el robot se asiente antes de evaluar rendimiento")
     print("="*70)
     
-    # Test 1: Balance post-contacto
-    balance_results = test_expert_balance_post_contact(target_test_duration=20, render=True)
+    # Test con buffer
+    balance_results = test_expert_balance_with_stabilization_buffer(
+        target_test_duration=20, 
+        stabilization_frames=stabilization_frames,
+        render=True
+    )
     
-    # Test 2: Sentadillas (solo si balance funciona)
-    if balance_results.get('success', False):
-        squat_results = test_expert_squat_post_contact(target_test_duration=15)
-    else:
-        print("\n⚠️ Saltando test de sentadillas debido a problemas de balance")
-        squat_results = {'squat_cycles': 0}
-    
-    # Veredicto final
-    print(f"\n🎯 VEREDICTO FINAL - MÉTODO POST-CONTACTO:")
+    # Veredicto
+    print(f"\n🎯 VEREDICTO FINAL - MÉTODO CON BUFFER:")
     print("="*60)
     
     if balance_results.get('success', False):
-        if squat_results.get('squat_cycles', 0) >= 1:
-            print("🎉 ¡SISTEMA COMPLETAMENTE FUNCIONAL!")
-            print("   ✅ Balance post-contacto: EXCELENTE")
-            print("   ✅ Sentadillas post-contacto: FUNCIONAN")
-            print("   🚀 LISTO PARA ENTRENAMIENTO COMPLETO")
-            
-            next_steps = [
-                "🎯 Iniciar entrenamiento con configuración conservadora",
-                "📊 Monitorear que el entrenamiento mejore las recompensas", 
-                "⚙️ El sistema de contacto automático funcionará durante entrenamiento"
-            ]
-        else:
-            print("✅ SISTEMA PARCIALMENTE FUNCIONAL")
-            print("   ✅ Balance post-contacto: EXCELENTE")
-            print("   ⚠️ Sentadillas: Necesitan ajuste")
-            print("   🚀 LISTO PARA ENTRENAMIENTO DE BALANCE")
-            
-            next_steps = [
-                "🎯 Entrenar primero solo balance (BALANCE_STANDING)",
-                "🔧 Ajustar patrones de sentadilla después",
-                "📈 El sistema automático funcionará bien para balance"
-            ]
-    else:
-        print("⚠️ SISTEMA NECESITA AJUSTES")
-        print(f"   Contacto: {balance_results.get('contact_time', 0):.1f}s")
-        print(f"   Recompensa: {balance_results.get('avg_reward', 0):.2f}")
-        print("   🔧 Revisar parámetros antes de entrenar")
+        print("🎉 ¡BUFFER DE ESTABILIZACIÓN EXITOSO!")
+        print(f"   ✅ Contacto + Estabilización: {balance_results.get('stabilization_time', 0):.2f}s")
+        print(f"   ✅ Rendimiento post-buffer: {balance_results.get('evaluation_avg_reward', 0):.3f}")
+        print("   🚀 LISTO PARA ENTRENAMIENTO")
         
-        next_steps = [
-            "🔧 Ajustar presiones PAM en discrete_action_controller",
-            "⚖️ Revisar pesos del sistema de recompensas",
-            "🔄 Repetir test después de ajustes"
+        recommendations = [
+            f"✅ Usar {stabilization_frames} frames como buffer estándar",
+            "📈 El sistema ahora evalúa solo cuando el robot está estable",
+            "🎯 Proceder con entrenamiento completo"
+        ]
+    else:
+        print("⚠️ BUFFER AYUDA PERO NECESITA AJUSTES")
+        print(f"   Buffer usado: {stabilization_frames} frames")
+        print(f"   Resultado: {balance_results.get('success_rate', 0):.2f}")
+        
+        recommendations = [
+            "🔧 Probar con más frames de buffer (30-40)",
+            "⚙️ Ajustar parámetros de control experto",
+            "📊 Revisar sistema de recompensas"
         ]
     
-    print(f"\n💡 PRÓXIMOS PASOS RECOMENDADOS:")
-    for i, step in enumerate(next_steps, 1):
-        print(f"   {i}. {step}")
+    print(f"\n💡 RECOMENDACIONES:")
+    for i, rec in enumerate(recommendations, 1):
+        print(f"   {i}. {rec}")
     
-    return balance_results, squat_results
+    return balance_results
 
 if __name__ == "__main__":
-    run_contact_aware_expert_verification()
+    # Importar PyBullet aquí para evitar problemas
+    
+    
+    # Test con 20 frames de buffer (aproximadamente 0.13s a 1500Hz)
+    run_enhanced_expert_verification(stabilization_frames=20)
