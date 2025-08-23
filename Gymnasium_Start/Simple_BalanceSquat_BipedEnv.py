@@ -9,7 +9,7 @@ import numpy as np
 import math
 from collections import deque
 
-from Controlador.discrete_action_controller import DiscreteActionController, ActionType
+from Controlador.discrete_action_controller import create_balance_squat_controller, ActionType
 from Controlador.CurriculumAuctionSelector import CurriculumActionSelector
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
@@ -266,6 +266,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             )
         
         p.stepSimulation()
+
+        # ✅ LLAMAR DEBUG OCASIONALMENTE
+        self._debug_joint_angles_and_pressures(actual_action)
 
     
         # Pasar información PAM al sistema de recompensas
@@ -827,19 +830,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Posiciones articulares para estar de pie (balance neutro)
         self.neutral_positions = {
             0:0.0,   # left_hip - neutral
-            1:0.1,   # left_knee - ligeramente flexionada para estabilidad
+            1:0.08,   # left_knee - ligeramente flexionada para estabilidad
             2:0.0,   # left_anckle. Por si el resorte lo dejo con angulo no nulo
             3:0.0,   # right_hip - neutral  
-            4:0.1,   # right_knee - ligeramente flexionada
+            4:0.08,   # right_knee - ligeramente flexionada
             5:0.0,   # right_anckle - lo mismo que antes
         }
         
         for i, pos in self.neutral_positions.items():
             p.resetJointState(self.robot_id, i, pos)
-        
-        # SIN velocidad inicial - queremos balance estático
-        p.resetBaseVelocity(self.robot_id, [0, 0, 0], [0, 0, 0])
-        
+
         # ===== CONFIGURACIÓN PAM =====
 
         for i, target_pos in self.neutral_positions.items():  # Solo caderas y rodillas
@@ -851,7 +851,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             )
         
         
-
+        # SIN velocidad inicial - queremos balance estático
+        #p.resetBaseVelocity(self.robot_id, [0, 0, 0], [0, 0, 0])
+        
         # ===== Sistemas de apoyo ===== #
         # Robot data para métricas básicas
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
@@ -864,7 +866,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         )
         self._configure_contact_friction()
         # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
-        self.controller = DiscreteActionController(self)
+        self.controller = create_balance_squat_controller(self)
         self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
 
         # Configurar sistema de recompensas
@@ -915,6 +917,41 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 p.disconnect(self.physics_client)
         except:
             pass
+
+    # ===== MÉTODO DE DEBUG ADICIONAL =====
+
+    def _debug_joint_angles_and_pressures(self, pam_pressures):
+        """
+        ✅ MÉTODO DE DEBUG para verificar la lógica biomecánica
+        
+        Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
+        """
+        
+        if self.step_count % 1500 == 0:  # Cada segundo aprox
+            try:
+                joint_states = p.getJointStates(self.robot_id, [1, 4])  # rodillas
+                left_knee_angle = joint_states[0][0]
+                right_knee_angle = joint_states[1][0]
+                
+                print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
+                print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
+                print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
+                print(f"   Left knee flexor pressure: {pam_pressures[4]:.3f}")
+                print(f"   Right knee flexor pressure: {pam_pressures[5]:.3f}")
+                
+                # Verificar lógica biomecánica
+                if left_knee_angle > 0.05 and pam_pressures[4] > 0.01:
+                    print(f"   ⚠️ Warning: Left knee flexed but flexor active!")
+                elif left_knee_angle > 0.05 and pam_pressures[4] <= 0.01:
+                    print(f"   ✅ Correct: Left knee flexed, flexor inactive")
+                    
+                if right_knee_angle > 0.05 and pam_pressures[5] > 0.01:
+                    print(f"   ⚠️ Warning: Right knee flexed but flexor active!")
+                elif right_knee_angle > 0.05 and pam_pressures[5] <= 0.01:
+                    print(f"   ✅ Correct: Right knee flexed, flexor inactive")
+            
+            except Exception as e:
+                print(f"   ❌ Debug error: {e}")
 
 # ===== FUNCIÓN DE USO FÁCIL =====
 
