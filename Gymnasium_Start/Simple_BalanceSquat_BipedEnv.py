@@ -9,14 +9,19 @@ import numpy as np
 import math
 from collections import deque
 
-from Controlador.discrete_action_controller import create_balance_squat_controller, ActionType
-from Controlador.CurriculumAuctionSelector import CurriculumActionSelector
+from Controlador.discrete_action_controller import ActionType #, create_balance_squat_controller
+#from Controlador.CurriculumAuctionSelector import CurriculumActionSelector
+from Controlador.ankle_control_and_curriculum_fixes import OptimizedCurriculumSelector, IntelligentAnkleControl
+
+
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-from Archivos_Mejorados.PosturalControlSystem import EnhancedDiscreteActionController
+#from Archivos_Mejorados.PosturalControlSystem import EnhancedDiscreteActionController
+
 from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
-from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs                 
+from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs    
+from Archivos_Mejorados.phase_aware_postural_control import PhaseAwareEnhancedController, MovementPhase             
 
 class Simple_BalanceSquat_BipedEnv(gym.Env):
     """
@@ -52,7 +57,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.action_space_type = action_space  # Solo "pam"
         self.enable_curriculum=enable_curriculum
         if enable_curriculum:
-            self.curriculum = CurriculumActionSelector()
+            self.curriculum = OptimizedCurriculumSelector()
         else:
             self.curriculum = None
 
@@ -284,6 +289,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
+
+        # NUEVO: Control inteligente de tobillos
+        if self.ankle_control:
+            left_ankle_torque, right_ankle_torque = self.ankle_control.calculate_ankle_torques(
+                self.robot_data, self.zmp_calculator
+            )
+            
+            # Aplicar torques calculados
+            p.setJointMotorControl2(self.robot_id, self.left_foot_id, p.TORQUE_CONTROL, force=left_ankle_torque)  # left_ankle
+            p.setJointMotorControl2(self.robot_id, self.right_foot_id, p.TORQUE_CONTROL, force=right_ankle_torque)  # right_ankle
         
         p.stepSimulation()
 
@@ -317,8 +332,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         }
         
         # Añadir info de curriculum
-        if self.curriculum:
-            info['curriculum'] = self.curriculum.get_curriculum_info()
+        #if self.curriculum:
+        #    info['curriculum'] = self.curriculum.get_curriculum_info()
+
+        # NUEVAS LÍNEAS: Añadir información del sistema postural
+        if hasattr(self.controller, 'get_comprehensive_performance_stats'):
+            info['postural_control'] = {
+                'current_phase': self.controller.postural_system.current_phase.value,
+                'performance_stats': self.controller.get_comprehensive_performance_stats(),
+                'total_corrections': self.controller.total_corrections
+            }
         
         return observation, reward, done, False, info
     
@@ -888,7 +911,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         )
         self._configure_contact_friction()
         # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
-        self.controller = EnhancedDiscreteActionController(self)
+        self.controller = PhaseAwareEnhancedController(self)
+        self.ankle_control = IntelligentAnkleControl(self.robot_id)
         self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
 
         # Configurar sistema de recompensas
