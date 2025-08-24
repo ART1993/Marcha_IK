@@ -13,8 +13,10 @@ from Controlador.discrete_action_controller import create_balance_squat_controll
 from Controlador.CurriculumAuctionSelector import CurriculumActionSelector
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
+from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
+from Archivos_Mejorados.PosturalControlSystem import EnhancedDiscreteActionController
 from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
-from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data                 
+from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs                 
 
 class Simple_BalanceSquat_BipedEnv(gym.Env):
     """
@@ -237,16 +239,34 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             raise ValueError(f"Expected 6 PAM pressures, got {len(normalized_pressures)}")
 
         # ✅ VERIFICAR CONTACTO BILATERAL SIMPLE
-        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
-        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
+        #left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
+        #right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
 
-        both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
+        #both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
 
-    
+        # NUEVO: Aplicar inhibición recíproca
+        if not hasattr(self, 'anti_flexion'):
+            self.anti_flexion = AntiFlexionController()
+
         # ===== PASO 2: APLICAR LÓGICA DE CONTROL SEGÚN ESTADO =====
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+        joint_positions = [state[0] for state in joint_states]
+        
+        # Corregir presiones PAM usando principio de reciprocidad
+        corrected_pressures = self.anti_flexion.apply_reciprocal_inhibition(
+            normalized_pressures, joint_positions
+        )
+        
+        # Aplicar fuerzas PAM corregidas
+        joint_torques = self._apply_pam_forces(corrected_pressures)
+        
+        # NUEVO: Aplicar control de tobillos mejorado
+        configure_enhanced_ankle_springs(self.robot_id)
+
+
         #control_mode, action_applied = self._apply_control_logic(action, both_feet_contact)
         #print(control_mode, type(action_applied))
-        joint_torques = self._apply_pam_forces(normalized_pressures)
+        #joint_torques = self._apply_pam_forces(normalized_pressures)
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
@@ -465,7 +485,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 ankle_idx,
                 p.POSITION_CONTROL,
                 targetPosition=0.0,  # Neutral
-                force=10  # Muy suave
+                force=50  # Muy suave
             )
         
         # Actualizar estados PAM
@@ -591,8 +611,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # ✅ RODILLA IZQUIERDA: Flexor + resorte pasivo de extensión
         flexor_moment = pam_forces[4] * moment_arm    # PAM 4: flexor
-        passive_spring_torque = -20.0 * (joint_positions[1] - 0.1)  # Resorte a 0.1 rad
-        joint_torques[1] = flexor_moment + passive_spring_torque
+        passive_spring_torque = -150.0 * (joint_positions[1] - 0.1)  # Resorte a 0.1 rad
+        damping_torque = -10.0 * joint_velocities[1]  # Damping proporcional a velocidad
+        joint_torques[1] = flexor_moment + passive_spring_torque + damping_torque
             
         # ✅ CADERA DERECHA: Antagónico (flexor vs extensor)
         flexor_moment = pam_forces[2] * moment_arm    # PAM 2: flexor  
@@ -601,8 +622,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # ✅ RODILLA DERECHA: Flexor + resorte pasivo
         flexor_moment = pam_forces[5] * moment_arm    # PAM 5: flexor
-        passive_spring_torque = -20.0 * (joint_positions[3] - 0.1)
-        joint_torques[3] = flexor_moment + passive_spring_torque
+        passive_spring_torque = -150.0 * (joint_positions[3] - 0.1)
+        damping_torque = -10.0 * joint_velocities[3]  # Damping proporcional a velocidad
+        joint_torques[3] = flexor_moment + passive_spring_torque + damping_torque
         
         # Debug torques
         if self.step_count % 1500 == 0:
@@ -778,7 +800,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
             
         # Límite de tiempo
-        if self.step_count > 1500*5: # 5 segundos a 1500 Hz
+        if self.step_count > 1500*3: # 5 segundos a 1500 Hz
             print("fuera de t")
             return True
             
@@ -820,7 +842,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.20],  # Posición inicial de pie
+            [0, 0, 1.21],  # Posición inicial de pie
             # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
@@ -830,10 +852,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Posiciones articulares para estar de pie (balance neutro)
         self.neutral_positions = {
             0:0.0,   # left_hip - neutral
-            1:0.08,   # left_knee - ligeramente flexionada para estabilidad
+            1:0.0,   # left_knee - ligeramente flexionada para estabilidad
             2:0.0,   # left_anckle. Por si el resorte lo dejo con angulo no nulo
             3:0.0,   # right_hip - neutral  
-            4:0.08,   # right_knee - ligeramente flexionada
+            4:0.0,   # right_knee - ligeramente flexionada
             5:0.0,   # right_anckle - lo mismo que antes
         }
         
@@ -866,7 +888,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         )
         self._configure_contact_friction()
         # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
-        self.controller = create_balance_squat_controller(self)
+        self.controller = EnhancedDiscreteActionController(self)
         self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
 
         # Configurar sistema de recompensas

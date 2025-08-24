@@ -9,7 +9,7 @@ class ActionType(Enum):
     BALANCE_STANDING = "balance_standing"
     SQUAT = "squat"
 
-class BiomechanicalActionController:
+class DiscreteActionController:
     """
         ✅ CONTROLADOR BIOMECÁNICO CORREGIDO
         
@@ -60,13 +60,13 @@ class BiomechanicalActionController:
                         'base_pressures': {
                             # ✅ CADERAS: Extensores dominantes para anti-gravedad
                             'left_hip_flexor': 0.50,
-                            'left_hip_extensor': 0.55,   # Más fuerte para sostener peso
+                            'left_hip_extensor': 0.5,   # Más fuerte para sostener peso
                             'right_hip_flexor': 0.5,
-                            'right_hip_extensor': 0.55,
+                            'right_hip_extensor': 0.5,
                             
                             # ✅ RODILLAS: INACTIVAS - Los resortes se encargan
-                            'left_knee_flexor': 0.00,   # ¡CERO como dices!
-                            'right_knee_flexor': 0.00,  # ¡CERO como dices!
+                            'left_knee_flexor': 0.02,   # ¡CERO como dices!
+                            'right_knee_flexor': 0.02,  # ¡CERO como dices!
                         }
                     }
                 ]
@@ -391,7 +391,7 @@ class BiomechanicalActionController:
 def create_balance_squat_controller(env):
     """Crear el controlador biomecánico corregido"""
     
-    controller = BiomechanicalActionController(env)
+    controller = DiscreteActionController(env)
     
     print(f"✅ Biomechanical Controller created")
     print(f"   Key features: Angle-aware knee control, coordinated variation")
