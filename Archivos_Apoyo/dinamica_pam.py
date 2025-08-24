@@ -79,8 +79,8 @@ class PAMMcKibben:
 
         force_factor = ((1-epsilon**2)*self.a - self.b)
 
-        print(f"DEBUG PAM: pressure={pressure:.0f}, epsilon={epsilon:.3f}," 
-                f"force_factor={force_factor:.3f}, a={self.a:.3f}, b={self.b:.3f}")
+        #print(f"DEBUG PAM: pressure={pressure:.0f}, epsilon={epsilon:.3f}," 
+        #        f"force_factor={force_factor:.3f}, a={self.a:.3f}, b={self.b:.3f}")
         
          # ✅ CORRECCIÓN: Si force_factor es negativo, usar mínimo
         if force_factor <= 0:

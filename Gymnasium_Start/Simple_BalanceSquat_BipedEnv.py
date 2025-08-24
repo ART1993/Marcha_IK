@@ -724,7 +724,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
         right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
-        print ("contacto pies", left_contact, right_contact)
+        #print ("contacto pies", left_contact, right_contact)
         obs.extend([float(left_contact), float(right_contact)])
         
         return np.array(obs, dtype=np.float32)
