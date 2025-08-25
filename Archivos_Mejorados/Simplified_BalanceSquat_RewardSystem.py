@@ -31,7 +31,7 @@ class Simplified_BalanceSquat_RewardSystem:
         # ===== PARÁMETROS DE RECOMPENSA SIMPLIFICADOS =====
         
         # Objetivos para balance
-        self.target_height = 1.1  # Altura objetivo del torso
+        self.target_height = 1.2  # Altura objetivo del torso
         self.max_roll_pitch = 0.3  # Máxima inclinación permitida (radianes)
         
         # Pesos de recompensa (fijos, no adaptativos)
@@ -75,17 +75,18 @@ class Simplified_BalanceSquat_RewardSystem:
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
-        
+        both_feet_contact=self.get_detect_feet_contact
         rewards = {}
         
         # ===== 1. RECOMPENSA DE SUPERVIVENCIA =====
         rewards['survival'] = 1.0  # Recompensa base por estar activo
         
         # ===== 2. RECOMPENSA POR ALTURA (Mantenerse erguido) =====
+
         height_error = abs(pos[2] - self.target_height)
-        if height_error < 0.1:
+        if height_error < 0.3:
             rewards['height'] = 2.0  # Altura perfecta
-        elif height_error < 0.3:
+        elif height_error < 0.5:
             rewards['height'] = 1.0 - height_error  # Degradación gradual
         else:
             rewards['height'] = -2.0  # Muy lejos de altura objetivo
@@ -241,12 +242,6 @@ class Simplified_BalanceSquat_RewardSystem:
         
         return False
     
-    def reset(self):
-        """Reset del sistema de recompensas"""
-        self.step_count = 0
-        if hasattr(self, 'reward_history'):
-            self.reward_history.clear()
-    
     def get_reward_summary(self):
         """Resumen de configuración actual"""
         return {
@@ -257,6 +252,14 @@ class Simplified_BalanceSquat_RewardSystem:
             'weights': self.weights,
             'pam_efficiency_enabled': self.pam_states is not None
         }
+    @property
+    def get_detect_feet_contact(self):
+        # ✅ VERIFICAR CONTACTO BILATERAL SIMPLE
+        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
+        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
+
+        both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
+        return both_feet_contact
 
 
 # ===== FUNCIONES DE UTILIDAD =====

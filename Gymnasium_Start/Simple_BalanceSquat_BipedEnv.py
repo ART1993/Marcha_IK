@@ -243,11 +243,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         if len(normalized_pressures) != 6:
             raise ValueError(f"Expected 6 PAM pressures, got {len(normalized_pressures)}")
 
-        # ✅ VERIFICAR CONTACTO BILATERAL SIMPLE
-        #left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
-        #right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
-
-        #both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
+        
 
         # NUEVO: Aplicar inhibición recíproca
         if not hasattr(self, 'anti_flexion'):
@@ -913,7 +909,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
         self.controller = PhaseAwareEnhancedController(self)
         self.ankle_control = IntelligentAnkleControl(self.robot_id)
-        self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
+        #self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
+        self.controller.set_action(MovementPhase.STATIC_BALANCE)
 
         # Configurar sistema de recompensas
         self.reward_system.redefine_robot(self.robot_id, self.plane_id)
