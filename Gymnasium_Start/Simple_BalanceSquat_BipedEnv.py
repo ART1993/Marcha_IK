@@ -17,7 +17,6 @@ from Controlador.ankle_control_and_curriculum_fixes import OptimizedCurriculumSe
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-#from Archivos_Mejorados.PosturalControlSystem import EnhancedDiscreteActionController
 
 from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
 from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs    

@@ -6,7 +6,7 @@ import pybullet as p
 
 from Gymnasium_Start.Simplified_BalanceSquat_Trainer import create_balance_squat_trainer
 
-def _setup_multiprocessing():
+def _setup_multiprocessing_simple():
     # Prepara el multiprocesado para el caso de n_env>1
     if mp.get_start_method(allow_none=True) is None:
         mp.set_start_method('spawn')
@@ -26,7 +26,7 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
     print("  ✅ Realizar sentadillas controladas")
     print("  ✅ Usar 6 músculos PAM antagónicos eficientemente")
     print("=" * 60)
-    _setup_multiprocessing()
+    _setup_multiprocessing_simple()
     trainer = create_balance_squat_trainer(
         total_timesteps=total_timesteps,
         n_envs=n_envs
