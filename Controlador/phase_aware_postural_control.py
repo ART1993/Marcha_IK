@@ -443,11 +443,11 @@ class PhaseAwarePosturalSystem:
 
 class PhaseAwareEnhancedController(DiscreteActionController):
     """
-    Controlador mejorado que integra control postural consciente de fase
-    
-    Este controlador extiende el sistema anterior para manejar tanto
-    equilibrio estático como movimientos dinámicos de sentadilla con
-    control postural adaptativo en cada fase
+        Controlador mejorado que integra control postural consciente de fase
+        
+        Este controlador extiende el sistema anterior para manejar tanto
+        equilibrio estático como movimientos dinámicos de sentadilla con
+        control postural adaptativo en cada fase
     """
     
     def __init__(self, env):

@@ -19,7 +19,7 @@ from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 
 from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
 from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs    
-from Archivos_Mejorados.phase_aware_postural_control import PhaseAwareEnhancedController, MovementPhase             
+from Controlador.phase_aware_postural_control import PhaseAwareEnhancedController, MovementPhase             
 
 class Simple_BalanceSquat_BipedEnv(gym.Env):
     """
@@ -222,15 +222,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             actual_action = action
             action_source = "RL_AGENT"
         
-        # ===== DECISIÓN: BALANCE vs SQUAT =====
-        
-        if self.curriculum and self.curriculum.should_transition_to_squat():
-            if self.controller.current_action != ActionType.SQUAT:
-                self.controller.set_action(ActionType.SQUAT)
-                print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
-
-
-
         self.step_count += 1
 
         # ===== PASO 1: NORMALIZAR Y VALIDAR ACCIÓN =====
@@ -387,7 +378,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Configurar fricción del plano del suelo
         p.changeDynamics(
             self.plane_id,
-            -1,  # -1 for base link
+            -1,                         # -1 for base link
             lateralFriction=1.0,        # Fricción estándar del suelo
             spinningFriction=0.5,
             rollingFriction=0.01
@@ -818,7 +809,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
             
         # Límite de tiempo
-        if self.step_count > 1500*3: # 5 segundos a 1500 Hz
+        if self.step_count > 1500*self.controller.action_duration: #  1500 Hz=1s, =>
             print("fuera de t")
             return True
             
@@ -830,6 +821,13 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             Reset SIMPLIFICADO - Solo configuración esencial para balance
         """
         super().reset(seed=seed)
+
+        # ===== DECISIÓN: BALANCE vs SQUAT =====
+        # Modificar para preparar por step la transición squat_stand
+        if self.curriculum and self.curriculum.should_transition_to_squat():
+            if self.controller.current_action != ActionType.SQUAT:
+                self.controller.set_action(ActionType.SQUAT)
+                print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
 
         # Actualizar curriculum con rendimiento del episodio anterior
         if self.curriculum and hasattr(self, 'episode_reward'):

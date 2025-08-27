@@ -128,7 +128,7 @@ class DiscreteActionController:
             }
         }
     
-    
+    # Cambio el tipo de acción a usar
     def set_action(self, action_type: ActionType):
         """Cambia la acción actual que el controlador debe generar"""
         if action_type != self.current_action:
@@ -375,12 +375,3 @@ class DiscreteActionController:
             'total_phases': len(phases),
             'duration': self.action_duration
         }
-    
-    def set_action(self, action_type: ActionType):
-        """Cambiar la acción actual"""
-        if action_type != self.current_action:
-            self.current_action = action_type
-            self.action_progress = 0.0
-            pattern = self.action_patterns[action_type]
-            self.action_duration = pattern['duration']
-            print(f"🧠 Biomechanical switch to: {pattern['description']}")
