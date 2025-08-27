@@ -91,10 +91,10 @@ class PAMMcKibben:
         
         return max(0.0, Function)
     
-    def stiffness_model(self, pressure, contraction_ratio):
+    #def stiffness_model(self, pressure, contraction_ratio):
         """Rigidez variable del actuador"""
-        base_stiffness = 1000  # N/m base
-        pressure_factor = pressure / 100000  # normalizado a 1 bar ver si es mejor usar 5 bar
-        contraction_factor = 1 + 2 * contraction_ratio
+    #    base_stiffness = 1000  # N/m base
+    #    pressure_factor = pressure / 100000  # normalizado a 1 bar ver si es mejor usar 5 bar
+    #    contraction_factor = 1 + 2 * contraction_ratio
         
-        return base_stiffness * pressure_factor * contraction_factor
+    #    return base_stiffness * pressure_factor * contraction_factor

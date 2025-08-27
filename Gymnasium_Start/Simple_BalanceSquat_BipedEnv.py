@@ -9,8 +9,7 @@ import numpy as np
 import math
 from collections import deque
 
-from Controlador.discrete_action_controller import ActionType #, create_balance_squat_controller
-#from Controlador.CurriculumAuctionSelector import CurriculumActionSelector
+from Controlador.discrete_action_controller import ActionType 
 from Controlador.ankle_control_and_curriculum_fixes import OptimizedCurriculumSelector, IntelligentAnkleControl
 
 
