@@ -85,30 +85,30 @@ class PhaseAwarePosturalSystem:
             },
             
             MovementPhase.SQUAT_PREPARATION: {
-                'target_hip_angle': 0.1,      # Inicio suave de flexión (5.7°)
-                'tolerance': 0.03,             # Un poco más de tolerancia
-                'target_knee_angle': 0.05,     # Inicio ligero de flexión
+                'target_hip_angle': 0.15,      # Inicio suave de flexión (5.7°)
+                'tolerance': 0.05,             # Un poco más de tolerancia
+                'target_knee_angle': 0.1,     # Inicio ligero de flexión
                 'stability_priority': 'high'   # Mantener alta estabilidad
             },
             
             MovementPhase.SQUAT_DESCENT: {
-                'target_hip_angle': lambda progress: 0.1 + (1.2 * progress),  # Flexión progresiva
+                'target_hip_angle': lambda progress: 0.15 + (0.75 * progress),  # Flexión progresiva
                 'tolerance': 0.05,             # Mayor tolerancia durante movimiento
-                'target_knee_angle': lambda progress: 0.05 + (1.0 * progress), # Flexión proporcional
+                'target_knee_angle': lambda progress: 0.1 + (0.9 * progress), # Flexión proporcional
                 'stability_priority': 'medium' # Permitir cierto movimiento
             },
             
             MovementPhase.SQUAT_BOTTOM: {
-                'target_hip_angle': 1.3,      # Flexión profunda (~75°)
-                'tolerance': 0.04,             # Tolerancia moderada
-                'target_knee_angle': 1.05,     # Flexión profunda de rodillas (~60°)
+                'target_hip_angle': 0.9,      # Flexión profunda (~75°) Es demasiado, buscar un ángulo menor
+                'tolerance': 0.05,             # Tolerancia moderada
+                'target_knee_angle': 1.1,     # Flexión profunda de rodillas (~60°)
                 'stability_priority': 'high'   # Alta estabilidad en posición vulnerable
             },
             
             MovementPhase.SQUAT_ASCENT: {
-                'target_hip_angle': lambda progress: 1.3 - (1.2 * progress),  # Extensión progresiva
+                'target_hip_angle': lambda progress: 0.9 - (0.75 * progress),  # Extensión progresiva
                 'tolerance': 0.05,             # Mayor tolerancia durante movimiento
-                'target_knee_angle': lambda progress: 1.05 - (1.0 * progress), # Extensión proporcional
+                'target_knee_angle': lambda progress: 1.1 - (0.9 * progress), # Extensión proporcional
                 'stability_priority': 'medium' # Permitir movimiento controlado
             },
             
@@ -122,10 +122,10 @@ class PhaseAwarePosturalSystem:
     
     def _initialize_phase_control_params(self):
         """
-        Define parámetros de control específicos para cada fase
-        
-        Diferentes fases requieren diferentes niveles de agresividad y
-        sensibilidad en las correcciones posturales
+            Define parámetros de control específicos para cada fase
+            
+            Diferentes fases requieren diferentes niveles de agresividad y
+            sensibilidad en las correcciones posturales
         """
         return {
             MovementPhase.STATIC_BALANCE: {
@@ -173,10 +173,10 @@ class PhaseAwarePosturalSystem:
     
     def detect_current_phase(self, robot_id, controller_action_info):
         """
-        Detecta automáticamente en qué fase del movimiento está el robot
-        
-        Utiliza información del controlador de acciones y estados articulares
-        para determinar la fase actual y detectar transiciones
+            Detecta automáticamente en qué fase del movimiento está el robot
+            
+            Utiliza información del controlador de acciones y estados articulares
+            para determinar la fase actual y detectar transiciones
         """
         # Obtener estados articulares actuales
         joint_states = p.getJointStates(robot_id, [0, 1, 3, 4])  # caderas y rodillas
@@ -211,10 +211,10 @@ class PhaseAwarePosturalSystem:
     
     def _analyze_movement_phase(self, hip_angle, hip_velocity, action, progress):
         """
-        Analiza múltiples indicadores para determinar la fase actual
-        
-        Esta función implementa la lógica de reconocimiento de patrones
-        que determina en qué fase del movimiento está el robot
+            Analiza múltiples indicadores para determinar la fase actual
+            
+            Esta función implementa la lógica de reconocimiento de patrones
+            que determina en qué fase del movimiento está el robot
         """
         
         # Si el controlador está explícitamente en modo balance
@@ -261,10 +261,10 @@ class PhaseAwarePosturalSystem:
     
     def _handle_phase_transition(self, new_phase):
         """
-        Maneja las transiciones entre fases de manera suave y controlada
-        
-        Las transiciones abruptas pueden causar inestabilidad, por lo que
-        implementamos cambios graduales en los parámetros de control
+            Maneja las transiciones entre fases de manera suave y controlada
+            
+            Las transiciones abruptas pueden causar inestabilidad, por lo que
+            implementamos cambios graduales en los parámetros de control
         """
         self.previous_phase = self.current_phase
         self.current_phase = new_phase
@@ -283,10 +283,10 @@ class PhaseAwarePosturalSystem:
     
     def calculate_phase_aware_correction(self, robot_id, controller_info):
         """
-        Calcula correcciones posturales adaptadas a la fase actual del movimiento
-        
-        Esta es la función principal que integra toda la información para
-        generar correcciones específicas y apropiadas para cada fase
+            Calcula correcciones posturales adaptadas a la fase actual del movimiento
+            
+            Esta es la función principal que integra toda la información para
+            generar correcciones específicas y apropiadas para cada fase
         """
         # Detectar fase actual
         current_phase = self.detect_current_phase(robot_id, controller_info)
@@ -359,11 +359,11 @@ class PhaseAwarePosturalSystem:
     
     def _calculate_phase_specific_adjustments(self, phase, correction, error):
         """
-        Calcula ajustes específicos para cada fase del movimiento
-        
-        Diferentes fases pueden requerir estrategias de corrección diferentes
-        Por ejemplo, durante el descenso de sentadilla podríamos querer
-        ajustar también las rodillas, no solo las caderas
+            Calcula ajustes específicos para cada fase del movimiento
+            
+            Diferentes fases pueden requerir estrategias de corrección diferentes
+            Por ejemplo, durante el descenso de sentadilla podríamos querer
+            ajustar también las rodillas, no solo las caderas
         """
         base_adjustments = {
             'left_hip_flexor_adj': 0.0,

@@ -221,6 +221,13 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             # 🤖 Usar acción de la RED NEURONAL
             actual_action = action
             action_source = "RL_AGENT"
+
+        # ===== DECISIÓN: BALANCE vs SQUAT =====
+        # Modificar para preparar por step la transición squat_stand
+        if self.curriculum and self.curriculum.should_transition_to_squat():
+            if self.controller.current_action != ActionType.SQUAT:
+                self.controller.set_action(ActionType.SQUAT)
+                print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
         
         self.step_count += 1
 
@@ -822,12 +829,13 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        # ===== DECISIÓN: BALANCE vs SQUAT =====
-        # Modificar para preparar por step la transición squat_stand
-        if self.curriculum and self.curriculum.should_transition_to_squat():
-            if self.controller.current_action != ActionType.SQUAT:
-                self.controller.set_action(ActionType.SQUAT)
-                print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
+        #if episode_objective == ActionType.BALANCE_STANDING:
+        #    self.controller.set_action(ActionType.BALANCE_STANDING)
+        #    print("🎯 Episode goal: Maintain standing balance")
+            
+        #elif episode_objective == ActionType.SQUAT:
+        #    self.controller.set_action(ActionType.SQUAT) 
+        #    print("🎯 Episode goal: Perform complete squat")
 
         # Actualizar curriculum con rendimiento del episodio anterior
         if self.curriculum and hasattr(self, 'episode_reward'):
@@ -905,8 +913,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
         self.controller = PhaseAwareEnhancedController(self)
         self.ankle_control = IntelligentAnkleControl(self.robot_id)
-        #self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
-        self.controller.set_action(MovementPhase.STATIC_BALANCE)
+        self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
+        #self.controller.set_action(MovementPhase.STATIC_BALANCE)
 
         # Configurar sistema de recompensas
         self.reward_system.redefine_robot(self.robot_id, self.plane_id)
