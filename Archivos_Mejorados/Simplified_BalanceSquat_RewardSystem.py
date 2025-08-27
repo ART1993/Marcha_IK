@@ -31,7 +31,7 @@ class Simplified_BalanceSquat_RewardSystem:
         # ===== PARÁMETROS DE RECOMPENSA SIMPLIFICADOS =====
         
         # Objetivos para balance
-        self.target_height = 1.2  # Altura objetivo del torso
+        self.target_height = 1.1  # Altura objetivo del torso
         self.max_roll_pitch = 0.3  # Máxima inclinación permitida (radianes)
         
         # Pesos de recompensa (fijos, no adaptativos)
@@ -75,7 +75,8 @@ class Simplified_BalanceSquat_RewardSystem:
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
-        both_feet_contact=self.get_detect_feet_contact
+        left_contact, right_contact=self.get_detect_feet_contact
+        contactos_pies=all((left_contact, right_contact))
         rewards = {}
         
         # ===== 1. RECOMPENSA DE SUPERVIVENCIA =====
@@ -106,10 +107,8 @@ class Simplified_BalanceSquat_RewardSystem:
         
         # ===== 4. RECOMPENSA POR ESTABILIDAD ZMP =====
         # (Simplificada - verificar contactos de pies)
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
         
-        if left_contact and right_contact:
+        if contactos_pies:
             rewards['stability_zmp'] = 2.0  # Ambos pies en el suelo = estable
         elif left_contact or right_contact:
             rewards['stability_zmp'] = 0.5  # Un pie en el suelo = moderadamente estable
@@ -117,7 +116,7 @@ class Simplified_BalanceSquat_RewardSystem:
             rewards['stability_zmp'] = -10.0  # Sin contacto = inestable
         
         # ===== 5. RECOMPENSA POR CONTACTO =====
-        if left_contact and right_contact:
+        if contactos_pies:
             rewards['contact'] = 1.0
         elif left_contact or right_contact:
             rewards['contact'] = 0.5
@@ -126,7 +125,7 @@ class Simplified_BalanceSquat_RewardSystem:
         
         # ===== 6. PENALIZACIÓN POR VELOCIDAD EXCESIVA =====
         # (Para balance, queremos movimiento mínimo)
-        velocity_magnitude = np.linalg.norm(lin_vel[:2])  # Solo x, y (no z)
+        velocity_magnitude = np.linalg.norm(lin_vel[2])  # Solo z
         angular_magnitude = np.linalg.norm(ang_vel)
         
         if velocity_magnitude < 0.1 and angular_magnitude < 0.2:
@@ -255,125 +254,7 @@ class Simplified_BalanceSquat_RewardSystem:
     @property
     def get_detect_feet_contact(self):
         # ✅ VERIFICAR CONTACTO BILATERAL SIMPLE
-        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
-        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
+        left_contacts = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1))>0
+        right_contacts = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1))>0
 
-        both_feet_contact = len(left_contacts) > 0 and len(right_contacts) > 0
-        return both_feet_contact
-
-
-# ===== FUNCIONES DE UTILIDAD =====
-
-def create_simple_reward_system(robot_id=None, plane_id=None):
-    """Crear sistema de recompensas simplificado"""
-    
-    reward_system = Simplified_BalanceSquat_RewardSystem(
-        robot_id=robot_id,
-        plane_id=plane_id
-    )
-    
-    print(f"✅ Simple Reward System created")
-    print(f"   Target: Balance + Sentadillas + Eficiencia PAM")
-    
-    return reward_system
-
-def test_reward_system():
-    """Test básico del sistema de recompensas"""
-    
-    print("🧪 Testing Simplified Balance & Squat Reward System...")
-    
-    # Crear sistema de prueba
-    reward_system = create_simple_reward_system()
-    
-    # Simular estados PAM
-    reward_system.pam_states = {
-        'pressures': np.array([0.3, 0.4, 0.3, 0.4, 0.2, 0.2]) * reward_system.max_pressure
-    }
-    
-    # Test case 1: Robot de pie estable
-    print(f"\n📊 Test Case 1: Robot de pie estable")
-    
-    # Simular función de PyBullet (mock para test)
-    def mock_pybullet_stable():
-        return [(0, 0, 1.1), (0, 0, 0, 1)], [(0, 0, 0)], [(0, 0, 0)]
-    
-    # Action de balance moderado
-    balance_action = np.array([0.3, 0.4, 0.3, 0.4, 0.2, 0.2])
-    
-    print(f"   Action: {balance_action}")
-    # total_reward, components = reward_system.calculate_simple_reward(balance_action)
-    # print(f"   Total reward: {total_reward:.2f}")
-    # print(f"   Components: {components}")
-    
-    # Test case 2: Robot inclinado
-    print(f"\n📊 Test Case 2: Robot inclinado")
-    balance_action = np.array([0.6, 0.2, 0.3, 0.4, 0.2, 0.2])  # Desequilibrio
-    print(f"   Action: {balance_action}")
-    
-    # Test case 3: Eficiencia PAM
-    print(f"\n📊 Test Case 3: Eficiencia PAM")
-    efficiency_score = reward_system._calculate_basic_pam_efficiency(balance_action)
-    print(f"   PAM efficiency score: {efficiency_score:.3f}")
-    
-    # Test case 4: Configuración de pesos
-    print(f"\n📊 Test Case 4: Configuración del sistema")
-    summary = reward_system.get_reward_summary()
-    for key, value in summary.items():
-        print(f"   {key}: {value}")
-    
-    print(f"\n🎉 Reward system test completed!")
-
-
-# ===== EJEMPLO DE INTEGRACIÓN =====
-
-def integrate_with_simplified_env():
-    """Ejemplo de integración con entorno simplificado"""
-    
-    print("🔗 Integration Example: Reward System + Environment")
-    
-    try:
-        # Importar entorno simplificado
-        from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import create_simple_balance_squat_env
-        
-        # Crear entorno
-        env = create_simple_balance_squat_env(render_mode='direct')
-        
-        # El entorno ya tiene su reward system integrado, pero podemos testearlo
-        obs, info = env.reset()
-        
-        print(f"   Environment created with reward system")
-        print(f"   Action space: {env.action_space.shape}")
-        
-        # Test de integración con acciones aleatorias
-        total_reward = 0
-        for step in range(100):
-            action = env.action_space.sample() * 0.5 + 0.25  # Acciones moderadas
-            obs, reward, done, truncated, info = env.step(action)
-            total_reward += reward
-            
-            if step % 25 == 0:
-                print(f"   Step {step}: Reward = {reward:.2f}, Total = {total_reward:.2f}")
-            
-            if done:
-                print(f"   Episode terminado en step {step}")
-                break
-        
-        env.close()
-        print(f"✅ Integration test completed - Total reward: {total_reward:.2f}")
-        
-    except ImportError:
-        print("⚠️ Entorno simplificado no disponible para test de integración")
-
-if __name__ == "__main__":
-    
-    print("🎯 SIMPLIFIED BALANCE & SQUAT REWARD SYSTEM")
-    print("=" * 60)
-    print("Sistema de recompensas enfocado en balance y sentadillas")
-    print("Elimina complejidad de marcha y curriculum avanzado")
-    print("=" * 60)
-    
-    # Test del sistema
-    test_reward_system()
-    
-    # Test de integración
-    integrate_with_simplified_env()
+        return left_contacts, right_contacts

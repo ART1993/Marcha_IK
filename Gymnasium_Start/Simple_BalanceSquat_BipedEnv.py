@@ -81,8 +81,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Estados PAM básicos
         self.pam_states = {
-            'pressures': np.zeros(6),
-            'forces': np.zeros(6)
+            'pressures': np.zeros(self.num_active_pams),
+            'forces': np.zeros(self.num_active_pams)
         }
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
@@ -91,7 +91,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.action_space = spaces.Box(
             low=0.0, 
             high=1.0, 
-            shape=(6,), 
+            shape=(self.num_active_pams,), 
             dtype=np.float32
         )
         
@@ -240,7 +240,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         normalized_pressures = np.clip(actual_action, 0.0, 1.0)
 
         # Validar que tenemos 6 presiones PAM
-        if len(normalized_pressures) != 6:
+        if len(normalized_pressures) != self.num_active_pams:
             raise ValueError(f"Expected 6 PAM pressures, got {len(normalized_pressures)}")
 
         
@@ -264,10 +264,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # NUEVO: Aplicar control de tobillos mejorado
         configure_enhanced_ankle_springs(self.robot_id)
 
-
-        #control_mode, action_applied = self._apply_control_logic(action, both_feet_contact)
-        #print(control_mode, type(action_applied))
-        #joint_torques = self._apply_pam_forces(normalized_pressures)
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
@@ -470,8 +466,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Actualizar estados PAM (inactivos)
         self.pam_states = {
-            'pressures': np.zeros(6),
-            'forces': np.zeros(6)
+            'pressures': np.zeros(self.num_active_pams),
+            'forces': np.zeros(self.num_active_pams)
         }
         
         # Retornar acción neutral para info
@@ -717,13 +713,18 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             obs.extend([0.0, 0.0])
         
         # ===== CONTACTOS DE PIES (2 elementos) =====
-        
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
+        left_contact, right_contact=self.contacto_pies    
+
         #print ("contacto pies", left_contact, right_contact)
         obs.extend([float(left_contact), float(right_contact)])
         
         return np.array(obs, dtype=np.float32)
+    
+    @property
+    def contacto_pies(self):
+        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
+        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
+        return left_contact, right_contact
     
     def _calculate_simple_balance_reward(self):
         """
@@ -742,10 +743,12 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
-        
+        left_contact, right_contact=self.contacto_pies
+        contacto_pies=all((left_contact, right_contact))
         # Altura del torso (mantenerse erguido)
-        height_reward = max(0, self.pos[2] - 0.8) * 10.0  # Recompensar altura > 0.8m
-        reward += height_reward
+        if contacto_pies:
+            height_reward = max(0, self.pos[2] - 0.8) * 10.0  # Recompensar altura > 0.8m
+            reward += height_reward
         
         # Orientación vertical (roll y pitch pequeños)
         orientation_penalty = abs(euler[0]) + abs(euler[1])  # roll + pitch
@@ -771,17 +774,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
         right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
         
-        if left_contact and right_contact:
+        if contacto_pies:
             reward += 2.0  # Ambos pies en el suelo
-        elif left_contact or right_contact:
-            reward += 1.0  # Al menos un pie en el suelo
-        else:
-            reward -= 15.0  # Penalización severa por estar en el aire
+        elif contacto_pies ==False and self.step_count>500:
+            reward -= 10.0  # Penalización severa por estar en el aire
         
         # ===== PENALIZACIÓN POR MOVIMIENTO EXCESIVO =====
         
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
-        velocity_penalty = (abs(lin_vel[0]) + abs(lin_vel[1]) + abs(ang_vel[2])) * 2.0
+        # Solo es apleciable el bamboleo u la bajada
+        velocity_penalty = (abs(lin_vel[0])+ abs(ang_vel[2])) * 2.0
         reward -= velocity_penalty
         
         # ===== RECOMPENSA BASE POR SUPERVIVENCIA =====
@@ -805,17 +807,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         euler = p.getEulerFromQuaternion(orn)
         
         if self.pos[2] < 0.4 or self.pos[2] > 3.0:
-            print("to high or too low", euler, self.pos)
-            return True
+            if self.contacto_pies is False:
+                print("to high or too low", euler, self.pos)
+                return True
             
         # Terminar si la inclinación lateral es excesiva  
         #if abs(euler[1]) > math.pi/4 + 0.2 or abs(euler[0]) > math.pi/4 + 0.2:
         #    print("rotated", euler)
         #    return True
-        
-        # Desplazamiento lateral excesivo
-        if abs(self.pos[1]) > 2.0:
-            return True
+
+
 
             
         # Límite de tiempo
@@ -893,7 +894,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         
         # SIN velocidad inicial - queremos balance estático
-        #p.resetBaseVelocity(self.robot_id, [0, 0, 0], [0, 0, 0])
         
         # ===== Sistemas de apoyo ===== #
         # Robot data para métricas básicas
@@ -932,8 +932,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Inicializar estados PAM en modo neutro
         self.pam_states = {
-            'pressures': np.zeros(6),
-            'forces': np.zeros(6)
+            'pressures': np.zeros(self.num_active_pams),
+            'forces': np.zeros(self.num_active_pams)
         }
 
         print(f"   🤖 Robot inicializado en modo STANDING POSITION")
