@@ -2,6 +2,8 @@ import numpy as np
 import pybullet as p
 from collections import deque
 
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+
 class Simplified_BalanceSquat_RewardSystem:
     """
     Sistema de recompensas SIMPLIFICADO para balance y sentadillas.
@@ -51,9 +53,9 @@ class Simplified_BalanceSquat_RewardSystem:
         self.pam_states = None
         self.max_pressure = 5 * 101325  # 5 atm
         
-        print(f"🎯 Simplified Balance & Squat Reward System initialized")
-        print(f"   Focus: Height + Orientation + Stability")
-        print(f"   Weights: {self.weights}")
+        log_print(f"🎯 Simplified Balance & Squat Reward System initialized")
+        log_print(f"   Focus: Height + Orientation + Stability")
+        log_print(f"   Weights: {self.weights}")
     
     def redefine_robot(self, robot_id, plane_id):
         """Actualizar IDs del robot"""

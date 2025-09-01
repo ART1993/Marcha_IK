@@ -10,6 +10,7 @@ from enum import Enum
 import pybullet as p
 
 from Controlador.discrete_action_controller import DiscreteActionController
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 class MovementPhase(Enum):
     """
@@ -65,9 +66,9 @@ class PhaseAwarePosturalSystem:
         # Métricas de rendimiento por fase
         self.phase_performance = {phase: {'corrections': 0, 'successes': 0} for phase in MovementPhase}
         
-        print(f"🧠 Sistema de Control Postural Consciente de Fase inicializado")
-        print(f"   Fases soportadas: {len(MovementPhase)} tipos de movimiento")
-        print(f"   Fase inicial: {self.current_phase.value}")
+        log_print(f"🧠 Sistema de Control Postural Consciente de Fase inicializado")
+        log_print(f"   Fases soportadas: {len(MovementPhase)} tipos de movimiento")
+        log_print(f"   Fase inicial: {self.current_phase.value}")
     
     def _initialize_phase_targets(self):
         """
@@ -460,9 +461,9 @@ class PhaseAwareEnhancedController(DiscreteActionController):
         self.total_corrections = 0
         self.phase_specific_corrections = {phase: 0 for phase in MovementPhase}
         
-        print(f"🎯 Controlador Consciente de Fase inicializado")
-        print(f"   Control postural adaptativo: Activo")
-        print(f"   Fases soportadas: Equilibrio + Sentadillas dinámicas")
+        log_print(f"🎯 Controlador Consciente de Fase inicializado")
+        log_print(f"   Control postural adaptativo: Activo")
+        log_print(f"   Fases soportadas: Equilibrio + Sentadillas dinámicas")
     
     def get_expert_action(self, time_step):
         """
@@ -498,10 +499,10 @@ class PhaseAwareEnhancedController(DiscreteActionController):
             
             # Debug cada 50 correcciones para no saturar
             if self.total_corrections % 50 == 0:
-                print(f"   🧠 Corrección fase-específica #{self.total_corrections}")
-                print(f"      Fase: {phase_correction['phase']}")
-                print(f"      Error: {phase_correction['error']:.3f} rad")
-                print(f"      Objetivo: {phase_correction['target_angle']:.3f} rad")
+                log_print(f"   🧠 Corrección fase-específica #{self.total_corrections}")
+                log_print(f"      Fase: {phase_correction['phase']}")
+                log_print(f"      Error: {phase_correction['error']:.3f} rad")
+                log_print(f"      Objetivo: {phase_correction['target_angle']:.3f} rad")
         else:
             corrected_action = base_action
         

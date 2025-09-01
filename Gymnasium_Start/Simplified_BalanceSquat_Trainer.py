@@ -13,6 +13,7 @@ import json
 # Import your environments
 from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 class Simplified_BalanceSquat_Trainer:
     """
@@ -46,11 +47,14 @@ class Simplified_BalanceSquat_Trainer:
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
 
-        print(f"🤖 Simplified Balance & Squat Trainer initialized")
-        print(f"   Target: Balance + Sentadillas con 6 PAMs")
-        print(f"   Timesteps: {self.total_timesteps:,}")
-        print(f"   Parallel envs: {self.n_envs}")
-        print(f"   Learning rate: {self.learning_rate}")
+        log_print(f"🤖 Simplified Balance & Squat Trainer initialized")
+        log_print(f"   Target: Balance + Sentadillas con 6 PAMs")
+        log_print(f"   Timesteps: {self.total_timesteps:,}")
+        log_print(f"   Parallel envs: {self.n_envs}")
+        log_print(f"   Learning rate: {self.learning_rate}")
+
+        # MANTENER EN CONSOLA SOLO CONFIRMACIÓN
+        print(f"🤖 Trainer ready")
     
 
     def _configuracion_modelo_entrenamiento(self):
@@ -112,7 +116,7 @@ class Simplified_BalanceSquat_Trainer:
         
         config = self.env_configs
         
-        print(f"🏗️ Creating training environment: {config['description']}")
+        log_print(f"🏗️ Creating training environment: {config['description']}")
         
         def make_env():
             def _init():
@@ -213,7 +217,7 @@ class Simplified_BalanceSquat_Trainer:
         # ===== CHECKPOINT CALLBACK =====
         
         # Sistemas antagónicos se benefician de checkpoints más frecuentes
-        checkpoint_freq = 100000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
+        checkpoint_freq = 10000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
         
         checkpoint_callback = CheckpointCallback(
             save_freq=checkpoint_freq,
@@ -225,7 +229,7 @@ class Simplified_BalanceSquat_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 50000 //self.n_envs
+        eval_freq = 5000 //self.n_envs
         
         eval_callback = EvalCallback(
             eval_env,
@@ -251,6 +255,10 @@ class Simplified_BalanceSquat_Trainer:
         """
         
         print(f"🚀 Starting Balance & Squat training with RecurrentPPO...")
+
+        # DETALLES AL LOG
+        log_print("🚀 Training session started")
+        log_print(f"   Resume: {resume}")
         
         # ===== PREPARACIÓN DEL ENTRENAMIENTO =====
         
@@ -311,11 +319,16 @@ class Simplified_BalanceSquat_Trainer:
             print(f"\n🎉 Balance & Squat training completed successfully!")
             print(f"   Total timesteps: {self.total_timesteps:,}")
             print(f"   Model saved in: {self.model_dir}")
+            # ÉXITO: A AMBOS
+            both_print(f"✅ Training completed successfully!")
             
             return model
                 
         except KeyboardInterrupt:
-            print("⏸️ Training interrupted by user")
+            both_print("⏸️ Training interrupted by user")
+
+        except Exception as e:
+            both_print(f"❌ Training failed: {e}")
             
         finally:
             train_env.close()

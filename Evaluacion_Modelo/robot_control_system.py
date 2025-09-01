@@ -17,7 +17,7 @@ import json
 
 # Importar tus módulos específicos
 from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import create_simple_balance_squat_env
-from Controlador.discrete_action_controller import create_balance_squat_controller, ActionType
+from Controlador.discrete_action_controller import ActionType
 
 class ControlMode(Enum):
     """Modos de control disponibles"""
@@ -119,14 +119,14 @@ class TrainedRobotController:
         
         print(f"   ✅ Environment ready")
     
-    def _setup_expert_controllers(self):
+    #def _setup_expert_controllers(self):
         """Configurar controladores expertos de respaldo"""
-        print(f"🧠 Setting up expert controllers...")
+    #    print(f"🧠 Setting up expert controllers...")
         
         # Controlador experto principal
-        self.expert_controller = create_balance_squat_controller(self.env)
+    #    self.expert_controller = create_balance_squat_controller(self.env)
         
-        print(f"   ✅ Expert controllers ready")
+    #    print(f"   ✅ Expert controllers ready")
     
     def _setup_safety_system(self):
         """Configurar sistema de seguridad"""

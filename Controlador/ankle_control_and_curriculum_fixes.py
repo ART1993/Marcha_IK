@@ -8,6 +8,8 @@ import math
 from collections import deque
 import pybullet as p
 
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+
 class IntelligentAnkleControl:
     """
     Sistema híbrido de control de tobillos que combina:
@@ -37,9 +39,9 @@ class IntelligentAnkleControl:
         # Umbral para activación de control activo
         self.activation_threshold = 0.02  # rad (~1.1 grados)
         
-        print(f"🦶 Sistema Inteligente de Control de Tobillos inicializado")
-        print(f"   Rigidez base: {self.base_spring_stiffness} N⋅m/rad")
-        print(f"   Control activo: Habilitado para balance fino")
+        log_print(f"🦶 Sistema Inteligente de Control de Tobillos inicializado")
+        log_print(f"   Rigidez base: {self.base_spring_stiffness} N⋅m/rad")
+        log_print(f"   Control activo: Habilitado para balance fino")
     
     def calculate_ankle_torques(self, robot_data, zmp_calculator=None):
         """
@@ -203,7 +205,7 @@ class IntelligentAnkleControl:
         
         Este método debe ser llamado durante el step() del entorno
         """
-        
+        # De momento no se usa
         # Calcular torques (necesita acceso a robot_data y zmp_calculator)
         # Esto se implementará en la integración con el entorno
         pass
@@ -243,10 +245,10 @@ class OptimizedCurriculumSelector:
         # NUEVO: Buffer de episodios exitosos antes de permitir sentadillas
         self.required_stable_episodes = 25  # Necesitar 25 episodios estables antes de sentadillas
         
-        print(f"🎓 Curriculum OPTIMIZADO inicializado para convergencia rápida")
-        print(f"   Expert ratio inicial: {self.expert_ratio:.1%}")
-        print(f"   Balance threshold: {self.balance_reward_threshold}")
-        print(f"   Stable episodes required: {self.required_stable_episodes}")
+        log_print(f"🎓 Curriculum OPTIMIZADO inicializado para convergencia rápida")
+        log_print(f"   Expert ratio inicial: {self.expert_ratio:.1%}")
+        log_print(f"   Balance threshold: {self.balance_reward_threshold}")
+        log_print(f"   Stable episodes required: {self.required_stable_episodes}")
     
     def should_use_expert_action(self, step_count_in_episode):
         """
@@ -358,11 +360,11 @@ class OptimizedCurriculumSelector:
         # ===== LOGGING OPTIMIZADO =====
         
         if self.episode_count % 25 == 0 or old_phase != self.current_phase:  # Más frecuente
-            print(f"\n📚 Curriculum Update (Episode {self.episode_count}):")
-            print(f"   Phase: {self.current_phase} (episode {self.phase_episodes})")
-            print(f"   Expert ratio: {old_ratio:.1%} → {self.expert_ratio:.1%}")
-            print(f"   Recent avg reward: {recent_avg:.2f}")
-            print(f"   Balance stable episodes: {self.balance_stable_episodes}/{self.required_stable_episodes}")
+            log_print(f"\n📚 Curriculum Update (Episode {self.episode_count}):")
+            log_print(f"   Phase: {self.current_phase} (episode {self.phase_episodes})")
+            log_print(f"   Expert ratio: {old_ratio:.1%} → {self.expert_ratio:.1%}")
+            log_print(f"   Recent avg reward: {recent_avg:.2f}")
+            log_print(f"   Balance stable episodes: {self.balance_stable_episodes}/{self.required_stable_episodes}")
             
             if old_phase != self.current_phase:
-                print(f"   🎉 PHASE TRANSITION: {old_phase} → {self.current_phase}")
+                both_print(f"   🎉 PHASE TRANSITION: {old_phase} → {self.current_phase}")

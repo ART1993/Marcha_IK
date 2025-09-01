@@ -16,6 +16,7 @@ from Controlador.ankle_control_and_curriculum_fixes import OptimizedCurriculumSe
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
 from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs    
@@ -138,11 +139,11 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Sistema de recompensas simplificado
         self.reward_system = Simplified_BalanceSquat_RewardSystem()
         
-        print(f"🤖 Simplified Balance & Squat Environment initialized")
-        print(f"   Action space: 6 PAM pressures")
-        print(f"   Observation space: 16 elements")
-        print(f"   Target: Balance + Sentadillas")
-        print(f"🤖 Environment initialized - Starting in STANDING_POSITION mode")
+        log_print(f"🤖 Simplified Balance & Squat Environment initialized")
+        log_print(f"   Action space: 6 PAM pressures")
+        log_print(f"   Observation space: 16 elements")
+        log_print(f"   Target: Balance + Sentadillas")
+        log_print(f"🤖 Environment initialized - Starting in STANDING_POSITION mode")
 
 
     def _calculate_reward(self, action_applied):
@@ -230,14 +231,14 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         if self.curriculum.should_transition_to_squat():
             if self.controller.current_action != ActionType.SQUAT:
                 self.controller.set_action(ActionType.SQUAT)
-                print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
+                log_print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
 
         # NUEVO: Gestionar transición de SQUAT de vuelta a BALANCE
         elif self.controller.current_action == ActionType.SQUAT:
             # Verificar si la sentadilla se completó
             if self._squat_completed():
                 self.controller.set_action(ActionType.BALANCE_STANDING)
-                print(f"⚖️ Step {self.step_count}: Squat completed, returning to BALANCE")
+                log_print(f"⚖️ Step {self.step_count}: Squat completed, returning to BALANCE")
 
         # ===== PASO 1: NORMALIZAR Y VALIDAR ACCIÓN =====
     
@@ -403,10 +404,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             rollingFriction=0.01
         )
         
-        print(f"🔧 Contact friction configured:")
-        print(f"   Feet: μ=1.2 (high grip)")
-        print(f"   Legs: μ=0.6 (moderate)")
-        print(f"   Ground: μ=1.0 (standard)")
+        log_print(f"🔧 Contact friction configured:")
+        log_print(f"   Feet: μ=1.2 (high grip)")
+        log_print(f"   Legs: μ=0.6 (moderate)")
+        log_print(f"   Ground: μ=1.0 (standard)")
 
     def _apply_control_logic(self, action, both_feet_contact):
         """
@@ -423,12 +424,12 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         if both_feet_contact:
             self.contact_stable_steps += 1
             if not self.contact_established:
-                print(f"   🦶 Step {self.step_count}: Contacto bilateral detectado")
+                log_print(f"   🦶 Step {self.step_count}: Contacto bilateral detectado")
                 self.contact_established = True
         else:
             self.contact_stable_steps = 0
             if self.pam_control_active:
-                print(f"   ⚠️ Step {self.step_count}: Contacto perdido - Volviendo a STANDING_POSITION")
+                log_print(f"   ⚠️ Step {self.step_count}: Contacto perdido - Volviendo a STANDING_POSITION")
                 self.pam_control_active = False
                 self.contact_established = False
 
@@ -438,7 +439,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             self.contact_stable_steps >= self.min_stable_steps and 
             not self.pam_control_active):
             
-            print(f"   🔥 Step {self.step_count}: Contacto estable {self.contact_stable_steps} steps - ACTIVANDO PAMs")
+            log_print(f"   🔥 Step {self.step_count}: Contacto estable {self.contact_stable_steps} steps - ACTIVANDO PAMs")
             self.pam_control_active = True
 
         # ===== APLICAR CONTROL SEGÚN MODO =====
@@ -614,7 +615,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             # Debug detallado cada 1500 pasos (1 segundo aprox)
             if self.step_count % 1500 == 0 and i < 2:  # Solo primeros 2 PAMs para no saturar
-                print(f"   PAM {i} ({muscle_name}): "
+                log_print(f"   PAM {i} ({muscle_name}): "
                     f"P={real_pressure/101325:.1f}atm, "
                     f"θ={joint_angle:.2f}rad, "
                     f"ε={contraction_ratio:.3f}, "
@@ -651,7 +652,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Debug torques
         if self.step_count % 1500 == 0:
-            print(f"Joint Torques: LH={joint_torques[0]:.1f}, LK={joint_torques[1]:.1f}, "
+            log_print(f"Joint Torques: LH={joint_torques[0]:.1f}, LK={joint_torques[1]:.1f}, "
                 f"RH={joint_torques[2]:.1f}, RK={joint_torques[3]:.1f}")
         
         # ===== PASO 6: APLICAR LÍMITES DE SEGURIDAD =====
@@ -661,7 +662,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Debug de torques
         if self.step_count % 1500 == 0:
-            print(f"   Joint Torques: "
+            log_print(f"   Joint Torques: "
                 f"LH={joint_torques[0]:.1f}, "
                 f"LK={joint_torques[1]:.1f}, "
                 f"RH={joint_torques[2]:.1f}, "
@@ -1011,7 +1012,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         if self.step_count > max_balance_time:
             avg_recent_reward = np.mean(self.recent_rewards) if hasattr(self, 'recent_rewards') else 0
             if avg_recent_reward > 2.0:  # Balance exitoso
-                print(f"✅ Balance episode completed successfully")
+                log_print(f"✅ Balance episode completed successfully")
                 return True
         
         return False
@@ -1022,13 +1023,13 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
         # Terminar si la sentadilla se completó exitosamente
         if self._squat_completed():
-            print(f"✅ Squat completed successfully")
+            log_print(f"✅ Squat completed successfully")
             return True
         
         # Terminar si ha tomado demasiado tiempo (sentadilla trabada)
         squat_max_time = 1500 * 12  # 12 segundos máximo para una sentadilla
         if self.step_count > squat_max_time:
-            print(f"⏰ Squat timeout - episode terminated")
+            log_print(f"⏰ Squat timeout - episode terminated")
             return True
         
         return False
@@ -1042,12 +1043,12 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Caída crítica
         if pos[2] < 0.4:
-            print(f"💥 Critical fall detected")
+            log_print(f"💥 Critical fall detected")
             return True
         
         # Inclinación crítica (>60 grados)
         if abs(euler[0]) > 1.0 or abs(euler[1]) > 1.0:
-            print(f"💥 Critical tilt detected")
+            log_print(f"💥 Critical tilt detected")
             return True
         
         return False
@@ -1176,8 +1177,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             'forces': np.zeros(self.num_active_pams)
         }
 
-        print(f"   🤖 Robot inicializado en modo STANDING POSITION")
-        print(f"   🦶 Esperando contacto bilateral para activar PAMs...")
+        #log_print(f"   🤖 Robot inicializado en modo STANDING POSITION")
+        #log_print(f"   🦶 Esperando contacto bilateral para activar PAMs...")
         
         # Estabilización inicial
         #for _ in range(50):
@@ -1216,22 +1217,22 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 left_knee_angle = joint_states[0][0]
                 right_knee_angle = joint_states[1][0]
                 
-                print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
-                print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
-                print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
-                print(f"   Left knee flexor pressure: {pam_pressures[4]:.3f}")
-                print(f"   Right knee flexor pressure: {pam_pressures[5]:.3f}")
+                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
+                log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
+                log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
+                log_print(f"   Left knee flexor pressure: {pam_pressures[4]:.3f}")
+                log_print(f"   Right knee flexor pressure: {pam_pressures[5]:.3f}")
                 
                 # Verificar lógica biomecánica
                 if left_knee_angle > 0.05 and pam_pressures[4] > 0.01:
-                    print(f"   ⚠️ Warning: Left knee flexed but flexor active!")
+                    log_print(f"   ⚠️ Warning: Left knee flexed but flexor active!")
                 elif left_knee_angle > 0.05 and pam_pressures[4] <= 0.01:
-                    print(f"   ✅ Correct: Left knee flexed, flexor inactive")
+                    log_print(f"   ✅ Correct: Left knee flexed, flexor inactive")
                     
                 if right_knee_angle > 0.05 and pam_pressures[5] > 0.01:
-                    print(f"   ⚠️ Warning: Right knee flexed but flexor active!")
+                    log_print(f"   ⚠️ Warning: Right knee flexed but flexor active!")
                 elif right_knee_angle > 0.05 and pam_pressures[5] <= 0.01:
-                    print(f"   ✅ Correct: Right knee flexed, flexor inactive")
+                    log_print(f"   ✅ Correct: Right knee flexed, flexor inactive")
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")

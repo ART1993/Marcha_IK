@@ -4,6 +4,8 @@ from enum import Enum
 
 import pybullet as p
 
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+
 class ActionType(Enum):
     """Define los tipos de acciones discretas que el robot puede realizar"""
     BALANCE_STANDING = "balance_standing"
@@ -43,9 +45,9 @@ class DiscreteActionController:
         # Configurar patrones base para cada acción
         self.setup_action_patterns()
 
-        print(f"🧠 Biomechanical Action Controller initialized")
-        print(f"   Coordination-aware noise: {self.coordination_noise_scale}")
-        print(f"   Bilateral symmetry: {self.bilateral_symmetry_factor}")
+        log_print(f"🧠 Biomechanical Action Controller initialized")
+        log_print(f"   Coordination-aware noise: {self.coordination_noise_scale}")
+        log_print(f"   Bilateral symmetry: {self.bilateral_symmetry_factor}")
         
     def setup_action_patterns(self):
         """Define los patrones de activación PAM para cada acción discreta"""
@@ -136,7 +138,7 @@ class DiscreteActionController:
             self.action_progress = 0.0
             pattern = self.action_patterns[action_type]
             self.action_duration = pattern['duration']
-            print(f"🎯 Switching to action: {pattern['description']}")
+            both_print(f"🎯 Switching to action: {pattern['description']}")
     
     def get_expert_action(self, time_step):
         """
@@ -220,19 +222,19 @@ class DiscreteActionController:
                 
                 # Debug ocasional
                 if self.env.step_count % 750 == 0:
-                    print(f"   🦵 Left knee flexed ({left_knee_angle:.3f} rad) → flexor OFF")
+                    log_print(f"   🦵 Left knee flexed ({left_knee_angle:.3f} rad) → flexor OFF")
             
             # ✅ LÓGICA DE RODILLA DERECHA
             if right_knee_angle > 0.05:  # Si está flexionada
                 adjusted_pressures['right_knee_flexor'] = 0.00
                 
                 if self.env.step_count % 750 == 0:
-                    print(f"   🦵 Right knee flexed ({right_knee_angle:.3f} rad) → flexor OFF")
+                    log_print(f"   🦵 Right knee flexed ({right_knee_angle:.3f} rad) → flexor OFF")
         
         except Exception as e:
             # Si no podemos leer los ángulos, usar los valores base
             if self.env.step_count % 1500 == 0:
-                print(f"   ⚠️ Could not read joint angles: {e}")
+                log_print(f"   ⚠️ Could not read joint angles: {e}")
         
         return adjusted_pressures
     
@@ -295,7 +297,7 @@ class DiscreteActionController:
         self.action_progress = 0.0
         if hasattr(self, 'last_action'):
             del self.last_action
-        print(f"🔄 Controller reset - Starting with BALANCE_STANDING")
+        log_print(f"🔄 Controller reset - Starting with BALANCE_STANDING")
     
     def get_current_action_info(self):
         """Información sobre la acción actual para debugging"""
