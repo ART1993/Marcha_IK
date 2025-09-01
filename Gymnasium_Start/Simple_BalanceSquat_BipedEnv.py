@@ -63,6 +63,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.contact_established = False
         self.contact_stable_steps = 0
         self.min_stable_steps = 50
+        # Para tracking de tiempo en balance
+        self._balance_start_time = 0
         
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
@@ -84,7 +86,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         }
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
-        
+        self.recent_rewards=deque(maxlen=50)
         # Action space: 6 presiones PAM normalizadas [0, 1]
         self.action_space = spaces.Box(
             low=0.0, 
@@ -211,9 +213,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             3. ✅ Configuración de fricción en PyBullet
             4. ✅ Mejor integración con sistema de recompensas
         """
+        self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
         
-        if self.curriculum and self.curriculum.should_use_expert_action(self.step_count):
+        if self.curriculum.should_use_expert_action(self.step_count):
             # 🎓 Usar acción EXPERTA
             actual_action = self.controller.get_expert_action(self.time_step)
             action_source = "EXPERT"
@@ -224,12 +227,17 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
         # ===== DECISIÓN: BALANCE vs SQUAT =====
         # Modificar para preparar por step la transición squat_stand
-        if self.curriculum and self.curriculum.should_transition_to_squat():
+        if self.curriculum.should_transition_to_squat():
             if self.controller.current_action != ActionType.SQUAT:
                 self.controller.set_action(ActionType.SQUAT)
                 print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
-        
-        self.step_count += 1
+
+        # NUEVO: Gestionar transición de SQUAT de vuelta a BALANCE
+        elif self.controller.current_action == ActionType.SQUAT:
+            # Verificar si la sentadilla se completó
+            if self._squat_completed():
+                self.controller.set_action(ActionType.BALANCE_STANDING)
+                print(f"⚖️ Step {self.step_count}: Squat completed, returning to BALANCE")
 
         # ===== PASO 1: NORMALIZAR Y VALIDAR ACCIÓN =====
     
@@ -296,16 +304,20 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     
         # Pasar información PAM al sistema de recompensas
         self.reward_system.pam_states = self.pam_states
+
+        # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
+        reward, reward_components = self._calculate_context_aware_reward(actual_action)
         #reward, reward_components = self._calculate_reward(action_applied)
-        reward, reward_components = self.reward_system.calculate_simple_reward(
-            action=normalized_pressures,
-            pam_forces=self.pam_states['forces']
-        )
+        #reward, reward_components = self.reward_system.calculate_simple_reward(
+        #    action=normalized_pressures,
+        #    pam_forces=self.pam_states['forces']
+        #)
 
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
         observation = self._get_simple_observation()
-        done = self._is_done()
+        done = self._is_done_with_context()
+        #done = self._is_done()
 
         # ===== APLICAR ACCIÓN PAM =====
         
@@ -821,6 +833,230 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             return True
             
         return False
+    
+    # ================================================================================================================================= #
+    # ===============================Agregar funciones para modificar los parámetros de entrenamiento función acción=================== #
+    # ================================================================================================================================= #
+
+
+    def _squat_completed(self):
+        """
+            Determina si una sentadilla se ha completado exitosamente
+            
+            Criterios para considerar una sentadilla completa:
+            1. El controlador ha progresado >95% del ciclo
+            2. El robot ha vuelto a una posición cercana al equilibrio
+            3. Ha pasado suficiente tiempo para un ciclo completo
+        """
+        if self.controller.current_action != ActionType.SQUAT:
+            return False
+        
+        # Criterio 1: Progreso temporal
+        progress_complete = self.controller.action_progress >= 0.95
+        
+        # Criterio 2: Posición física cercana al equilibrio
+        try:
+            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
+            # Robot cerca de posición erguida
+            height_ok = pos[2] > 0.9  # Altura razonable
+            orientation_ok = abs(euler[0]) < 0.2 and abs(euler[1]) < 0.2  # Orientación vertical
+            joints_extended = all(abs(state[0]) < 0.3 for state in joint_states)  # Articulaciones cerca de neutral
+            
+            physical_complete = height_ok and orientation_ok and joints_extended
+        except:
+            physical_complete = False
+        
+        # Criterio 3: Tiempo mínimo para evitar sentadillas demasiado rápidas
+        min_squat_duration = 3.0  # segundos
+        time_complete = (self.step_count * self.time_step) >= min_squat_duration
+        
+        return progress_complete and physical_complete and time_complete
+    
+    def _calculate_context_aware_reward(self, action):
+        """
+        Sistema de recompensas que se adapta según la actividad actual
+        """
+        current_task = self.controller.current_action
+        
+        if current_task == ActionType.BALANCE_STANDING:
+            return self._calculate_balance_reward(action)
+        elif current_task == ActionType.SQUAT:
+            return self._calculate_squat_reward(action)
+        else:
+            # Fallback genérico
+            return self.reward_system.calculate_simple_reward(action)
+
+    def _calculate_balance_reward(self, action):
+        """
+        Recompensas optimizadas para balance estático
+        
+        Enfoque: Premiar estabilidad sostenida, penalizar movimiento excesivo
+        """
+        reward_components = {}
+        
+        # Recompensa base por supervivencia (más importante en balance)
+        reward_components['survival'] = 2.0  # Aumentada para balance
+        
+        # Usar sistema de recompensas existente pero con pesos ajustados
+        base_reward, base_components = self.reward_system.calculate_simple_reward(action)
+        
+        # Bonificación por tiempo sostenido en equilibrio
+        if base_components.get('orientation', 0) > 1.0:  # Buena orientación
+            consecutive_balance_time = self._get_consecutive_balance_time()
+            time_bonus = min(consecutive_balance_time * 0.5, 5.0)  # Max 5 puntos por tiempo
+            reward_components['time_bonus'] = time_bonus
+        
+        # Penalización reducida por movimiento (balance permite micro-ajustes)
+        movement_penalty = base_components.get('velocity_penalty', 0) * 0.5
+        reward_components['movement'] = movement_penalty
+        
+        total_reward = sum(reward_components.values()) + base_reward
+        return total_reward, reward_components
+
+    def _calculate_squat_reward(self, action):
+        """
+        Recompensas optimizadas para sentadillas
+        
+        Enfoque: Premiar progreso del movimiento y calidad de ejecución
+        """
+        reward_components = {}
+        
+        # Recompensa base menor (la sentadilla es naturalmente temporal)
+        reward_components['survival'] = 1.0
+        
+        # Bonificación por progreso en la sentadilla
+        squat_progress = self.controller.action_progress
+        if squat_progress > 0:
+            progress_bonus = squat_progress * 3.0  # Hasta 3 puntos por completar
+            reward_components['progress_bonus'] = progress_bonus
+        
+        # Bonificación por calidad de movimiento (coordinación)
+        phase = self.controller.postural_system.current_phase
+        if phase in [MovementPhase.SQUAT_DESCENT, MovementPhase.SQUAT_ASCENT]:
+            # Durante movimiento activo, premiar control suave
+            joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+            joint_velocities = [abs(state[1]) for state in joint_states]
+            avg_velocity = sum(joint_velocities) / len(joint_velocities)
+            
+            # Movimiento controlado (no muy rápido, no muy lento)
+            if 0.1 < avg_velocity < 0.5:
+                reward_components['smooth_movement'] = 1.0
+            else:
+                reward_components['smooth_movement'] = -0.5
+        
+        # Usar recompensas base del sistema existente
+        base_reward, base_components = self.reward_system.calculate_simple_reward(action)
+        
+        total_reward = sum(reward_components.values()) + base_reward * 0.8  # Peso reducido de base
+        return total_reward, reward_components
+    
+    def _get_consecutive_balance_time(self):
+        """
+        AGREGAR junto con _squat_completed
+        
+        Calcula cuánto tiempo ha estado el robot en balance estable
+        """
+        # Esta es una implementación simple; puedes mejorarla
+        if not hasattr(self, '_balance_start_time'):
+            self._balance_start_time = 0
+        
+        try:
+            # Verificar si está actualmente en balance
+            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            
+            is_balanced = (pos[2] > 0.9 and 
+                        abs(euler[0]) < 0.15 and 
+                        abs(euler[1]) < 0.15)
+            
+            if is_balanced:
+                if self._balance_start_time == 0:
+                    self._balance_start_time = self.step_count
+                return (self.step_count - self._balance_start_time) * self.time_step
+            else:
+                self._balance_start_time = 0
+                return 0.0
+        except:
+            return 0.0
+    
+
+    def _is_done_with_context(self):
+        """
+        Condiciones de terminación que se adaptan al contexto de la tarea
+        """
+        current_task = self.controller.current_action
+        
+        # Condiciones críticas universales (siempre terminan el episodio)
+        if self._critical_failure_conditions():
+            return True
+        
+        if current_task == ActionType.BALANCE_STANDING:
+            return self._balance_termination_conditions()
+        elif current_task == ActionType.SQUAT:
+            return self._squat_termination_conditions()
+        
+        # Fallback: límite de tiempo general
+        return self.step_count > (1500 * 10)  # 10 segundos máximo
+
+    def _balance_termination_conditions(self):
+        """
+        Terminación específica para balance: principalmente por tiempo o falla crítica
+        """
+        # Para balance, permitir episodios más largos si va bien
+        max_balance_time = 1500 * 8  # 8 segundos
+        
+        # Terminar si ha mantenido buen balance por tiempo suficiente
+        if self.step_count > max_balance_time:
+            avg_recent_reward = np.mean(self.recent_rewards) if hasattr(self, 'recent_rewards') else 0
+            if avg_recent_reward > 2.0:  # Balance exitoso
+                print(f"✅ Balance episode completed successfully")
+                return True
+        
+        return False
+
+    def _squat_termination_conditions(self):
+        """
+        Terminación específica para sentadillas: por completación o falla
+        """
+        # Terminar si la sentadilla se completó exitosamente
+        if self._squat_completed():
+            print(f"✅ Squat completed successfully")
+            return True
+        
+        # Terminar si ha tomado demasiado tiempo (sentadilla trabada)
+        squat_max_time = 1500 * 12  # 12 segundos máximo para una sentadilla
+        if self.step_count > squat_max_time:
+            print(f"⏰ Squat timeout - episode terminated")
+            return True
+        
+        return False
+
+    def _critical_failure_conditions(self):
+        """
+        Condiciones críticas que siempre terminan el episodio
+        """
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        
+        # Caída crítica
+        if pos[2] < 0.4:
+            print(f"💥 Critical fall detected")
+            return True
+        
+        # Inclinación crítica (>60 grados)
+        if abs(euler[0]) > 1.0 or abs(euler[1]) > 1.0:
+            print(f"💥 Critical tilt detected")
+            return True
+        
+        return False
+        
+    # ================================================================================================================================= #
+    # ================================================================================================================================= #
+    # ================================================================================================================================= #
+
+    
     
 
     def reset(self, seed=None, options=None):

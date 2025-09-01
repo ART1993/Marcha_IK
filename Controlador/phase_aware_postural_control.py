@@ -99,9 +99,9 @@ class PhaseAwarePosturalSystem:
             },
             
             MovementPhase.SQUAT_BOTTOM: {
-                'target_hip_angle': 0.9,      # Flexión profunda (~75°) Es demasiado, buscar un ángulo menor
+                'target_hip_angle': 0.9,      # Flexión profunda (~75°) Es demasiado, buscar un ángulo menor Anterior 1.3
                 'tolerance': 0.05,             # Tolerancia moderada
-                'target_knee_angle': 1.1,     # Flexión profunda de rodillas (~60°)
+                'target_knee_angle': 1.1,     # Flexión profunda de rodillas (~60°) Anterior 1.05                      
                 'stability_priority': 'high'   # Alta estabilidad en posición vulnerable
             },
             
@@ -244,7 +244,7 @@ class PhaseAwarePosturalSystem:
         # Fallback - usar ángulo de cadera como indicador principal
         if abs(hip_angle) < 0.05:
             return MovementPhase.STATIC_BALANCE
-        elif hip_angle > 0.8:  # Flexión profunda
+        elif hip_angle > 0.6:  # Flexión profunda
             if abs(hip_velocity) < 0.2:
                 return MovementPhase.SQUAT_BOTTOM
             elif hip_velocity < 0:  # Velocidad negativa = extensión
