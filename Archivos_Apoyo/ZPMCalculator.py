@@ -57,10 +57,12 @@ class ZMPCalculator:
             try:
                 com_pos, _ = self.robot_data.get_center_of_mass
                 com_pos = np.array(com_pos)
+                l_dynamic = com_pos[2]  # Altura Z actual del COM
             except:
                 # Fallback: usar posición de la base
                 com_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
                 com_pos = np.array(com_pos)
+                l_dynamic = self.l
         else:
             com_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
             com_pos = np.array(com_pos)
@@ -76,8 +78,8 @@ class ZMPCalculator:
         # X_zmp = X_com - (l/g) * X_com_accel
         # Y_zmp = Y_com - (l/g) * Y_com_accel
         
-        zmp_x = com_pos[0] - (self.l / self.g) * com_acceleration[0]
-        zmp_y = com_pos[1] - (self.l / self.g) * com_acceleration[1]
+        zmp_x = com_pos[0] - (l_dynamic / self.g) * com_acceleration[0]
+        zmp_y = com_pos[1] - (l_dynamic / self.g) * com_acceleration[1]
         
         return np.array([zmp_x, zmp_y])
     
@@ -225,3 +227,25 @@ class ZMPCalculator:
         """Reset del calculador ZMP"""
         self.com_history.clear()
         print(f"🔄 ZMP Calculator reset")
+
+    def get_stability_analysis(self):
+        """
+        Análisis completo usando tanto COM como ZMP
+        """
+        # COM para análisis básico
+        com_pos, total_mass = self.robot_data.get_center_of_mass if self.robot_data else ([0,0,1], 25.0)
+        
+        # ZMP para análisis dinámico  
+        zmp_point = self.calculate_zmp()
+        
+        # Diferencia entre ZMP y COM (indica actividad dinámica)
+        com_zmp_difference = np.linalg.norm(zmp_point - com_pos[:2])
+        
+        return {
+            'com_position': com_pos,
+            'zmp_position': zmp_point,
+            'dynamic_activity': com_zmp_difference,  # >0.1 indica movimiento significativo
+            'static_stable': self.is_stable(com_pos[:2]),  # Basado en COM
+            'dynamic_stable': self.is_stable(zmp_point),   # Basado en ZMP
+            'com_height_current': com_pos[2]
+        }

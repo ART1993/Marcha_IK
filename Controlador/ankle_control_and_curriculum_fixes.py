@@ -230,7 +230,7 @@ class OptimizedCurriculumSelector:
         # Parámetros de curriculum OPTIMIZADOS para convergencia rápida
         self.episode_count = 0
         self.recent_rewards = deque(maxlen=50)  # Ventana más pequeña para respuesta rápida
-        self.expert_ratio = 0.95  # CAMBIO: Empezar con 95% experto (vs 100% original)
+        self.expert_ratio = 0.90  # CAMBIO: Empezar con 95% experto (vs 100% original)
         
         # Umbrales más conservadores para transiciones
         self.balance_reward_threshold = 3.0     # Reducido de 5.0 a 3.0
@@ -326,7 +326,7 @@ class OptimizedCurriculumSelector:
         
         if recent_avg >= self.balance_reward_threshold:
             # Rendimiento bueno → Reducir dependencia MUY GRADUALMENTE
-            self.expert_ratio *= 0.998  # Reducción MUCHO más gradual (0.2% por episodio)
+            self.expert_ratio *= 0.8  # Reducción MUCHO más gradual (0.2% por episodio)
         else:
             # Rendimiento malo → Aumentar ayuda del experto MÁS AGRESIVAMENTE
             self.expert_ratio = min(0.95, self.expert_ratio * 1.02)  # Aumento 2%

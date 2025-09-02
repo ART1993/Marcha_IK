@@ -305,7 +305,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     
         # Pasar información PAM al sistema de recompensas
         self.reward_system.pam_states = self.pam_states
-
+        stability_analysis = self.zmp_calculator.get_stability_analysis() if self.zmp_calculator else None
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         reward, reward_components = self._calculate_context_aware_reward(actual_action)
         #reward, reward_components = self._calculate_reward(action_applied)
@@ -317,8 +317,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
         observation = self._get_simple_observation()
-        done = self._is_done_with_context()
-        #done = self._is_done()
+        #done = self._is_done_with_context()
+        done = self._is_done()
 
         # ===== APLICAR ACCIÓN PAM =====
         
@@ -344,9 +344,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 'total_corrections': self.controller.total_corrections
             }
 
-        if self.step_count%1500==0:
+        if self.step_count%1500==0 or done==True:
             log_print(f"{self.step_count=:}")
             log_print(f"{done=:}")
+            log_print(f"{self.curriculum.current_phase=:}")
         
         return observation, reward, done, False, info
     
@@ -833,7 +834,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 
             
         # Límite de tiempo
-        if self.step_count > 1500*self.controller.action_duration: #  1500 Hz=1s, =>
+        #self.curriculum.current_phase
+        if self.step_count > 1500*10: #  1500 Hz=1s, =>
             print("fuera de t")
             return True
             
@@ -1180,13 +1182,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             'pressures': np.zeros(self.num_active_pams),
             'forces': np.zeros(self.num_active_pams)
         }
-
-        #log_print(f"   🤖 Robot inicializado en modo STANDING POSITION")
-        #log_print(f"   🦶 Esperando contacto bilateral para activar PAMs...")
-        
-        # Estabilización inicial
-        #for _ in range(50):
-        #    p.stepSimulation()
         
         # Obtener observación inicial
         observation = self._get_simple_observation()
