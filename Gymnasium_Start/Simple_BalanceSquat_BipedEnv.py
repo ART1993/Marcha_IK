@@ -343,6 +343,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 'performance_stats': self.controller.get_comprehensive_performance_stats(),
                 'total_corrections': self.controller.total_corrections
             }
+
+        if self.step_count%1500==0:
+            log_print(f"{self.step_count=:}")
+            log_print(f"{done=:}")
         
         return observation, reward, done, False, info
     

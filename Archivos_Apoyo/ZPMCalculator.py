@@ -73,11 +73,11 @@ class ZMPCalculator:
         
         # ===== ECUACIONES ZMP SIMPLIFICADAS =====
         
-        # X_zmp = X_com - (l^3/g) * X_com_accel
-        # Y_zmp = Y_com - (l^3/g) * Y_com_accel
+        # X_zmp = X_com - (l/g) * X_com_accel
+        # Y_zmp = Y_com - (l/g) * Y_com_accel
         
-        zmp_x = com_pos[0] - (self.l**3 / self.g) * com_acceleration[0]
-        zmp_y = com_pos[1] - (self.l**3 / self.g) * com_acceleration[1]
+        zmp_x = com_pos[0] - (self.l / self.g) * com_acceleration[0]
+        zmp_y = com_pos[1] - (self.l / self.g) * com_acceleration[1]
         
         return np.array([zmp_x, zmp_y])
     
