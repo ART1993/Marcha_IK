@@ -18,13 +18,17 @@ class ZMPCalculator:
         - Dimensiones complejas del robot
     """
     
-    def __init__(self, robot_id, left_foot_id, right_foot_id, robot_data=None):
+    def __init__(self, robot_id, left_foot_id, 
+                 right_foot_id, 
+                 dt=1.0/1500,
+                 robot_data=None):
         
         # ===== CONFIGURACIÓN BÁSICA =====
         
         self.robot_id = robot_id
         self.left_foot_id = left_foot_id  
         self.right_foot_id = right_foot_id
+        self.dt=dt
         self.robot_data = robot_data
         
         # ===== PARÁMETROS FÍSICOS SIMPLIFICADOS =====
@@ -45,7 +49,7 @@ class ZMPCalculator:
         print(f"   Stability margin: {self.stability_margin}m")
         print(f"   COM height estimate: {self.l}m")
     
-    def calculate_zmp(self, dt=1.0/1500.0):
+    def calculate_zmp(self):
         """
         Calcular ZMP usando ecuaciones básicas.
         
@@ -71,7 +75,7 @@ class ZMPCalculator:
         self.update_com_history(com_pos)
         
         # Calcular aceleración básica
-        com_acceleration = self.calculate_simple_acceleration(dt)
+        com_acceleration = self.calculate_simple_acceleration(self.dt)
         
         # ===== ECUACIONES ZMP SIMPLIFICADAS =====
         
@@ -91,7 +95,7 @@ class ZMPCalculator:
         if len(self.com_history) > self.max_history:
             self.com_history.pop(0)
     
-    def calculate_simple_acceleration(self, dt=1.0/1500.0):
+    def calculate_simple_acceleration(self):
         """
         Calcular aceleración COM usando diferencias finitas SIMPLES.
         
@@ -106,7 +110,7 @@ class ZMPCalculator:
         pos_prev = np.array(self.com_history[-2])
         pos_prev2 = np.array(self.com_history[-3])
         
-        acceleration = (pos_current - 2*pos_prev + pos_prev2) / (dt**2)
+        acceleration = (pos_current - 2*pos_prev + pos_prev2) / (self.dt**2)
         
         # Limitar valores extremos (filtrado básico)
         acceleration = np.clip(acceleration, -20.0, 20.0)
@@ -236,16 +240,16 @@ class ZMPCalculator:
         com_pos, total_mass = self.robot_data.get_center_of_mass if self.robot_data else ([0,0,1], 25.0)
         
         # ZMP para análisis dinámico  
-        zmp_point = self.calculate_zmp()
+        zmp_point_info = self.get_stability_info()
         
         # Diferencia entre ZMP y COM (indica actividad dinámica)
-        com_zmp_difference = np.linalg.norm(zmp_point - com_pos[:2])
+        com_zmp_difference = np.linalg.norm(zmp_point_info["zmp_position"] - com_pos[:2])
+
+        info_stability={"zmp_info":zmp_point_info, 
+                        "com_info":{'com_position': com_pos,
+                                    'static_stable': self.is_stable(com_pos[:2]),  # Basado en COM
+                                    'com_height_current': com_pos[2]},
+                        'dynamic_activity': com_zmp_difference,  # >0.1 indica movimiento significativo
+                        }
         
-        return {
-            'com_position': com_pos,
-            'zmp_position': zmp_point,
-            'dynamic_activity': com_zmp_difference,  # >0.1 indica movimiento significativo
-            'static_stable': self.is_stable(com_pos[:2]),  # Basado en COM
-            'dynamic_stable': self.is_stable(zmp_point),   # Basado en ZMP
-            'com_height_current': com_pos[2]
-        }
+        return info_stability
