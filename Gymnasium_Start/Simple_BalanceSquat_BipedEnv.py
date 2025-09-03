@@ -9,8 +9,7 @@ import numpy as np
 import math
 from collections import deque
 
-from Controlador.discrete_action_controller import ActionType 
-from Controlador.ankle_control_and_curriculum_fixes import OptimizedCurriculumSelector, IntelligentAnkleControl
+from Controlador.ankle_control_and_curriculum_fixes import IntelligentAnkleControl
 
 
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
