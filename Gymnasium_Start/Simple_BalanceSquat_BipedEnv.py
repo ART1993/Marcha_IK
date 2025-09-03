@@ -18,9 +18,8 @@ from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
-from Archivos_Mejorados.Simplified_BalanceSquat_RewardSystem import Simplified_BalanceSquat_RewardSystem
-from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs    
-from Controlador.phase_aware_postural_control import PhaseAwareEnhancedController, MovementPhase             
+from Archivos_Mejorados.RewardSystemSimple import UltraSimpleRewardSystem, UltraSimpleActionSelector
+from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs               
 
 class Simple_BalanceSquat_BipedEnv(gym.Env):
     """
@@ -40,11 +39,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     def __init__(self, render_mode='human', action_space="pam", enable_curriculum=True):
         
         """
-            Initialize the enhanced PAM biped environment.
-            
-            Args:
-                render_mode: 'human' or 'direct'
-                action_space: Only "pam" supported in this version
+            Inicio el entorno de entrenamiento PAM
         """
         
         # Llamar al constructor padre pero sobrescribir configuración PAM
@@ -55,15 +50,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.render_mode = render_mode
         self.action_space_type = action_space  # Solo "pam"
         self.enable_curriculum=enable_curriculum
-        if enable_curriculum:
-            self.curriculum = OptimizedCurriculumSelector()
-        else:
-            self.curriculum = None
 
         self.pam_control_active = False
         self.contact_established = False
         self.contact_stable_steps = 0
-        self.min_stable_steps = 50
         # Para tracking de tiempo en balance
         self._balance_start_time = 0
         
@@ -72,9 +62,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.urdf_path = "2_legged_human_like_robot.urdf"
         self.frecuency_simulation=1500.0
         self.time_step = 1.0 / self.frecuency_simulation
-        
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
-        
         self.num_active_pams = 6
         self.min_pressure = 101325  # 1 atm
         self.max_pressure = 5 * self.min_pressure  # 5 atm
@@ -109,15 +97,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             dtype=np.float32
         )
         
-        # ===== VARIABLES DE SEGUIMIENTO BÁSICAS =====
-        
-        self.step_count = 0
-        self.total_reward = 0
-        self.robot_id = None
-        self.plane_id = None
-        self.left_foot_id = 2
-        self.right_foot_id = 5
-        
         # ===== CONFIGURACIÓN DE SIMULACIÓN =====
         
         if self.render_mode == 'human':
@@ -134,22 +113,27 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.controller = None
 
         # Variables para tracking
-        self.episode_reward = 0
-        self.episode_start_step = 0
         
-        # Sistema de recompensas simplificado
-        self.reward_system = Simplified_BalanceSquat_RewardSystem()
+        #self.episode_start_step = 0
+        
+        self.reward_system = None
+        self.action_selector = None
+
+        self.step_count = 0
+        self.total_reward = 0
+        self.robot_id = None
+        self.plane_id = None
+        self.left_foot_id = 2
+        self.right_foot_id = 5
+        self.episode_reward = 0
         
         log_print(f"🤖 Simplified Balance & Squat Environment initialized")
-        log_print(f"   Action space: 6 PAM pressures")
-        log_print(f"   Observation space: 16 elements")
-        log_print(f"   Target: Balance + Sentadillas")
-        log_print(f"🤖 Environment initialized - Starting in STANDING_POSITION mode")
+        log_print(f"🤖 Environment initialized - Systems initiate in reset")
 
 
     def _calculate_reward(self, action_applied):
         """
-        Calcular recompensa según el modo de control activo
+            Calcular recompensa según el modo de control activo
         """
         
         if self.pam_control_active:
@@ -218,38 +202,16 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
         
-        if self.curriculum.should_use_expert_action(self.step_count):
-            # 🎓 Usar acción EXPERTA
-            actual_action = self.controller.get_expert_action(self.time_step)
+        if self.action_selector.should_use_expert_action():
+            actual_action = self.action_selector.get_expert_action()
             action_source = "EXPERT"
         else:
-            # 🤖 Usar acción de la RED NEURONAL
             actual_action = action
-            action_source = "RL_AGENT"
+            action_source = "RL"
 
-        # ===== DECISIÓN: BALANCE vs SQUAT =====
-        # Modificar para preparar por step la transición squat_stand
-        if self.curriculum.should_transition_to_squat():
-            if self.controller.current_action != ActionType.SQUAT:
-                self.controller.set_action(ActionType.SQUAT)
-                log_print(f"   🏋️ Transitioning to SQUAT mode (Episode {self.curriculum.episode_count})")
-
-        # NUEVO: Gestionar transición de SQUAT de vuelta a BALANCE
-        elif self.controller.current_action == ActionType.SQUAT:
-            # Verificar si la sentadilla se completó
-            if self._squat_completed():
-                self.controller.set_action(ActionType.BALANCE_STANDING)
-                log_print(f"⚖️ Step {self.step_count}: Squat completed, returning to BALANCE")
-
-        # ===== PASO 1: NORMALIZAR Y VALIDAR ACCIÓN =====
+        # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
     
-        normalized_pressures = np.clip(actual_action, 0.0, 1.0)
-
-        # Validar que tenemos 6 presiones PAM
-        if len(normalized_pressures) != self.num_active_pams:
-            raise ValueError(f"Expected 6 PAM pressures, got {len(normalized_pressures)}")
-
-        
+        normalized_pressures = np.clip(actual_action, 0.0, 1.0) 
 
         # NUEVO: Aplicar inhibición recíproca
         if not hasattr(self, 'anti_flexion'):
@@ -303,53 +265,35 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # ✅ LLAMAR DEBUG OCASIONALMENTE
         self._debug_joint_angles_and_pressures(actual_action)
 
-    
-        # Pasar información PAM al sistema de recompensas
-        self.reward_system.pam_states = self.pam_states
-        stability_analysis = self.zmp_calculator.get_stability_analysis() if self.zmp_calculator else None
+        current_task = self.action_selector.current_action.value
+        reward = self.reward_system.calculate_reward(actual_action, current_task)
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
-        reward, reward_components = self._calculate_context_aware_reward(actual_action)
-        #reward, reward_components = self._calculate_reward(action_applied)
-        #reward, reward_components = self.reward_system.calculate_simple_reward(
-        #    action=normalized_pressures,
-        #    pam_forces=self.pam_states['forces']
-        #)
+       
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
+        
+        done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
         observation = self._get_simple_observation()
-        #done = self._is_done_with_context()
-        done = self._is_done()
 
         # ===== APLICAR ACCIÓN PAM =====
+
+        self.episode_reward += reward
+        self.action_selector.update_after_step(reward)
         
-        # Info básico
+        # Info simplificado
         info = {
             'step_count': self.step_count,
             'reward': reward,
-            'reward_components': reward_components,
-            'action_source': action_source,  # ✅ NUEVO
-            'pam_pressures': normalized_pressures.tolist(),
+            'action_source': action_source,
+            'current_task': current_task,
             'episode_reward': self.episode_reward
         }
         
-        # Añadir info de curriculum
-        #if self.curriculum:
-        #    info['curriculum'] = self.curriculum.get_curriculum_info()
-
-        # NUEVAS LÍNEAS: Añadir información del sistema postural
-        if hasattr(self.controller, 'get_comprehensive_performance_stats'):
-            info['postural_control'] = {
-                'current_phase': self.controller.postural_system.current_phase.value,
-                'performance_stats': self.controller.get_comprehensive_performance_stats(),
-                'total_corrections': self.controller.total_corrections
-            }
-
-        if self.step_count%self.frecuency_simulation==0 or done==True:
-            log_print(f"{self.step_count=:}")
-            log_print(f"{done=:}")
-            log_print(f"{self.curriculum.current_phase=:}")
-            log_print(stability_analysis)
+        # CONSERVAR tu debug existente
+        if self.step_count % 1500 == 0 or done:
+            log_print(f"{self.step_count=:}: {action_source} action, reward={reward:.2f}, task={current_task}")
+            log_print(f"Step {done=:}")
         
         return observation, reward, done, False, info
     
@@ -526,7 +470,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Convertir fuerzas PAM a torques articulares
         moment_arm = 0.05  # Brazo de palanca típico (5cm)
         joint_torques = np.zeros(4)
-        effective_moment_arm=moment_arm*(0.5+0.5*(np.cos(joint_angle)))
+        effective_moment_arm=moment_arm*(0.7+0.5*(np.cos(joint_angle)))
         # ✅ CADERA IZQUIERDA: Antagónico (flexor vs extensor)
         # Torque resultante = momento_flexor - momento_extensor
         flexor_moment = pam_forces[0] * effective_moment_arm    # PAM 0: flexor
@@ -635,260 +579,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
         return left_contact, right_contact
     
-    def _calculate_simple_balance_reward(self):
-        """
-        Recompensa SIMPLIFICADA enfocada solo en balance y estabilidad
-        
-        ELIMINADO:
-        - Biomechanical reward components complejos
-        - Expert action similarity
-        - Energy efficiency calculations
-        - Coordination metrics
-        """
-        
-        reward = 0.0
-        
-        # ===== RECOMPENSA POR ESTAR DE PIE =====
-        
-        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
-        left_contact, right_contact=self.contacto_pies
-        contacto_pies=all((left_contact, right_contact))
-        # Altura del torso (mantenerse erguido)
-        if contacto_pies:
-            height_reward = max(0, self.pos[2] - 0.8) * 10.0  # Recompensar altura > 0.8m
-            reward += height_reward
-        
-        # Orientación vertical (roll y pitch pequeños)
-        orientation_penalty = abs(euler[0]) + abs(euler[1])  # roll + pitch
-        reward -= orientation_penalty * 20.0
-        
-        # ===== RECOMPENSA POR ESTABILIDAD ZMP =====
-        
-        if self.zmp_calculator:
-            try:
-                zmp_point = self.zmp_calculator.calculate_zmp()
-                is_stable = self.zmp_calculator.is_stable(zmp_point)
-                
-                if is_stable:
-                    reward += 5.0  # Bonificación por estabilidad
-                else:
-                    reward -= 10.0  # Penalización por inestabilidad
-                    
-            except:
-                reward -= 5.0  # Penalización si no se puede calcular ZMP
-        
-        # ===== RECOMPENSA POR CONTACTO CON EL SUELO =====
-        
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
-        
-        if contacto_pies:
-            reward += 2.0  # Ambos pies en el suelo
-        elif contacto_pies ==False and self.step_count>500:
-            reward -= 10.0  # Penalización severa por estar en el aire
-        
-        # ===== PENALIZACIÓN POR MOVIMIENTO EXCESIVO =====
-        
-        lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
-        # Solo es apleciable el bamboleo u la bajada
-        velocity_penalty = (abs(lin_vel[0])+ abs(ang_vel[2])) * 2.0
-        reward -= velocity_penalty
-        
-        # ===== RECOMPENSA BASE POR SUPERVIVENCIA =====
-        
-        reward += 1.0  # Recompensa base por cada step exitoso
-        
-        return reward
-    
-
-
-# ===================================================================================================================================================================== #
-# ================================================ Componentes existentes en BIPEDIKPAMENv ============================================================================ #
-# ===================================================================================================================================================================== #
-
-                
-
-    def _is_done(self):
-        """Condiciones de terminación unificadas"""
-
-        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
-        
-        if self.pos[2] < 0.4 or self.pos[2] > 3.0:
-            if self.contacto_pies is False:
-                both_print("to high or too low", euler, self.pos)
-                return True
-            
-        # Terminar si la inclinación lateral es excesiva  
-        if abs(euler[1]) > math.pi/2 + 0.2 or abs(euler[0]) > math.pi/2 + 0.2:
-            both_print("rotated", euler)
-            return True
-
-
-
-            
-        # Límite de tiempo
-        #self.curriculum.current_phase
-        if self.step_count > self.frecuency_simulation*10: #  1500 Hz=1s, =>
-            both_print("fuera de t")
-            return True
-            
-        return False
-    
-    # ================================================================================================================================= #
-    # ===============================Agregar funciones para modificar los parámetros de entrenamiento función acción=================== #
-    # ================================================================================================================================= #
-
-
-    def _squat_completed(self):
-        """
-            Determina si una sentadilla se ha completado exitosamente
-            
-            Criterios para considerar una sentadilla completa:
-            1. El controlador ha progresado >95% del ciclo
-            2. El robot ha vuelto a una posición cercana al equilibrio
-            3. Ha pasado suficiente tiempo para un ciclo completo
-        """
-        if self.controller.current_action != ActionType.SQUAT:
-            return False
-        
-        # Criterio 1: Progreso temporal
-        progress_complete = self.controller.action_progress >= 0.95
-        
-        # Criterio 2: Posición física cercana al equilibrio
-        try:
-            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-            euler = p.getEulerFromQuaternion(orn)
-            joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
-            # Robot cerca de posición erguida
-            height_ok = pos[2] > 0.9  # Altura razonable
-            orientation_ok = abs(euler[0]) < 0.2 and abs(euler[1]) < 0.2  # Orientación vertical
-            joints_extended = all(abs(state[0]) < 0.3 for state in joint_states)  # Articulaciones cerca de neutral
-            
-            physical_complete = height_ok and orientation_ok and joints_extended
-        except:
-            physical_complete = False
-        
-        # Criterio 3: Tiempo mínimo para evitar sentadillas demasiado rápidas
-        min_squat_duration = 3.0  # segundos
-        time_complete = (self.step_count * self.time_step) >= min_squat_duration
-        
-        return progress_complete and physical_complete and time_complete
-    
-    def _calculate_context_aware_reward(self, action):
-        """
-        Sistema de recompensas que se adapta según la actividad actual
-        """
-        current_task = self.controller.current_action
-        
-        if current_task == ActionType.BALANCE_STANDING:
-            return self._calculate_balance_reward(action)
-        elif current_task == ActionType.SQUAT:
-            return self._calculate_squat_reward(action)
-        else:
-            # Fallback genérico
-            return self.reward_system.calculate_simple_reward(action)
-
-    def _calculate_balance_reward(self, action):
-        """
-        Recompensas optimizadas para balance estático
-        
-        Enfoque: Premiar estabilidad sostenida, penalizar movimiento excesivo
-        """
-        reward_components = {}
-        
-        # Recompensa base por supervivencia (más importante en balance)
-        reward_components['survival'] = 2.0  # Aumentada para balance
-        
-        # Usar sistema de recompensas existente pero con pesos ajustados
-        base_reward, base_components = self.reward_system.calculate_simple_reward(action)
-        
-        # Bonificación por tiempo sostenido en equilibrio
-        if base_components.get('orientation', 0) > 1.0:  # Buena orientación
-            consecutive_balance_time = self._get_consecutive_balance_time()
-            time_bonus = min(consecutive_balance_time * 0.5, 5.0)  # Max 5 puntos por tiempo
-            reward_components['time_bonus'] = time_bonus
-        
-        # Penalización reducida por movimiento (balance permite micro-ajustes)
-        movement_penalty = base_components.get('velocity_penalty', 0) * 0.5
-        reward_components['movement'] = movement_penalty
-        
-        total_reward = sum(reward_components.values()) + base_reward
-        return total_reward, reward_components
-
-    def _calculate_squat_reward(self, action):
-        """
-        Recompensas optimizadas para sentadillas
-        
-        Enfoque: Premiar progreso del movimiento y calidad de ejecución
-        """
-        reward_components = {}
-        
-        # Recompensa base menor (la sentadilla es naturalmente temporal)
-        reward_components['survival'] = 1.0
-        
-        # Bonificación por progreso en la sentadilla
-        squat_progress = self.controller.action_progress
-        if squat_progress > 0:
-            progress_bonus = squat_progress * 3.0  # Hasta 3 puntos por completar
-            reward_components['progress_bonus'] = progress_bonus
-        
-        # Bonificación por calidad de movimiento (coordinación)
-        phase = self.controller.postural_system.current_phase
-        if phase in [MovementPhase.SQUAT_DESCENT, MovementPhase.SQUAT_ASCENT]:
-            # Durante movimiento activo, premiar control suave
-            joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
-            abs_joint_velocities = [abs(state[1]) for state in joint_states]
-            avg_velocity = sum(abs_joint_velocities) / len(abs_joint_velocities)
-            
-            # Movimiento controlado (no muy rápido, no muy lento)
-            if 0.1 < avg_velocity < 0.5:
-                reward_components['smooth_movement'] = 1.0
-            else:
-                reward_components['smooth_movement'] = -0.5
-        
-        # Usar recompensas base del sistema existente
-        base_reward, base_components = self.reward_system.calculate_simple_reward(action)
-        
-        total_reward = sum(reward_components.values()) + base_reward * 0.8  # Peso reducido de base
-        return total_reward, reward_components
-    
-    def _get_consecutive_balance_time(self):
-        """
-        AGREGAR junto con _squat_completed
-        
-        Calcula cuánto tiempo ha estado el robot en balance estable
-        """
-        # Esta es una implementación simple; puedes mejorarla
-        if not hasattr(self, '_balance_start_time'):
-            self._balance_start_time = 0
-        
-        try:
-            # Verificar si está actualmente en balance
-            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-            euler = p.getEulerFromQuaternion(orn)
-            
-            is_balanced = (pos[2] > 0.9 and 
-                        abs(euler[0]) < 0.15 and 
-                        abs(euler[1]) < 0.15)
-            
-            if is_balanced:
-                if self._balance_start_time == 0:
-                    self._balance_start_time = self.step_count
-                return (self.step_count - self._balance_start_time) * self.time_step
-            else:
-                self._balance_start_time = 0
-                return 0.0
-        except:
-            return 0.0
-        
-    # ================================================================================================================================= #
-    # ================================================================================================================================= #
-    # ================================================================================================================================= #
-
-    
-    
 
     def reset(self, seed=None, options=None):
         """
@@ -896,18 +586,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        #if episode_objective == ActionType.BALANCE_STANDING:
-        #    self.controller.set_action(ActionType.BALANCE_STANDING)
-        #    print("🎯 Episode goal: Maintain standing balance")
-            
-        #elif episode_objective == ActionType.SQUAT:
-        #    self.controller.set_action(ActionType.SQUAT) 
-        #    print("🎯 Episode goal: Perform complete squat")
-
-        # Actualizar curriculum con rendimiento del episodio anterior
-        if self.curriculum and hasattr(self, 'episode_reward'):
-            episode_length = self.step_count - self.episode_start_step
-            self.curriculum.update_after_episode(self.episode_reward, episode_length)
+        # REEMPLAZA la lógica compleja de curriculum update
+        if hasattr(self, 'action_selector') and self.action_selector and hasattr(self, 'episode_reward'):
+            self.action_selector.update_after_episode(self.episode_reward)
         
         # ===== RESET FÍSICO BÁSICO =====
         
@@ -917,16 +598,17 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # En reset():
         self.pam_control_active = False
         self.contact_established = False
-        self.contact_stable_steps = 0# Ejemplo, no hace falta ya que puedo usar count steps y ya
+        self.contact_stable_steps = 0
+        # Ejemplo, no hace falta ya que puedo usar count steps y ya
 
         # Configurar solver para mejor estabilidad
         p.setPhysicsEngineParameter(
-            numSolverIterations=10,        # Más iteraciones = más estable
-            numSubSteps=4,                 # Más substeps = más preciso
-            contactBreakingThreshold=0.001, # Umbral de contacto más sensible
-            erp=0.8,                       # Error Reduction Parameter
-            contactERP=0.9,                # ERP específico para contactos
-            frictionERP=0.8,               # ERP para fricción
+            numSolverIterations=10,        
+            numSubSteps=4,                 
+            contactBreakingThreshold=0.001, 
+            erp=0.8,                       
+            contactERP=0.9,                
+            frictionERP=0.8,               
         )
         
         # Cargar entorno
@@ -937,6 +619,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             # [0, 0, 0, 1],  # Orientación neutral
             useFixedBase=False
         )
+
+        self.reward_system = UltraSimpleRewardSystem(self.robot_id, self.plane_id)
+        if not hasattr(self, 'action_selector') or not self.action_selector:
+            self.action_selector = UltraSimpleActionSelector(self)
         
         # ===== CONFIGURACIÓN PARA BALANCE ESTÁTICO =====
         
@@ -952,16 +638,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         for i, pos in self.neutral_positions.items():
             p.resetJointState(self.robot_id, i, pos)
-
-        # ===== CONFIGURACIÓN PAM =====
-
-        for i, target_pos in self.neutral_positions.items():  # Solo caderas y rodillas
-            p.setJointMotorControl2(
-                self.robot_id,
-                i,
-                p.VELOCITY_CONTROL,
-                force=0
-            )
+            p.setJointMotorControl2(self.robot_id, i, p.VELOCITY_CONTROL, force=0)
         
         
         # SIN velocidad inicial - queremos balance estático
@@ -978,17 +655,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             robot_data=self.robot_data
         )
         self._configure_contact_friction()
-        # Controller para acciones discretas (BALANCE_STANDING, SQUAT)
-        self.controller = PhaseAwareEnhancedController(self)
         self.ankle_control = IntelligentAnkleControl(self.robot_id)
-        self.controller.set_action(ActionType.BALANCE_STANDING)  # Empezar con balance
-        #self.controller.set_action(MovementPhase.STATIC_BALANCE)
 
-        # Configurar sistema de recompensas
-        self.reward_system.redefine_robot(self.robot_id, self.plane_id)
-        
-        # ===== VARIABLES DE SEGUIMIENTO =====
-        
+        # Reset de variables
+        self.episode_reward = 0
         self.total_reward = 0
         self._friction_configured = False  # Flag para configuración de fricción
 
