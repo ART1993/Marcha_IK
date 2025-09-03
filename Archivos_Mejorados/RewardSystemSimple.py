@@ -125,7 +125,7 @@ class UltraSimpleRewardSystem:
         if abs(euler[0]) > 1.0 or abs(euler[1]) > 1.0:
             return True
         
-        if step_count> frecuency_simulation*8:
+        if step_count>= frecuency_simulation*8:
             return True
         
         return False
