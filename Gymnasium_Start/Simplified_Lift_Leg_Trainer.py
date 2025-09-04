@@ -11,11 +11,11 @@ from datetime import datetime
 import json
 
 # Import your environments
-from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv  # Nuevo entorno mejorado
+from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
-class Simplified_BalanceSquat_Trainer:
+class Simplified_Lift_Leg_Trainer:
     """
     Entrenador unificado mejorado para sistemas de robot bípedo con músculos PAM antagónicos.
     
@@ -36,7 +36,7 @@ class Simplified_BalanceSquat_Trainer:
         
         # ===== CONFIGURACIÓN BÁSICA =====
         
-        self.env_type = "simplified_balance_squat"
+        self.env_type = "simplified_lift_legs"
         self.action_space = "pam"
         self.total_timesteps = total_timesteps
         self.n_envs = n_envs
@@ -47,7 +47,7 @@ class Simplified_BalanceSquat_Trainer:
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
 
-        log_print(f"🤖 Simplified Balance & Squat Trainer initialized")
+        log_print(f"🤖 simplified_lift_legs Trainer initialized")
         log_print(f"   Target: Balance + Sentadillas con 6 PAMs")
         log_print(f"   Timesteps: {self.total_timesteps:,}")
         log_print(f"   Parallel envs: {self.n_envs}")
@@ -69,8 +69,8 @@ class Simplified_BalanceSquat_Trainer:
         # ===== CONFIGURACIÓN DE DIRECTORIOS =====
         
         # Crear directorios base
-        self.model_dir = "./models_balance_squat"
-        self.logs_dir = "./logs_balance_squat"
+        self.model_dir = "./models_lift_leg"
+        self.logs_dir = "./logs_lift_leg"
         self.checkpoints_dir = os.path.join(self.model_dir, "checkpoints")
 
         # Creacion directorios si no existen
@@ -85,7 +85,7 @@ class Simplified_BalanceSquat_Trainer:
                 'clip_obs': 10.0,      
                 'clip_reward': 15.0,   
                 'model_prefix': 'single_leg_balance_pam',
-                'description': 'Balance and Squats with 6 PAMs + Auto Knee Control'
+                'description': 'lift_legs with 6 PAMs + Auto Knee Control'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -121,7 +121,7 @@ class Simplified_BalanceSquat_Trainer:
         def make_env():
             def _init():
                 # Crear el entorno con la configuración apropiada
-                env = Simple_BalanceSquat_BipedEnv(
+                env = Simple_Lift_Leg_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
                     action_space=self.action_space,
                     enable_curriculum=True
@@ -146,7 +146,7 @@ class Simplified_BalanceSquat_Trainer:
         
         def make_eval_env():
             def _init():
-                env = Simple_BalanceSquat_BipedEnv(render_mode='direct', 
+                env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
                                              action_space=self.action_space
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
@@ -176,7 +176,7 @@ class Simplified_BalanceSquat_Trainer:
         if model is not None:
             return model
 
-        print(f"🧠 Creating new RecurrentPPO model for balance & squats...")
+        print(f"🧠 Creating new RecurrentPPO model for lift_leg...")
         # ===== CREACIÓN DEL MODELO =====
         model_params = {
             'learning_rate': self.learning_rate,
@@ -255,7 +255,7 @@ class Simplified_BalanceSquat_Trainer:
             Sin fases complejas, sin curriculum, solo entrenamiento RecurrentPPO directo.
         """
         
-        print(f"🚀 Starting Balance & Squat training with RecurrentPPO...")
+        print(f"🚀 Starting lift_leg training with RecurrentPPO...")
 
         # DETALLES AL LOG
         log_print("🚀 Training session started")
@@ -317,7 +317,7 @@ class Simplified_BalanceSquat_Trainer:
 
             self._save_training_info()
             
-            print(f"\n🎉 Balance & Squat training completed successfully!")
+            print(f"\n🎉 lift_leg training completed successfully!")
             print(f"   Total timesteps: {self.total_timesteps:,}")
             print(f"   Model saved in: {self.model_dir}")
             # ÉXITO: A AMBOS
@@ -361,7 +361,7 @@ class Simplified_BalanceSquat_Trainer:
         info_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_info.json")
         
         training_data = {
-            'objective': 'Balance and Squats with 6 PAM muscles',
+            'objective': 'lift_leg with 6 PAM muscles',
             'environment': self.env_type,
             'action_space': self.action_space,
             'completed_timesteps': self.training_info['completed_timesteps'],
@@ -458,12 +458,12 @@ class Simplified_BalanceSquat_Trainer:
 
 # ===== FUNCIONES DE UTILIDAD =====
 
-def create_balance_squat_trainer(total_timesteps=2000000, n_envs=4, learning_rate=3e-4):
+def create_balance_leg_trainer(total_timesteps=2000000, n_envs=4, learning_rate=3e-4):
     """
     Función para crear fácilmente un entrenador simplificado
     """
     
-    trainer = Simplified_BalanceSquat_Trainer(
+    trainer = Simplified_Lift_Leg_Trainer(
         total_timesteps=total_timesteps,
         n_envs=n_envs,
         learning_rate=learning_rate
@@ -475,12 +475,12 @@ def create_balance_squat_trainer(total_timesteps=2000000, n_envs=4, learning_rat
     
     return trainer
 
-def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
+def train_balance_and_lift_legs(total_timesteps=2000000, n_envs=4, resume=True):
     """
     Función principal para entrenar balance y sentadillas
     """
     
-    print("🎯 SIMPLIFIED BALANCE & SQUAT TRAINING")
+    print("🎯 SIMPLIFIED lift_leg TRAINING")
     print("=" * 60)
     print("Objetivo específico:")
     print("  ✅ Mantener equilibrio de pie estático")
@@ -488,7 +488,7 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
     print("  ✅ Usar 6 músculos PAM antagónicos eficientemente")
     print("=" * 60)
     
-    trainer = create_balance_squat_trainer(
+    trainer = create_balance_leg_trainer(
         total_timesteps=total_timesteps,
         n_envs=n_envs
     )
@@ -501,60 +501,3 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
         print(f"📊 Logs disponibles en: {trainer.logs_dir}")
     
     return trainer, model
-
-
-# ===== TEST ESPECÍFICO PARA EL TRAINER =====
-
-def test_trainer_creation():
-    """
-    Test específico para verificar que el trainer se crea correctamente
-    """
-    
-    print("🧪 Testing Simplified Trainer Creation...")
-    
-    try:
-        # Crear trainer con configuración mínima
-        trainer = Simplified_BalanceSquat_Trainer(
-            total_timesteps=1000,
-            n_envs=1,
-            learning_rate=3e-4
-        )
-        
-        # Verificar atributos requeridos
-        checks = []
-        
-        checks.append(("total_timesteps", trainer.total_timesteps == 1000))
-        checks.append(("n_envs", trainer.n_envs == 1))
-        checks.append(("model_dir exists", hasattr(trainer, 'model_dir')))
-        checks.append(("logs_dir exists", hasattr(trainer, 'logs_dir')))
-        checks.append(("env_config exists", hasattr(trainer, 'env_config')))
-        checks.append(("model_dir created", os.path.exists(trainer.model_dir)))
-        checks.append(("logs_dir created", os.path.exists(trainer.logs_dir)))
-        
-        # Mostrar resultados
-        all_passed = True
-        for check_name, result in checks:
-            status = "✅" if result else "❌"
-            print(f"   {status} {check_name}")
-            if not result:
-                all_passed = False
-        
-        if all_passed:
-            print(f"\n🎉 Trainer test PASSED!")
-            print(f"   Timesteps: {trainer.total_timesteps}")
-            print(f"   Envs: {trainer.n_envs}")
-            print(f"   Model dir: {trainer.model_dir}")
-            return True
-        else:
-            print(f"\n❌ Trainer test FAILED - Some checks failed")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Trainer test FAILED - Exception: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-if __name__ == "__main__":
-    # Test de creación del trainer
-    test_trainer_creation()

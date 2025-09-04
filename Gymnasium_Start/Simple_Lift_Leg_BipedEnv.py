@@ -15,10 +15,9 @@ from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 from Archivos_Mejorados.RewardSystemSimple import SingleLegBalanceRewardSystem, \
-                                                    SingleLegActionSelector
-from Archivos_Mejorados.AntiFlexionController import AntiFlexionController               
+                                                    SingleLegActionSelector             
 
-class Simple_BalanceSquat_BipedEnv(gym.Env):
+class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
         Versión expandida con 6 PAMs activos + elementos pasivos
         - 4 PAMs antagónicos en caderas (flexor/extensor bilateral)  
@@ -40,7 +39,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
         
         # Llamar al constructor padre pero sobrescribir configuración PAM
-        super(Simple_BalanceSquat_BipedEnv, self).__init__()
+        super(Simple_Lift_Leg_BipedEnv, self).__init__()
 
         # ===== CONFIGURACIÓN BÁSICA =====
         
@@ -129,7 +128,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.target_knee_height = 0.8  # Altura objetivo de la rodilla levantada
         self.episode_reward = 0
         
-        log_print(f"🤖 Simplified Balance & Squat Environment initialized")
+        log_print(f"🤖 Simplified Lift legs Environment initialized")
         log_print(f"🤖 Environment initialized - Systems initiate in reset")
 
 
@@ -216,20 +215,20 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         normalized_pressures = np.clip(actual_action, 0.0, 1.0) 
 
         # NUEVO: Aplicar inhibición recíproca
-        if not hasattr(self, 'anti_flexion'):
-            self.anti_flexion = AntiFlexionController()
+        #if not hasattr(self, 'anti_flexion'):
+        #    self.anti_flexion = AntiFlexionController()
 
         # ===== PASO 2: APLICAR LÓGICA DE CONTROL SEGÚN ESTADO =====
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
-        joint_positions = [state[0] for state in joint_states]
+        #joint_states = p.getJointStates(self.robot_id, self.joint_indices)
+        #joint_positions = [state[0] for state in joint_states]
         
         # Corregir presiones PAM usando principio de reciprocidad
-        corrected_pressures = self.anti_flexion.apply_reciprocal_inhibition(
-            normalized_pressures, joint_positions
-        )
+        #corrected_pressures = self.anti_flexion.apply_reciprocal_inhibition(
+        #    normalized_pressures, joint_positions
+        #)
         
         # Aplicar fuerzas PAM corregidas
-        joint_torques = self._apply_pam_forces(corrected_pressures)
+        joint_torques = self._apply_pam_forces(normalized_pressures)
         
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
@@ -324,8 +323,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
-        leg_links = [0, 1, 3, 4]  # caderas y rodillas (si tienen collision)
-        for link_id in leg_links:
+        for link_id in self.joint_indices:
             p.changeDynamics(
                 self.robot_id,
                 link_id,
@@ -450,7 +448,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         """
         
         # Obtener estados articulares (solo joints activos: caderas y rodillas)
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  
         joint_positions = [state[0] for state in joint_states]
         joint_velocities = [state[1] for state in joint_states]
         
@@ -566,7 +564,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         obs.extend([lin_vel[0], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # Solo joints activos
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # Solo joints activos
         joint_positions = [state[0] for state in joint_states]
         obs.extend(joint_positions)
         
@@ -611,7 +609,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)
         joint_positions = [state[0] for state in joint_states]
         obs.extend(joint_positions)
         
@@ -818,69 +816,3 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
-
-# ===== FUNCIÓN DE USO FÁCIL =====
-
-def create_simple_balance_squat_env(render_mode='human'):
-    """
-    Crear entorno simplificado para balance y sentadillas
-    """
-    
-    env = Simple_BalanceSquat_BipedEnv(render_mode=render_mode)
-    
-    print(f"✅ Simple Balance & Squat Environment created")
-    print(f"   Focus: Balance de pie + Sentadillas")
-    print(f"   Action space: {env.action_space.shape}")
-    print(f"   Observation space: {env.observation_space.shape}")
-    
-    return env
-
-def test_simple_balance_env(duration_steps=1000):
-    """
-    Test básico del entorno simplificado
-    """
-    
-    print("🧪 Testing Simple Balance Environment...")
-    
-    env = create_simple_balance_squat_env(render_mode='human')
-    
-    obs, info = env.reset()
-    total_reward = 0
-    
-    for step in range(duration_steps):
-        # Acción aleatoria o acción de balance básica
-        if step < 100:
-            # Primeros pasos: acción neutra para balance
-            action = np.array([0.3, 0.4, 0.3, 0.4, 0.2, 0.2])  # Presiones base
-        else:
-            # Después: acciones aleatorias suaves
-            action = env.action_space.sample() * 0.5 + 0.25  # Suavizar
-        
-        obs, reward, done, truncated, info = env.step(action)
-        total_reward += reward
-        
-        if step % 200 == 0:
-            print(f"   Step {step}: Reward = {reward:.2f}, Total = {total_reward:.2f}")
-        
-        if done:
-            print(f"   Episode terminado en step {step}")
-            break
-    
-    env.close()
-    print(f"🎉 Test completado. Recompensa total: {total_reward:.2f}")
-    
-    return total_reward
-
-
-# ===== EJEMPLO DE USO =====
-
-if __name__ == "__main__":
-    
-    print("🎯 SIMPLE BALANCE & SQUAT ENVIRONMENT")
-    print("=" * 50)
-    print("Objetivo: Entrenar balance de pie y sentadillas")
-    print("Enfoque: Simplificado - Solo lo esencial")
-    print("=" * 50)
-    
-    # Test del entorno
-    test_simple_balance_env(duration_steps=500)

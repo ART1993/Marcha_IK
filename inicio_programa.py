@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 import pybullet as p
 
-from Gymnasium_Start.Simplified_BalanceSquat_Trainer import create_balance_squat_trainer
+from Gymnasium_Start.Simplified_Lift_Leg_Trainer import create_balance_leg_trainer
 from Archivos_Apoyo.simple_log_redirect import init_simple_logging, log_print, both_print
 
 def _setup_multiprocessing_simple():
@@ -38,7 +38,7 @@ def train_single_leg_balance(total_timesteps=2000000, n_envs=4, resume=True):
     log_print("  ✅ Control automático de altura de rodilla")
     log_print("  ✅ Tobillos fijos para mayor estabilidad")
     _setup_multiprocessing_simple()
-    trainer = create_balance_squat_trainer(
+    trainer = create_balance_leg_trainer(
         total_timesteps=total_timesteps,
         n_envs=n_envs
     )

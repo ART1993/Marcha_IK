@@ -17,7 +17,7 @@ class SimpleLogRedirect:
     def __init__(self, log_file=None):
         if log_file is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_file = f"./logs_balance_squat/training_{timestamp}.txt"
+            log_file = f"./logs_lift_leg/training_{timestamp}.txt"
         
         # Crear directorio si no existe
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     log_print("   PAM 0 (left_hip_flexor): P=2.1atm, θ=0.12rad")
     
     # Prints que VAN A AMBOS (eventos importantes)
-    both_print("🏋️ Transitioning to SQUAT mode")
+    both_print("🏋️ Transitioning to lift_leg mode")
     both_print("🎉 Training completed!")
     
     # Cerrar al final

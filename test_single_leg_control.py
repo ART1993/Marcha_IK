@@ -9,7 +9,7 @@ import time
 import os
 
 # Importar SOLO tu entorno existente (sin modificaciones)
-from Gymnasium_Start.Simple_BalanceSquat_BipedEnv import Simple_BalanceSquat_BipedEnv
+from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv
 
 def verificar_prerequisites():
     """
@@ -18,7 +18,7 @@ def verificar_prerequisites():
     print("🔍 PASO 1: Verificando prerequisites...")
     
     # Verificar modelo entrenado
-    model_path = "./models_balance_squat/best_model.zip"
+    model_path = "./models_lift_leg/best_model.zip"
     if not os.path.exists(model_path):
         print(f"❌ ERROR: Modelo no encontrado en {model_path}")
         print(f"   Solución: Ejecuta primero el entrenamiento con 'python inicio_programa.py'")
@@ -36,7 +36,7 @@ def verificar_prerequisites():
     
     # Verificar que podemos importar el entorno
     try:
-        env_test = Simple_BalanceSquat_BipedEnv(render_mode='direct', action_space="pam")
+        env_test = Simple_Lift_Leg_BipedEnv(render_mode='direct', action_space="pam")
         env_test.close()
         print("✅ Entorno importado y probado correctamente")
     except Exception as e:
@@ -308,7 +308,7 @@ def main():
     
     # Crear entorno (tu clase sin modificaciones)
     print("🏗️ Creando entorno de simulación...")
-    env = Simple_BalanceSquat_BipedEnv(
+    env = Simple_Lift_Leg_BipedEnv(
         render_mode='human',    # Para que puedas ver la simulación
         action_space="pam",     # Usando tus 6 PAMs
         enable_curriculum=False # Sin curriculum para control directo
