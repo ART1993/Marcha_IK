@@ -231,8 +231,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Aplicar fuerzas PAM corregidas
         joint_torques = self._apply_pam_forces(corrected_pressures)
         
-        
-        
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
@@ -280,6 +278,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             'current_task': current_task,
             'episode_reward': self.episode_reward
         }
+        if self.step_count<=150 and self.step_count%10==0:
+            self.foot_contact_ground()
         
         # CONSERVAR tu debug existente
         if self.step_count % 1500 == 0 or done:
@@ -435,8 +435,9 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
-        log_print(f"Pierna de apoyo: {balance_info['support_leg']}")
-        log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
+        if self.step_count%100==0:
+            log_print(f"Pierna de apoyo: {balance_info['support_leg']}")
+            log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
 
         return joint_torques
     
@@ -671,7 +672,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.25],  # Altura inicial ligeramente mayor
+            [0, 0, 1.21],  # Altura inicial ligeramente mayor
             useFixedBase=False
         )
         
@@ -688,10 +689,10 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
-            0: 0.1,   # left_hip - ligera flexión
+            0: 0.0,   # left_hip - ligera flexión
             1: 0.0,   # left_knee - extendida (pierna de soporte)
-            3: 0.2,   # right_hip - más flexión
-            4: 0.4,   # right_knee - flexionada (pierna levantada)
+            3: 0.0,   # right_hip - más flexión
+            4: 0.0,   # right_knee - flexionada (pierna levantada)
         }
         
         for joint_id, pos in initial_positions.items():
@@ -742,6 +743,14 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         print(f"🔄 Single leg balance environment reset - Ready for training")
         
         return observation, info
+    
+    def foot_contact_ground(self):
+        # Verificar contacto con suelo después del reset
+        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, 2, -1)  # pie izquierdo
+        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, 5, -1)  # pie derecho
+
+        log_print(f"Contactos pie izquierdo: {len(left_contacts)}")
+        log_print(f"Contactos pie derecho: {len(right_contacts)}")
     
     def close(self):
         try:
