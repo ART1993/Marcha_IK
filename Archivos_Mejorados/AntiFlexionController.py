@@ -2,8 +2,8 @@ import pybullet as p
 
 class AntiFlexionController:
     """
-    Controlador basado en principio de reciprocidad neuronal
-    Inhibe flexores cuando extensores necesitan activarse
+        Controlador basado en principio de reciprocidad neuronal
+        Inhibe flexores cuando extensores necesitan activarse
     """
     
     def __init__(self):
@@ -31,32 +31,3 @@ class AntiFlexionController:
                     corrected_pressures[5] *= (1.0 - inhibition_factor)
         
         return corrected_pressures
-    
-
-def configure_enhanced_ankle_springs(robot_id):
-    """
-    Configurar resortes pasivos fuertes en tobillos para estabilidad
-    """
-    
-    # Obtener posiciones actuales de tobillos
-    ankle_states = p.getJointStates(robot_id, [2, 5])  # left_ankle, right_ankle
-    
-    ankle_torques = []
-    for i, (pos, vel, _, _) in enumerate(ankle_states):
-        # Resorte fuerte hacia posición neutral (0.0)
-        spring_torque = -80.0 * pos  # Rigidez alta
-        damping_torque = -5.0 * vel   # Amortiguación
-        
-        total_torque = spring_torque + damping_torque
-        ankle_torques.append(total_torque)
-        
-        # Aplicar control de torque en tobillos
-        ankle_joint = 2 if i == 0 else 5
-        p.setJointMotorControl2(
-            robot_id,
-            ankle_joint,
-            p.TORQUE_CONTROL,
-            force=total_torque
-        )
-    
-    return ankle_torques

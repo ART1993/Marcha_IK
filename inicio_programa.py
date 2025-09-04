@@ -15,7 +15,7 @@ def _setup_multiprocessing_simple():
         print("⚠️ Multiprocessing already initialized with different method")
 
 
-def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
+def train_single_leg_balance(total_timesteps=2000000, n_envs=4, resume=True):
     """
     Función principal para entrenar balance y sentadillas
     """
@@ -24,7 +24,7 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
     logger = init_simple_logging()
     
     # PRINTS QUE MANTENER EN CONSOLA (para ver progreso)
-    print("🎯 SIMPLIFIED BALANCE & SQUAT TRAINING")
+    print("🎯 SINGLE LEG BALANCE TRAINING")
     print("=" * 60)
     print("📝 Details → training_YYYYMMDD_HHMMSS.txt")
     print("🖥️  Progress → console")
@@ -32,9 +32,11 @@ def train_balance_and_squats(total_timesteps=2000000, n_envs=4, resume=True):
     
     # DETALLES AL LOG (cambiar print por log_print)
     log_print("Objetivo específico:")
-    log_print("  ✅ Mantener equilibrio de pie estático") 
-    log_print("  ✅ Realizar sentadillas controladas")
-    log_print("  ✅ Usar 6 músculos PAM antagónicos eficientemente")
+    log_print("Objetivo específico:")
+    log_print("  ✅ Mantener equilibrio en una sola pierna")
+    log_print("  ✅ Alternar entre pierna izquierda y derecha")
+    log_print("  ✅ Control automático de altura de rodilla")
+    log_print("  ✅ Tobillos fijos para mayor estabilidad")
     _setup_multiprocessing_simple()
     trainer = create_balance_squat_trainer(
         total_timesteps=total_timesteps,

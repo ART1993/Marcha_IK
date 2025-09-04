@@ -9,16 +9,14 @@ import numpy as np
 import math
 from collections import deque
 
-from Controlador.ankle_control_and_curriculum_fixes import IntelligentAnkleControl
-
-
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
-from Archivos_Mejorados.RewardSystemSimple import UltraSimpleRewardSystem, UltraSimpleActionSelector
-from Archivos_Mejorados.AntiFlexionController import AntiFlexionController, configure_enhanced_ankle_springs               
+from Archivos_Mejorados.RewardSystemSimple import SingleLegBalanceRewardSystem, \
+                                                    SingleLegActionSelector
+from Archivos_Mejorados.AntiFlexionController import AntiFlexionController               
 
 class Simple_BalanceSquat_BipedEnv(gym.Env):
     """
@@ -122,8 +120,13 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.left_foot_id = 2
-        self.right_foot_id = 5
+        self.joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
+        self.left_foot_link_id = 2
+        self.right_foot_link_id = 5
+
+        # Añadir tracking de pierna levantada
+        self.raised_leg = 'left'  # 'left' o 'right' - cuál pierna está levantada
+        self.target_knee_height = 0.8  # Altura objetivo de la rodilla levantada
         self.episode_reward = 0
         
         log_print(f"🤖 Simplified Balance & Squat Environment initialized")
@@ -228,9 +231,8 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Aplicar fuerzas PAM corregidas
         joint_torques = self._apply_pam_forces(corrected_pressures)
         
-        # NUEVO: Aplicar control de tobillos mejorado
-        configure_enhanced_ankle_springs(self.robot_id)
-
+        
+        
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
@@ -249,16 +251,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 force=torque
             )
 
-        # NUEVO: Control inteligente de tobillos
-        if self.ankle_control:
-            left_ankle_torque, right_ankle_torque = self.ankle_control.calculate_ankle_torques(
-                self.robot_data, self.zmp_calculator
-            )
-            
-            # Aplicar torques calculados
-            p.setJointMotorControl2(self.robot_id, self.left_foot_id, p.TORQUE_CONTROL, force=left_ankle_torque)  # left_ankle
-            p.setJointMotorControl2(self.robot_id, self.right_foot_id, p.TORQUE_CONTROL, force=right_ankle_torque)  # right_ankle
-        
         p.stepSimulation()
 
         # ✅ LLAMAR DEBUG OCASIONALMENTE
@@ -308,7 +300,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Pie izquierdo - alta fricción para agarre
         p.changeDynamics(
             self.robot_id, 
-            self.left_foot_id,
+            self.left_foot_link_id,
             lateralFriction=1.2,        # Fricción lateral alta
             spinningFriction=0.8,       # Fricción rotacional
             rollingFriction=0.1,        # Fricción de rodadura baja
@@ -320,7 +312,7 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
         # Pie derecho - mismas propiedades
         p.changeDynamics(
             self.robot_id,
-            self.right_foot_id, 
+            self.right_foot_link_id, 
             lateralFriction=1.2,
             spinningFriction=0.8,
             rollingFriction=0.1,
@@ -363,6 +355,57 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
 # ==================================================================================================================================================================== #
 # =================================================== Métodos de Aplicación de fuerzas PAM =========================================================================== #
 # ==================================================================================================================================================================== #
+    
+    def _apply_automatic_knee_control(self, base_torques):
+        """Control automático de la rodilla levantada basado en altura"""
+        
+        # Determinar qué pierna está levantada basado en contactos
+        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 2, -1)) > 0
+        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 5, -1)) > 0
+        
+        if left_contact and not right_contact:
+            # Pierna derecha levantada - controlar rodilla derecha (índice 3)
+            controlled_knee_idx = 3  # right_knee en joint_torques
+            knee_joint_id = 4        # right_knee_joint en PyBullet
+        elif right_contact and not left_contact:
+            # Pierna izquierda levantada - controlar rodilla izquierda (índice 1)
+            controlled_knee_idx = 1  # left_knee en joint_torques  
+            knee_joint_id = 1        # left_knee_joint en PyBullet
+        else:
+            # Ambas o ninguna - no aplicar control automático
+            return base_torques
+        self.target_knee_height
+        # Obtener altura actual de la rodilla
+        #knee link state y posición
+        knee_state = p.getLinkState(self.robot_id, knee_joint_id)
+        current_knee_height = knee_state[0][2]
+        
+        # Control PD simple hacia altura objetivo
+        height_error = self.target_knee_height - current_knee_height
+        # knee_joint_state y velocidad
+        knee_velocity = p.getJointState(self.robot_id, knee_joint_id)[1]
+        
+        # Torque de control automático
+        kp = 80.0  # Ganancia proporcional para h
+        kd = 12.0   # Ganancia derivativa de h
+        
+        control_torque = kp * height_error - kd * knee_velocity
+        
+        # Combinar con torque base (PAM) usando peso
+        base_torques[controlled_knee_idx] = (
+            0.4 * base_torques[controlled_knee_idx] +  # 40% PAM
+            0.6 * control_torque                        # 60% control automático
+        )
+
+        # Limitar torque final
+        max_knee_torque = 100.0
+        base_torques[controlled_knee_idx] = np.clip(
+            base_torques[controlled_knee_idx], 
+            -max_knee_torque, 
+            max_knee_torque
+        )
+        
+        return base_torques
 
     def _apply_pam_forces(self, pam_pressures):
         """
@@ -384,143 +427,161 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             # joint_states[2] = right_hip (joint 3)
             # joint_states[3] = right_knee (joint 4)
         """
-        # Obtener estados articulares actuales
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # caderas y rodillas
-        # para joint states cada estado representa:
+       
+        # NUEVA LÓGICA: Control automático de rodilla levantada
+        joint_torques = self._calculate_basic_joint_torques(pam_pressures)
         
+        # Aplicar control automático de altura de rodilla
+        joint_torques = self._apply_automatic_knee_control(joint_torques)
+
+        balance_info = self.current_balance_status
+        log_print(f"Pierna de apoyo: {balance_info['support_leg']}")
+        log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
+
+        return joint_torques
+    
+    def _calculate_basic_joint_torques(self, pam_pressures):
+        """
+        Calcular torques básicos de articulaciones desde presiones PAM.
+        
+        Este método reemplaza la parte inicial de _apply_pam_forces
+        antes del control automático de rodilla.
+        """
+        
+        # Obtener estados articulares (solo joints activos: caderas y rodillas)
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  
         joint_positions = [state[0] for state in joint_states]
         joint_velocities = [state[1] for state in joint_states]
         
-        pam_forces = np.zeros(6)  # Fuerzas reales de cada PAM
-
-        # ===== CALCULAR FUERZAS REALES PAM =====
-    
+        # Calcular fuerzas PAM reales
+        pam_forces = np.zeros(6)
         muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
                         'right_hip_extensor', 'left_knee_flexor', 'right_knee_flexor']
         
         for i, pressure_normalized in enumerate(pam_pressures):
-            # ===== PASO 1: DETERMINAR ARTICULACIÓN Y ÁNGULO =====
-        
+            # Determinar articulación correspondiente
             if i in [0, 1]:  # Cadera izquierda
-                joint_angle = joint_positions[0]  # left_hip
+                joint_angle = joint_positions[0]
                 joint_velocity = joint_velocities[0]
             elif i in [2, 3]:  # Cadera derecha  
-                joint_angle = joint_positions[2]  # right_hip
+                joint_angle = joint_positions[2]
                 joint_velocity = joint_velocities[2]
             elif i == 4:  # Rodilla izquierda
-                joint_angle = joint_positions[1]  # left_knee
+                joint_angle = joint_positions[1]
                 joint_velocity = joint_velocities[1]
             elif i == 5:  # Rodilla derecha
-                joint_angle = joint_positions[3]  # right_knee
+                joint_angle = joint_positions[3]
                 joint_velocity = joint_velocities[3]
-
-            # ===== PASO 2: CALCULAR CONTRACCIÓN REALISTA =====
-        
-            # Convertir presión normalizada [0,1] a presión real [Pa]
+            
+            # Presión real
             real_pressure = self.min_pressure + pressure_normalized * (self.max_pressure - self.min_pressure)
             
-            # Calcular contracción basada en activación muscular realista
+            # Calcular contracción biomecánica
             if i in [0, 2]:  # Flexores de cadera
-                # Flexores se activan con flexión positiva (hacia adelante)
-                max_flexion = 1.2  # rad (~69 grados)
+                max_flexion = 1.2
                 activation = max(0, joint_angle) / max_flexion
-                contraction_ratio = activation * 0.25  # Máximo 25% contracción
-                
-            elif i in [1, 3]:  # Extensores de cadera  
-                # Extensores se activan con extensión (ángulo negativo) 
-                max_extension = 1.2  # rad
+                contraction_ratio = activation * 0.25
+            elif i in [1, 3]:  # Extensores de cadera
+                max_extension = 1.2
                 activation = max(0, -joint_angle) / max_extension
                 contraction_ratio = activation * 0.25
-                
             elif i in [4, 5]:  # Flexores de rodilla
-                # Rodillas solo flexión (0 a ~90 grados)
-                max_knee_flexion = 1.571  # rad (90 grados)
+                max_knee_flexion = 1.571
                 activation = max(0, joint_angle) / max_knee_flexion
-                contraction_ratio = activation * 0.3  # Rodillas pueden contraerse más
+                contraction_ratio = activation * 0.3
             
-            # Limitar contracción
-            contraction_ratio = np.clip(contraction_ratio, 0, 0.3)  # Seguro
+            contraction_ratio = np.clip(contraction_ratio, 0, 0.3)
             
+            # Calcular fuerza desde modelo PAM
             muscle_name = muscle_names[i]
             pam_muscle = self.pam_muscles[muscle_name]
-            
-            # Calcular fuerza base del modelo físico
             raw_force = pam_muscle.force_model_new(real_pressure, contraction_ratio)
-    
-                
-            # Modular por velocidad articular (damping biomecánico)
-            velocity_damping = 1.0 - 0.1 * abs(joint_velocity)  # Reducir fuerza con velocidad alta
+            
+            # Damping por velocidad
+            velocity_damping = 1.0 - 0.1 * abs(joint_velocity)
             velocity_damping = np.clip(velocity_damping, 0.5, 1.0)
             
-            raw_force *= velocity_damping
-            
-            pam_forces[i] = raw_force
-            
-            # Debug detallado cada 1500 pasos (1 segundo aprox)
-            if self.step_count % self.frecuency_simulation == 0 and i < 2:  # Solo primeros 2 PAMs para no saturar
-                log_print(f"   PAM {i} ({muscle_name}): "
-                    f"P={real_pressure/101325:.1f}atm, "
-                    f"θ={joint_angle:.2f}rad, "
-                    f"ε={contraction_ratio:.3f}, "
-                    f"F={raw_force:.1f}N")
-                
-        # ===== PASO 2: CONVERTIR FUERZAS PAM A TORQUES ARTICULARES =====
+            pam_forces[i] = raw_force * velocity_damping
         
-        # Convertir fuerzas PAM a torques articulares
-        moment_arm = 0.05  # Brazo de palanca típico (5cm)
+        # Convertir a torques articulares
+        moment_arm = 0.05
         joint_torques = np.zeros(4)
-        effective_moment_arm=moment_arm*(0.7+0.5*(np.cos(joint_angle)))
-        # ✅ CADERA IZQUIERDA: Antagónico (flexor vs extensor)
-        # Torque resultante = momento_flexor - momento_extensor
-        flexor_moment = pam_forces[0] * effective_moment_arm    # PAM 0: flexor
-        extensor_moment = -pam_forces[1] * effective_moment_arm # PAM 1: extensor (ya negativo)
-        joint_torques[0] = flexor_moment + extensor_moment  # Suma algebraica
         
-        # ✅ RODILLA IZQUIERDA: Flexor + resorte pasivo de extensión
-        flexor_moment = pam_forces[4] * effective_moment_arm    # PAM 4: flexor
-        passive_spring_torque = -150.0 * (joint_positions[1] - 0.1)  # Resorte a 0.1 rad
-        damping_torque = -10.0 * joint_velocities[1]  # Damping proporcional a velocidad
-        joint_torques[1] = flexor_moment + passive_spring_torque + damping_torque
-            
-        # ✅ CADERA DERECHA: Antagónico (flexor vs extensor)
-        flexor_moment = pam_forces[2] * effective_moment_arm    # PAM 2: flexor  
-        extensor_moment = -pam_forces[3] * effective_moment_arm # PAM 3: extensor
+        #
+        effective_angle_flexor=lambda angle_used: (0.7 + 0.5 * np.cos(abs(angle_used)))
+        effective_angle_extensor=lambda angle_used: (0.7 + 0.5 * np.sin(abs(angle_used)))
+
+        # Cadera izquierda (antagónica)
+        flexor_moment = pam_forces[0] * moment_arm * effective_angle_flexor(joint_positions[0])
+        extensor_moment = -pam_forces[1] * moment_arm * effective_angle_extensor(joint_positions[0])
+        joint_torques[0] = flexor_moment + extensor_moment
+        
+        # Rodilla izquierda (flexor + resorte pasivo)
+        effective_moment_arm = moment_arm * (0.5 + 0.5 * np.cos(joint_positions[1]))
+        flexor_moment = pam_forces[4] * effective_moment_arm
+        passive_spring = -120.0 * np.sin(joint_positions[1])
+        damping = -8.0 * joint_velocities[1]
+        joint_torques[1] = flexor_moment + passive_spring + damping
+        
+        # Cadera derecha (antagónica)
+        flexor_moment = pam_forces[2] * moment_arm*effective_angle_flexor(joint_positions[2])
+        extensor_moment = -pam_forces[3] * moment_arm*effective_angle_extensor(joint_positions[2])
         joint_torques[2] = flexor_moment + extensor_moment
         
-        # ✅ RODILLA DERECHA: Flexor + resorte pasivo
-        flexor_moment = pam_forces[5] * effective_moment_arm    # PAM 5: flexor
-        passive_spring_torque = -150.0 * (joint_positions[3] - 0.1)
-        damping_torque = -10.0 * joint_velocities[3]  # Damping proporcional a velocidad
-        joint_torques[3] = flexor_moment + passive_spring_torque + damping_torque
+        # Rodilla derecha (flexor + resorte pasivo)
+        effective_moment_arm = moment_arm * (0.5 + 0.5 * np.cos(joint_positions[3]))
+        flexor_moment = pam_forces[5] * effective_moment_arm
+        passive_spring = -120.0 * np.sin(joint_positions[3])
+        damping = -8.0 * joint_velocities[3]
+        joint_torques[3] = flexor_moment + passive_spring + damping
         
-        # Debug torques
-        if self.step_count % self.frecuency_simulation == 0:
-            log_print(f"Joint Torques: LH={joint_torques[0]:.1f}, LK={joint_torques[1]:.1f}, "
-                f"RH={joint_torques[2]:.1f}, RK={joint_torques[3]:.1f}")
-        
-        # ===== PASO 6: APLICAR LÍMITES DE SEGURIDAD =====
-    
-        max_torque = 100.0  # Nm - límite de seguridad
-        joint_torques = np.clip(joint_torques, -max_torque, max_torque)
-        
-        # Debug de torques
-        if self.step_count % self.frecuency_simulation == 0:
-            log_print(f"   Joint Torques: "
-                f"LH={joint_torques[0]:.1f}, "
-                f"LK={joint_torques[1]:.1f}, "
-                f"RH={joint_torques[2]:.1f}, "
-                f"RK={joint_torques[3]:.1f} Nm")
-        
-        # ===== ACTUALIZAR ESTADOS PAM =====
-        
+        # Actualizar estados PAM
         self.pam_states = {
             'pressures': pam_pressures.copy(),
-            'forces': np.abs(pam_forces),  # Magnitudes para observación
-            'raw_forces': pam_forces,      # Con signo para debug
+            'forces': np.abs(pam_forces),
+            'raw_forces': pam_forces,
             'joint_torques': joint_torques.copy()
         }
-
+        
         return joint_torques
+    
+    def _get_single_leg_observation(self):
+        """
+        Observación específica para equilibrio en una pierna.
+        Reemplaza _get_simple_observation con información más relevante.
+        """
+        
+        obs = []
+        
+        # ===== ESTADO DEL TORSO (8 elementos) =====
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        
+        # Posición y orientación  
+        obs.extend([pos[0], pos[2], euler[0], euler[1]])  # x, z, roll, pitch
+        
+        # Velocidades
+        obs.extend([lin_vel[0], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
+        
+        # ===== ESTADOS ARTICULARES (4 elementos) =====
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])  # Solo joints activos
+        joint_positions = [state[0] for state in joint_states]
+        obs.extend(joint_positions)
+        
+        # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
+        
+        # Contactos
+        left_contact = len(p.getContactPoints(self.robot_id, 0, 2, -1)) > 0
+        right_contact = len(p.getContactPoints(self.robot_id, 0, 5, -1)) > 0
+        obs.extend([float(left_contact), float(right_contact)])
+        
+        # Alturas de rodillas
+        left_knee_state = p.getLinkState(self.robot_id, 1)
+        right_knee_state = p.getLinkState(self.robot_id, 4)
+        obs.extend([left_knee_state[0][2], right_knee_state[0][2]])
+        
+        return np.array(obs, dtype=np.float32)
     
     def _get_simple_observation(self):
         """
@@ -574,117 +635,111 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
     
     @property
     def contacto_pies(self):
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)) > 0
+        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_link_id, -1)) > 0
+        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_link_id, -1)) > 0
         return left_contact, right_contact
     
 
     def reset(self, seed=None, options=None):
         """
-            Reset SIMPLIFICADO - Solo configuración esencial para balance
+        Reset modificado específicamente para equilibrio en una pierna.
+        
+        Reemplazar el método reset() del entorno original con este.
         """
         super().reset(seed=seed)
-
-        # REEMPLAZA la lógica compleja de curriculum update
+        
+        # Actualizar reward system y action selector del episodio anterior si existen
         if hasattr(self, 'action_selector') and self.action_selector and hasattr(self, 'episode_reward'):
             self.action_selector.update_after_episode(self.episode_reward)
         
-        # ===== RESET FÍSICO BÁSICO =====
-        
+        # ===== RESET FÍSICO =====
         p.resetSimulation()
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.time_step)
-        # En reset():
-        self.pam_control_active = False
-        self.contact_established = False
-        self.contact_stable_steps = 0
-        # Ejemplo, no hace falta ya que puedo usar count steps y ya
-
-        # Configurar solver para mejor estabilidad
+        
+        # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
-            numSolverIterations=10,        
-            numSubSteps=4,                 
-            contactBreakingThreshold=0.001, 
-            erp=0.8,                       
-            contactERP=0.9,                
-            frictionERP=0.8,               
+            numSolverIterations=12,
+            numSubSteps=4,
+            contactBreakingThreshold=0.001,
+            erp=0.8,
+            contactERP=0.9,
+            frictionERP=0.8,
         )
         
         # Cargar entorno
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.21],  # Posición inicial de pie
-            # [0, 0, 0, 1],  # Orientación neutral
+            [0, 0, 1.25],  # Altura inicial ligeramente mayor
             useFixedBase=False
         )
-
-        self.reward_system = UltraSimpleRewardSystem(self.robot_id, self.plane_id)
+        
+        # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
+        
+        # Nuevo sistema de recompensas
+        self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, self.plane_id)
+        
+        # Nuevo selector de acciones
         if not hasattr(self, 'action_selector') or not self.action_selector:
-            self.action_selector = UltraSimpleActionSelector(self)
+            self.action_selector = SingleLegActionSelector(self)
         
-        # ===== CONFIGURACIÓN PARA BALANCE ESTÁTICO =====
+        # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
-        # Posiciones articulares para estar de pie (balance neutro)
-        self.neutral_positions = {
-            0:0.0,   # left_hip - neutral
-            1:0.0,   # left_knee - ligeramente flexionada para estabilidad
-            2:0.0,   # left_anckle. Por si el resorte lo dejo con angulo no nulo
-            3:0.0,   # right_hip - neutral  
-            4:0.0,   # right_knee - ligeramente flexionada
-            5:0.0,   # right_anckle - lo mismo que antes
+        # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
+        initial_positions = {
+            0: 0.1,   # left_hip - ligera flexión
+            1: 0.0,   # left_knee - extendida (pierna de soporte)
+            3: 0.2,   # right_hip - más flexión
+            4: 0.4,   # right_knee - flexionada (pierna levantada)
         }
         
-        for i, pos in self.neutral_positions.items():
-            p.resetJointState(self.robot_id, i, pos)
-            p.setJointMotorControl2(self.robot_id, i, p.VELOCITY_CONTROL, force=0)
+        for joint_id, pos in initial_positions.items():
+            p.resetJointState(self.robot_id, joint_id, pos)
+            p.setJointMotorControl2(self.robot_id, joint_id, p.VELOCITY_CONTROL, force=0)
         
+        # ===== CONFIGURACIÓN DE DATOS Y CALCULADORES =====
         
-        # SIN velocidad inicial - queremos balance estático
-        
-        # ===== Sistemas de apoyo ===== #
-        # Robot data para métricas básicas
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
-         # ZMP calculator para estabilidad
+        
+        # ZMP calculator (todavía útil para métricas)
         self.zmp_calculator = ZMPCalculator(
             robot_id=self.robot_id,
-            left_foot_id=self.left_foot_id,
-            right_foot_id=self.right_foot_id,
+            left_foot_id=2,   # left_foot_link
+            right_foot_id=5,  # right_foot_link
             dt=self.time_step,
             robot_data=self.robot_data
         )
-        self._configure_contact_friction()
-        self.ankle_control = IntelligentAnkleControl(self.robot_id)
-
-        # Reset de variables
-        self.episode_reward = 0
-        self.total_reward = 0
-        self._friction_configured = False  # Flag para configuración de fricción
-
-        # Estabilización inicial con física mejorada
-        for _ in range(100):  # Más steps para estabilización
-            p.stepSimulation()
-
-        # ===== INICIALIZAR VARIABLES DE CONTROL =====
-        self.pam_control_active = False
-        self.contact_established = False
-        self.contact_stable_steps = 0
-        self.step_count = 0
         
-        # Inicializar estados PAM en modo neutro
+        self._configure_contact_friction()
+        
+        # NO crear ankle_control ya que los tobillos están fijos
+        
+        # ===== RESET DE VARIABLES =====
+        
+        self.episode_reward = 0
+        self.step_count = 0
         self.pam_states = {
             'pressures': np.zeros(self.num_active_pams),
             'forces': np.zeros(self.num_active_pams)
         }
         
-        # Obtener observación inicial
-        observation = self._get_simple_observation()
-        info = {
-                    'episode_reward': 0,
-                    'episode_length': 0,
-                }
+        # ===== ESTABILIZACIÓN INICIAL =====
         
-        print(f"   🔄 Environment reset - Ready for balance/squat training")
+        # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
+        for _ in range(150):
+            p.stepSimulation()
+        
+        # Obtener observación inicial
+        observation = self._get_single_leg_observation()
+        
+        info = {
+            'episode_reward': 0,
+            'episode_length': 0,
+            'target_task': 'single_leg_balance'
+        }
+        
+        print(f"🔄 Single leg balance environment reset - Ready for training")
         
         return observation, info
     
@@ -694,6 +749,26 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 p.disconnect(self.physics_client)
         except:
             pass
+
+    @property
+    def current_balance_status(self):
+        """Información actual del equilibrio en una pierna"""
+        if hasattr(self, 'reward_system') and self.reward_system:
+            return {
+                'support_leg': self.reward_system.current_support_leg,
+                'raised_leg': self.reward_system.raised_leg,
+                'balance_time': self.reward_system.single_leg_time,
+                'target_knee_height': self.target_knee_height,
+                'episode_step': self.step_count
+            }
+        else:
+            return {
+                'support_leg': None,
+                'raised_leg': None,
+                'balance_time': 0,
+                'target_knee_height': self.target_knee_height,
+                'episode_step': self.step_count
+            }
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
@@ -709,6 +784,13 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 joint_states = p.getJointStates(self.robot_id, [1, 4])  # rodillas
                 left_knee_angle = joint_states[0][0]
                 right_knee_angle = joint_states[1][0]
+
+                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
+                log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
+                log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
+                
+                # AÑADIR debug de biomecánica de caderas
+                self._debug_moment_arms(pam_pressures)
                 
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
@@ -729,6 +811,43 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
+
+    def _debug_moment_arms(self, pam_pressures):
+        """
+        Método de debug para verificar que la biomecánica es correcta.
+        Llamar ocasionalmente durante el entrenamiento.
+        """
+        
+        if self.step_count % self.frecuency_simulation == 0:  # Cada segundo
+            
+            joint_states = p.getJointStates(self.robot_id, [0, 3])  # Solo caderas
+            left_hip_angle = joint_states[0][0]
+            right_hip_angle = joint_states[1][0]
+            
+            # Calcular factores de eficiencia
+            left_flexor_eff = self._hip_flexor_moment_arm_factor(left_hip_angle)
+            left_extensor_eff = self._hip_extensor_moment_arm_factor(left_hip_angle)
+            
+            right_flexor_eff = self._hip_flexor_moment_arm_factor(right_hip_angle)
+            right_extensor_eff = self._hip_extensor_moment_arm_factor(right_hip_angle)
+            
+            log_print(f"\n🦴 Biomecánica Debug (Step {self.step_count}):")
+            log_print(f"   Cadera Izq: {math.degrees(left_hip_angle):.1f}° - "
+                    f"Flexor eff: {left_flexor_eff:.2f}, Extensor eff: {left_extensor_eff:.2f}")
+            log_print(f"   Cadera Der: {math.degrees(right_hip_angle):.1f}° - "
+                    f"Flexor eff: {right_flexor_eff:.2f}, Extensor eff: {right_extensor_eff:.2f}")
+            
+            # Verificación lógica
+            if left_hip_angle > 0 and left_extensor_eff > left_flexor_eff:
+                log_print(f"   ✅ Correcto: Cadera izq flexionada, extensor más eficiente")
+            elif left_hip_angle <= 0 and left_flexor_eff > left_extensor_eff:
+                log_print(f"   ✅ Correcto: Cadera izq extendida, flexor más eficiente")
+            
+            # Mostrar presiones PAM relevantes
+            log_print(f"   PAM Presiones: LH_flex={pam_pressures[0]:.2f}, "
+                    f"LH_ext={pam_pressures[1]:.2f}, "
+                    f"RH_flex={pam_pressures[2]:.2f}, "
+                    f"RH_ext={pam_pressures[3]:.2f}")
 
 # ===== FUNCIÓN DE USO FÁCIL =====
 

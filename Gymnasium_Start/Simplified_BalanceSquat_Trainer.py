@@ -82,10 +82,10 @@ class Simplified_BalanceSquat_Trainer:
         
         # Configuración optimizada para sistemas de 6 músculos antagónicos
         self.env_config = {
-                'clip_obs': 10.0,      # Solo se usa para balance
-                'clip_reward': 10.0,   # Solo se usa para balance
-                'model_prefix': 'balance_squat_pam',
-                'description': 'Balance and Squats with 6 PAMs'
+                'clip_obs': 10.0,      
+                'clip_reward': 15.0,   
+                'model_prefix': 'single_leg_balance_pam',
+                'description': 'Balance and Squats with 6 PAMs + Auto Knee Control'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -124,6 +124,7 @@ class Simplified_BalanceSquat_Trainer:
                 env = Simple_BalanceSquat_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
                     action_space=self.action_space,
+                    enable_curriculum=True
                     
                 )
                 

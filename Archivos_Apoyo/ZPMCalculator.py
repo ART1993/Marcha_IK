@@ -75,7 +75,7 @@ class ZMPCalculator:
         self.update_com_history(com_pos)
         
         # Calcular aceleración básica
-        com_acceleration = self.calculate_simple_acceleration(self.dt)
+        com_acceleration = self.calculate_simple_acceleration()
         
         # ===== ECUACIONES ZMP SIMPLIFICADAS =====
         
