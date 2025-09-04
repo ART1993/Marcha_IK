@@ -789,8 +789,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
                 log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
                 
-                # AÑADIR debug de biomecánica de caderas
-                self._debug_moment_arms(pam_pressures)
                 
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
@@ -811,43 +809,6 @@ class Simple_BalanceSquat_BipedEnv(gym.Env):
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
-
-    def _debug_moment_arms(self, pam_pressures):
-        """
-        Método de debug para verificar que la biomecánica es correcta.
-        Llamar ocasionalmente durante el entrenamiento.
-        """
-        
-        if self.step_count % self.frecuency_simulation == 0:  # Cada segundo
-            
-            joint_states = p.getJointStates(self.robot_id, [0, 3])  # Solo caderas
-            left_hip_angle = joint_states[0][0]
-            right_hip_angle = joint_states[1][0]
-            
-            # Calcular factores de eficiencia
-            left_flexor_eff = self._hip_flexor_moment_arm_factor(left_hip_angle)
-            left_extensor_eff = self._hip_extensor_moment_arm_factor(left_hip_angle)
-            
-            right_flexor_eff = self._hip_flexor_moment_arm_factor(right_hip_angle)
-            right_extensor_eff = self._hip_extensor_moment_arm_factor(right_hip_angle)
-            
-            log_print(f"\n🦴 Biomecánica Debug (Step {self.step_count}):")
-            log_print(f"   Cadera Izq: {math.degrees(left_hip_angle):.1f}° - "
-                    f"Flexor eff: {left_flexor_eff:.2f}, Extensor eff: {left_extensor_eff:.2f}")
-            log_print(f"   Cadera Der: {math.degrees(right_hip_angle):.1f}° - "
-                    f"Flexor eff: {right_flexor_eff:.2f}, Extensor eff: {right_extensor_eff:.2f}")
-            
-            # Verificación lógica
-            if left_hip_angle > 0 and left_extensor_eff > left_flexor_eff:
-                log_print(f"   ✅ Correcto: Cadera izq flexionada, extensor más eficiente")
-            elif left_hip_angle <= 0 and left_flexor_eff > left_extensor_eff:
-                log_print(f"   ✅ Correcto: Cadera izq extendida, flexor más eficiente")
-            
-            # Mostrar presiones PAM relevantes
-            log_print(f"   PAM Presiones: LH_flex={pam_pressures[0]:.2f}, "
-                    f"LH_ext={pam_pressures[1]:.2f}, "
-                    f"RH_flex={pam_pressures[2]:.2f}, "
-                    f"RH_ext={pam_pressures[3]:.2f}")
 
 # ===== FUNCIÓN DE USO FÁCIL =====
 
