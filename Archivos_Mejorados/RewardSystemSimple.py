@@ -6,6 +6,8 @@ from enum import Enum
 
 from collections import deque
 
+from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+
 class SingleLegActionType(Enum):
     """Acciones para equilibrio en una pierna"""
     BALANCE_LEFT_SUPPORT = "balance_left_support"    # Equilibrio con pie izquierdo
@@ -306,42 +308,21 @@ class SingleLegActionSelector:
         self.episode_count = 0
         
         # ===== PARÁMETROS DE CURRICULUM =====
-        self.expert_help_ratio = 0.85  # Empezar con más ayuda por mayor dificultad
-        self.min_expert_help = 0.2     # Mantener más ayuda mínima
+        self.expert_help_ratio = 0.85
+        self.min_expert_help = 0.2
         
-        # ===== PATRONES DE ACCIÓN ESPECÍFICOS =====
-        self.action_patterns = {
-            SingleLegActionType.BALANCE_LEFT_SUPPORT: {
-                # Equilibrio en pierna izquierda, derecha levantada
-                # [left_hip_flex, left_hip_ext, right_hip_flex, right_hip_ext, left_knee_flex, right_knee_flex]
-                'pam_pressures': [0.3, 0.7, 0.7, 0.2, 0.1, 0.8],  # Flexor derecho alto para levantar
-                'description': 'Equilibrio en pierna izquierda'
-            },
-            SingleLegActionType.BALANCE_RIGHT_SUPPORT: {
-                # Equilibrio en pierna derecha, izquierda levantada  
-                'pam_pressures': [0.7, 0.2, 0.3, 0.7, 0.8, 0.1],  # Flexor izquierdo alto para levantar
-                'description': 'Equilibrio en pierna derecha'
-            },
-            SingleLegActionType.TRANSITION_TO_LEFT: {
-                # Transición hacia apoyo en izquierda
-                'pam_pressures': [0.4, 0.5, 0.5, 0.4, 0.3, 0.5],
-                'description': 'Transición hacia pierna izquierda'
-            },
-            SingleLegActionType.TRANSITION_TO_RIGHT: {
-                # Transición hacia apoyo en derecha
-                'pam_pressures': [0.5, 0.4, 0.4, 0.5, 0.5, 0.3],
-                'description': 'Transición hacia pierna derecha'
-            }
-        }
+        # ===== NUEVO: CONTROLADOR BASADO EN ÁNGULOS =====
+        self.angle_controller = AngleBasedExpertController(env.robot_id)
         
         # ===== ESTADO INTERNO =====
-        self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT  # Empezar con izquierda
+        self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
         self.last_10_rewards = deque(maxlen=10)
         self.time_in_current_stance = 0
-        self.target_switch_time = 150  # Cambiar de pierna cada ~3 segundos
+        self.target_switch_time = 150
         
-        print(f"✅ Single Leg Action Selector initialized")
-        print(f"   Starting stance: {self.current_action.value}")
+        log_print(f"✅ Angle-Based Single Leg Action Selector initialized")
+        log_print(f"   Control method: Target angles → PD torques → PAM pressures")
+        log_print(f"   Leg raise angle: 40° (0.7 rad)")
     
     def should_use_expert_action(self):
         """Decidir si usar acción experta o del modelo RL"""
@@ -355,39 +336,61 @@ class SingleLegActionSelector:
         return np.random.random() < effective_ratio
     
     def get_expert_action(self):
-        """Obtener acción experta para equilibrio en una pierna"""
+        """
+        NUEVO: Obtener acción experta usando control basado en ángulos objetivo
         
-        # Obtener patrón base
-        pattern = self.action_patterns[self.current_action]
-        base_pressures = np.array(pattern['pam_pressures'])
+        Proceso:
+        1. Definir ángulos objetivo según tarea actual
+        2. Calcular torques PD necesarios para alcanzar esos ángulos
+        3. Convertir torques a presiones PAM equivalentes
+        4. Añadir pequeñas correcciones por estabilidad
         
-        # ===== ADAPTACIÓN DINÁMICA BASADA EN ESTADO =====
+        Returns:
+            numpy.array: Presiones PAM normalizadas [0,1]
+        """
         
-        # Obtener información actual del robot
-        pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
+        # PASO 1: Obtener ángulos objetivo
+        target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
         
-        # Corrección por inclinación
-        roll_correction = euler[0] * 0.3  # Factor de corrección
-        pitch_correction = euler[1] * 0.3
+        # PASO 2: Calcular torques PD
+        pd_torques = self.angle_controller.calculate_pd_torques(target_angles)
         
-        # Aplicar correcciones sutiles
-        corrected_pressures = base_pressures.copy()
+        # PASO 3: Convertir a presiones PAM
+        base_pressures = self.angle_controller.torques_to_pam_pressures(pd_torques)
         
-        # Corrección lateral (roll)
-        if abs(roll_correction) > 0.05:
-            if roll_correction > 0:  # Inclinado hacia derecha
-                corrected_pressures[0] += min(0.1, roll_correction)  # Más flexión cadera izq
-                corrected_pressures[3] += min(0.1, roll_correction)  # Más extensión cadera der
-            else:  # Inclinado hacia izquierda
-                corrected_pressures[2] += min(0.1, -roll_correction)  # Más flexión cadera der
-                corrected_pressures[1] += min(0.1, -roll_correction)  # Más extensión cadera izq
+        # PASO 4: Añadir correcciones por estabilidad (opcional)
+        corrected_pressures = self._add_stability_corrections(base_pressures)
         
-        # Variación natural pequeña
-        noise = np.random.normal(0, 0.03, size=6)
+        # PASO 5: Variación natural pequeña
+        noise = np.random.normal(0, 0.02, size=6)
         final_pressures = corrected_pressures + noise
         
         return np.clip(final_pressures, 0.0, 1.0)
+    
+    def _add_stability_corrections(self, base_pressures):
+        """
+        Añadir correcciones pequeñas por inclinación para mayor estabilidad
+        """
+        
+        # Obtener orientación actual
+        pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch = euler[0], euler[1]
+        
+        corrected = base_pressures.copy()
+        
+        # Corrección sutil por inclinación lateral (roll)
+        if abs(roll) > 0.05:  # > 3 grados
+            correction_factor = min(0.1, abs(roll) * 0.3)
+            
+            if roll > 0:  # Inclinado hacia derecha → fortalecer lado izquierdo
+                corrected[0] += correction_factor  # left_hip_flexor
+                corrected[1] += correction_factor  # left_hip_extensor
+            else:  # Inclinado hacia izquierda → fortalecer lado derecho
+                corrected[2] += correction_factor  # right_hip_flexor
+                corrected[3] += correction_factor  # right_hip_extensor
+        
+        return corrected
     
     def decide_current_action(self):
         """Decidir qué acción tomar basado en el contexto"""
@@ -446,3 +449,179 @@ class SingleLegActionSelector:
         # Reset para nuevo episodio
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
         self.time_in_current_stance = 0
+
+class AngleBasedExpertController:
+    """
+    Control experto que trabaja con ángulos objetivo en lugar de presiones PAM directas.
+    
+    Mucho más intuitivo: "levanta la pierna 40°" vs "presión PAM 0.7"
+    """
+    
+    def __init__(self, robot_id):
+        self.robot_id = robot_id
+        
+        # ===== PARÁMETROS DEL CONTROLADOR PD =====
+        self.kp = 80.0   # Ganancia proporcional
+        self.kd = 12.0   # Ganancia derivativa
+        self.max_torque = 50.0  # Torque máximo por articulación
+        
+        # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
+        self.target_angles = {
+            # Equilibrio en pierna IZQUIERDA (derecha levantada)
+            'balance_left_support': {
+                'left_hip': 0.0,        # Cadera izq: recta para soporte
+                'left_knee': 0.0,       # Rodilla izq: extendida para soporte
+                'right_hip': 0.7,       # Cadera der: flexión 40° (0.7 rad ≈ 40°)
+                'right_knee': 0.7,      # Rodilla der: flexión 40° para levantar
+                'description': 'Pierna derecha levantada 40°'
+            },
+            
+            # Equilibrio en pierna DERECHA (izquierda levantada)
+            'balance_right_support': {
+                'left_hip': 0.7,        # Cadera izq: flexión 40°
+                'left_knee': 0.7,       # Rodilla izq: flexión 40° para levantar
+                'right_hip': 0.0,       # Cadera der: recta para soporte
+                'right_knee': 0.0,      # Rodilla der: extendida para soporte
+                'description': 'Pierna izquierda levantada 40°'
+            },
+            
+            # Transiciones - ángulos intermedios
+            'transition': {
+                'left_hip': 0.05,        # Ligera flexión bilateral
+                'left_knee': 0.05,
+                'right_hip': 0.05,
+                'right_knee': 0.05,
+                'description': 'Posición intermedia para transición'
+            }
+        }
+    
+    def get_target_angles_for_task(self, current_task):
+        """
+        Obtener ángulos objetivo según la tarea actual
+        
+        Args:
+            current_task: SingleLegActionType enum
+            
+        Returns:
+            dict: Ángulos objetivo para cada articulación
+        """
+        
+        if current_task == SingleLegActionType.BALANCE_LEFT_SUPPORT:
+            return self.target_angles['balance_left_support']
+        elif current_task == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
+            return self.target_angles['balance_right_support']
+        else:  # Transiciones
+            return self.target_angles['transition']
+    
+    def calculate_pd_torques(self, target_angles_dict):
+        """
+        Calcular torques usando control PD hacia ángulos objetivo
+        
+        Args:
+            target_angles_dict: Diccionario con ángulos objetivo
+            
+        Returns:
+            numpy.array: Torques para [left_hip, left_knee, right_hip, right_knee]
+        """
+        
+        # Obtener estados actuales de articulaciones
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+        current_angles = [state[0] for state in joint_states]
+        current_velocities = [state[1] for state in joint_states]
+        
+        # Ángulos objetivo en orden correcto
+        target_angles = [
+            target_angles_dict['left_hip'],
+            target_angles_dict['left_knee'], 
+            target_angles_dict['right_hip'],
+            target_angles_dict['right_knee']
+        ]
+        
+        # Calcular errores
+        angle_errors = np.array(target_angles) - np.array(current_angles)
+        velocity_errors = -np.array(current_velocities)  # Queremos velocidad 0
+        
+        # Control PD
+        pd_torques = self.kp * angle_errors + self.kd * velocity_errors
+        
+        # Limitar torques
+        pd_torques = np.clip(pd_torques, -self.max_torque, self.max_torque)
+        
+        return pd_torques
+    
+    def torques_to_pam_pressures(self, desired_torques):
+        """
+        Convertir torques deseados en presiones PAM equivalentes
+        
+        Esta es la función INVERSA de _apply_pam_forces()
+        
+        Args:
+            desired_torques: Array de torques [left_hip, left_knee, right_hip, right_knee]
+            
+        Returns:
+            numpy.array: Presiones PAM normalizadas [0,1] para 6 PAMs
+        """
+        
+        # Obtener estados actuales para cálculos biomecánicos
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+        joint_angles = [state[0] for state in joint_states]
+        
+        # Inicializar presiones PAM
+        pam_pressures = np.zeros(6)
+        
+        # Parámetros biomecánicos (mismos que en _apply_pam_forces)
+        moment_arm = 0.05
+        max_pressure_normalized = 1.0
+        
+        # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
+        
+        # CADERA IZQUIERDA (PAM 0=flexor, PAM 1=extensor)
+        hip_left_torque = desired_torques[0]
+        
+        if hip_left_torque > 0:  # Flexión necesaria
+            # Activar flexor, desactivar extensor
+            pam_pressures[0] = min(max_pressure_normalized, 
+                                 abs(hip_left_torque) / (moment_arm * 300))  # 300N estimado por PAM
+            pam_pressures[1] = 0.1  # Mínimo para el extensor
+        else:  # Extensión necesaria
+            # Activar extensor, desactivar flexor
+            pam_pressures[0] = 0.1  # Mínimo para el flexor
+            pam_pressures[1] = min(max_pressure_normalized,
+                                 abs(hip_left_torque) / (moment_arm * 300))
+        
+        # CADERA DERECHA (PAM 2=flexor, PAM 3=extensor)
+        hip_right_torque = desired_torques[2]
+        
+        if hip_right_torque > 0:  # Flexión necesaria
+            pam_pressures[2] = min(max_pressure_normalized,
+                                 abs(hip_right_torque) / (moment_arm * 300))
+            pam_pressures[3] = 0.1
+        else:  # Extensión necesaria
+            pam_pressures[2] = 0.1
+            pam_pressures[3] = min(max_pressure_normalized,
+                                 abs(hip_right_torque) / (moment_arm * 300))
+        
+        # RODILLAS (PAM 4=izq_flexor, PAM 5=der_flexor)
+        # Solo flexores, extensión es pasiva por resortes
+        
+        knee_left_torque = desired_torques[1]
+        knee_right_torque = desired_torques[3]
+        
+        # Rodilla izquierda - solo flexión activa
+        if knee_left_torque > 5.0:  # Umbral para activar flexor
+            pam_pressures[4] = min(max_pressure_normalized,
+                                 knee_left_torque / (moment_arm * 200))  # 200N para rodilla
+        else:
+            pam_pressures[4] = 0.05  # Muy bajo para permitir extensión pasiva
+        
+        # Rodilla derecha - solo flexión activa
+        if knee_right_torque > 5.0:  # Umbral para activar flexor
+            pam_pressures[5] = min(max_pressure_normalized,
+                                 knee_right_torque / (moment_arm * 200))
+        else:
+            pam_pressures[5] = 0.05  # Muy bajo para permitir extensión pasiva
+        
+        # Asegurar rango [0, 1]
+        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
+        
+        return pam_pressures

@@ -290,24 +290,24 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.robot_id, 
             self.left_foot_link_id,
-            lateralFriction=1.2,        # Fricción lateral alta
-            spinningFriction=0.8,       # Fricción rotacional
-            rollingFriction=0.1,        # Fricción de rodadura baja
-            restitution=0.05,           # Poco rebote
-            contactDamping=50,          # Amortiguación de contacto
-            contactStiffness=10000      # Rigidez de contacto
+            lateralFriction=0.8,        # Reducido de 1.2 a 0.8
+            spinningFriction=0.3,       # Reducido de 0.8 a 0.3
+            rollingFriction=0.02,       # Reducido de 0.1 a 0.02
+            restitution=0.01,           # Reducido de 0.05 a 0.01 (menos rebote)
+            contactDamping=100,         # Aumentado de 50 a 100 (más amortiguación)
+            contactStiffness=15000      # Aumentado de 10000 a 15000 (más rigidez)
         )
         
         # Pie derecho - mismas propiedades
         p.changeDynamics(
             self.robot_id,
             self.right_foot_link_id, 
-            lateralFriction=1.2,
-            spinningFriction=0.8,
-            rollingFriction=0.1,
-            restitution=0.05,
-            contactDamping=50,
-            contactStiffness=10000
+            lateralFriction=0.8,
+            spinningFriction=0.3,
+            rollingFriction=0.02,
+            restitution=0.01,
+            contactDamping=100,
+            contactStiffness=15000
         )
         
         # ===== FRICCIÓN PARA OTROS LINKS =====
@@ -317,10 +317,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id,
                 link_id,
-                lateralFriction=0.6,
-                spinningFriction=0.4,
-                rollingFriction=0.05,
-                restitution=0.1
+                lateralFriction=0.1,    # Muy reducida de 0.6 a 0.1
+                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+                restitution=0.05
             )
         
         # ===== FRICCIÓN DEL SUELO =====
@@ -329,9 +329,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=1.0,        # Fricción estándar del suelo
-            spinningFriction=0.5,
-            rollingFriction=0.01
+            lateralFriction=0.6,        # Fricción estándar del suelo
+            spinningFriction=0.2,
+            rollingFriction=0.005
         )
         
         log_print(f"🔧 Contact friction configured:")
@@ -670,13 +670,20 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
-            numSolverIterations=12,
-            numSubSteps=4,
-            contactBreakingThreshold=0.001,
-            erp=0.8,
-            contactERP=0.9,
-            frictionERP=0.8,
+            numSolverIterations=20,
+            numSubSteps=6,
+            contactBreakingThreshold=0.0005,
+            erp=0.9,
+            contactERP=0.95,
+            frictionERP=0.9,
+            enableConeFriction=1,        # Habilitar fricción cónica
+            deterministicOverlappingPairs=1
         )
+        log_print(f"🔧 Contact friction CORRECTED for single leg balance:")
+        log_print(f"   Feet: μ=0.8 (moderate grip, less spinning)")
+        log_print(f"   Legs: μ=0.1 (very low resistance)")
+        log_print(f"   Ground: μ=0.6 (controlled)")
+        log_print(f"   Solver: Enhanced stability parameters")
         
         # Cargar entorno
         self.plane_id = p.loadURDF("plane.urdf")
@@ -793,8 +800,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.KNEE_FLEXOR_VARIATION = 0.0113    # ±1.13cm variación por ángulo
         
         # Parámetros de resortes pasivos (calculados desde momento gravitacional)
-        self.PASSIVE_SPRING_STRENGTH = 32.5   # N⋅m (120% del momento gravitacional real)
-        self.DAMPING_COEFFICIENT = 10.0        # N⋅m⋅s/rad (optimizado para masa real)
+        self.PASSIVE_SPRING_STRENGTH = 180.5   # N⋅m 
+        self.DAMPING_COEFFICIENT = 12.0        # N⋅m⋅s/rad (optimizado para masa real)
         
         # Control antagónico
         self.INHIBITION_FACTOR = 0.3           # 30% inhibición recíproca
