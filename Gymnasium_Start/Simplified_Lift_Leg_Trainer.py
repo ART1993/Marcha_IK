@@ -218,7 +218,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== CHECKPOINT CALLBACK =====
         
         # Sistemas antagónicos se benefician de checkpoints más frecuentes
-        checkpoint_freq = 10000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
+        checkpoint_freq = 100000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
         
         checkpoint_callback = CheckpointCallback(
             save_freq=checkpoint_freq,
@@ -230,7 +230,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 5000 //self.n_envs
+        eval_freq = 50000 //self.n_envs
         
         eval_callback = EvalCallback(
             eval_env,

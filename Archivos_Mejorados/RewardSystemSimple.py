@@ -275,7 +275,7 @@ class SingleLegBalanceRewardSystem:
             return True
         
         # 2. Inclinación crítica (más estricta para equilibrio en una pierna)
-        if abs(euler[0]) > 0.6 or abs(euler[1]) > 0.6:  # ~35 grados
+        if abs(euler[0]) > 1.0 or abs(euler[1]) > 1.0:  # ~35 grados
             return True
         
         # 3. Tiempo máximo del episodio
@@ -291,7 +291,14 @@ class SingleLegBalanceRewardSystem:
     
 class SingleLegActionSelector:
     """
-    Selector de acciones específico para equilibrio en una pierna.
+        Selector de acciones expertas
+        PAM 0: left_hip_flexor
+        PAM 1: left_hip_extensor
+        PAM 2: right_hip_flexor
+        PAM 3: right_hip_extensor
+        PAM 4: left_knee_flexor
+        PAM 5: right_knee_flexor
+
     """
     
     def __init__(self, env):
@@ -307,22 +314,22 @@ class SingleLegActionSelector:
             SingleLegActionType.BALANCE_LEFT_SUPPORT: {
                 # Equilibrio en pierna izquierda, derecha levantada
                 # [left_hip_flex, left_hip_ext, right_hip_flex, right_hip_ext, left_knee_flex, right_knee_flex]
-                'pam_pressures': [0.45, 0.55, 0.35, 0.25, 0.1, 0.7],  # Flexor derecho alto para levantar
+                'pam_pressures': [0.3, 0.7, 0.7, 0.2, 0.1, 0.8],  # Flexor derecho alto para levantar
                 'description': 'Equilibrio en pierna izquierda'
             },
             SingleLegActionType.BALANCE_RIGHT_SUPPORT: {
                 # Equilibrio en pierna derecha, izquierda levantada  
-                'pam_pressures': [0.35, 0.25, 0.45, 0.55, 0.7, 0.1],  # Flexor izquierdo alto para levantar
+                'pam_pressures': [0.7, 0.2, 0.3, 0.7, 0.8, 0.1],  # Flexor izquierdo alto para levantar
                 'description': 'Equilibrio en pierna derecha'
             },
             SingleLegActionType.TRANSITION_TO_LEFT: {
                 # Transición hacia apoyo en izquierda
-                'pam_pressures': [0.4, 0.4, 0.3, 0.3, 0.3, 0.5],
+                'pam_pressures': [0.4, 0.5, 0.5, 0.4, 0.3, 0.5],
                 'description': 'Transición hacia pierna izquierda'
             },
             SingleLegActionType.TRANSITION_TO_RIGHT: {
                 # Transición hacia apoyo en derecha
-                'pam_pressures': [0.3, 0.3, 0.4, 0.4, 0.5, 0.3],
+                'pam_pressures': [0.5, 0.4, 0.4, 0.5, 0.5, 0.3],
                 'description': 'Transición hacia pierna derecha'
             }
         }
