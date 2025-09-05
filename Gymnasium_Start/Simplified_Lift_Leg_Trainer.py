@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 
 # Import your environments
-from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
+from Gymnasium_Start.Simple_Lift_Leg_Angles_BipedEnv import Simple_Lift_Leg_Angles_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
@@ -121,7 +121,7 @@ class Simplified_Lift_Leg_Trainer:
         def make_env():
             def _init():
                 # Crear el entorno con la configuración apropiada
-                env = Simple_Lift_Leg_BipedEnv(
+                env = Simple_Lift_Leg_Angles_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
                     action_space=self.action_space,
                     enable_curriculum=True
@@ -146,7 +146,7 @@ class Simplified_Lift_Leg_Trainer:
         
         def make_eval_env():
             def _init():
-                env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
+                env = Simple_Lift_Leg_Angles_BipedEnv(render_mode='direct', 
                                              action_space=self.action_space
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))

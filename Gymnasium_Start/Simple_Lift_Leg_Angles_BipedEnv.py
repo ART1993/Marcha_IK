@@ -17,7 +17,7 @@ from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 from Archivos_Mejorados.RewardSystemSimple import SingleLegBalanceRewardSystem, \
                                                     SingleLegActionSelector             
 
-class Simple_Lift_Leg_BipedEnv(gym.Env):
+class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
     """
         Versión expandida con 6 PAMs activos + elementos pasivos
         - 4 PAMs antagónicos en caderas (flexor/extensor bilateral)  
@@ -39,7 +39,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         
         # Llamar al constructor padre pero sobrescribir configuración PAM
-        super(Simple_Lift_Leg_BipedEnv, self).__init__()
+        super(Simple_Lift_Leg_Angles_BipedEnv, self).__init__()
 
         # ===== CONFIGURACIÓN BÁSICA =====
         
@@ -73,10 +73,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
         self.recent_rewards=deque(maxlen=50)
-        # Action space: 6 presiones PAM normalizadas [0, 1]
+        # Action space: Angulos limite escritos en el URDF
         self.action_space = spaces.Box(
-            low=0.0, 
-            high=1.0, 
+            low=np.array([-1.2, 0.0, -1.2, 0.0]),    # [left_hip, left_knee, right_hip, right_knee]
+            high=np.array([1.2, 1.571, 1.2, 1.571]), # Límites de tu URDF
             shape=(self.num_active_pams,), 
             dtype=np.float32
         )
@@ -94,7 +94,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
         # ===== CONFIGURACIÓN DE SIMULACIÓN =====
-        
+        self.angle_to_pam_controller = None  # Se inicializa en reset()
         if self.render_mode == 'human':
             self.physics_client = p.connect(p.GUI)
         else:
@@ -205,22 +205,20 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
         
-        if self.action_selector.should_use_expert_action():
-            actual_action = self.action_selector.get_expert_action()
-            action_source = "EXPERT"
-        else:
-            actual_action = action
-            action_source = "RL"
+        #if self.action_selector.should_use_expert_action():
+        #    actual_action = self.action_selector.get_expert_action()
+        #    action_source = "EXPERT"
+        #else:
+        #    actual_action = action
+        #    action_source = "RL"
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
     
-        normalized_pressures = np.clip(actual_action, 0.0, 1.0) 
+        # Usar tu controlador existente pero con ángulos del agente RL
+        pam_pressures = self._convert_angles_to_pam_pressures(action)
         
         # Aplicar fuerzas PAM normalizadas
-        joint_torques = self._apply_pam_forces(normalized_pressures)
-
-        # NUEVA LÍNEA: Validar comportamiento biomecánico
-        is_valid = self.validate_robot_specific_behavior(normalized_pressures, joint_torques)
+        joint_torques = self._apply_pam_forces(pam_pressures)
         
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
@@ -243,10 +241,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.stepSimulation()
 
         # ✅ LLAMAR DEBUG OCASIONALMENTE
-        self._debug_joint_angles_and_pressures(actual_action)
+        #self._debug_joint_angles_and_pressures(actual_action)
 
         current_task = self.action_selector.current_action.value
-        reward = self.reward_system.calculate_reward(actual_action, current_task)
+        reward = self.reward_system.calculate_reward(action, current_task)
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
@@ -254,7 +252,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.episode_reward += reward
         
         done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
-        observation = self._get_simple_observation()
+        observation = self._get_single_leg_observation()
 
         # ===== APLICAR ACCIÓN PAM =====
 
@@ -265,14 +263,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         info = {
             'step_count': self.step_count,
             'reward': reward,
-            'action_source': action_source,
-            'current_task': current_task,
+            'target_angles': action.tolist(),
+            'actual_pam_pressures': pam_pressures.tolist(),
             'episode_reward': self.episode_reward
         }
         
         # CONSERVAR tu debug existente
         if self.step_count % 1500 == 0 or done:
-            log_print(f"{self.step_count=:}: {action_source} action, reward={reward:.2f}, task={current_task}")
+            log_print(f"{self.step_count=:}: {action} action, reward={reward:.2f}, task={current_task}")
             log_print(f"Step {done=:}")
         
         return observation, reward, done, False, info
@@ -541,6 +539,129 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         }
         
         return joint_torques
+    
+    def _convert_angles_to_pam_pressures(self, target_angles):
+        """
+            Convertir ángulos objetivo a presiones PAM usando control PD.
+            
+            Esta es la función CLAVE que abstrae la complejidad biomecánica.
+            
+            Args:
+                target_angles: [left_hip, left_knee, right_hip, right_knee] en radianes
+                
+            Returns:
+                numpy.array: 6 presiones PAM normalizadas [0,1]
+        """
+        
+        # ===== PASO 1: OBTENER ESTADOS ACTUALES =====
+        
+        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+        current_angles = np.array([state[0] for state in joint_states])
+        current_velocities = np.array([state[1] for state in joint_states])
+        
+        # ===== PASO 2: CALCULAR TORQUES PD =====
+        
+        # Parámetros PD (ajustables)
+        kp = 100.0  # Ganancia proporcional
+        kd = 15.0   # Ganancia derivativa
+        
+        # Errores
+        angle_errors = target_angles - current_angles
+        velocity_errors = -current_velocities  # Queremos velocidad 0
+        
+        # Control PD
+        desired_torques = kp * angle_errors + kd * velocity_errors
+        
+        # Limitar torques razonables
+        desired_torques = np.clip(desired_torques, -120.0, 120.0)
+        
+        # ===== PASO 3: CONVERTIR TORQUES A PRESIONES PAM =====
+        
+        pam_pressures = self._torques_to_pam_pressures(desired_torques, current_angles)
+        
+        return pam_pressures
+    
+    def _torques_to_pam_pressures(self, desired_torques, current_angles):
+        """
+        Convertir torques deseados a presiones PAM.
+        
+        Esta función invierte tu lógica en _apply_pam_forces().
+        """
+        
+        pam_pressures = np.zeros(6)
+        
+        # Parámetros biomecánicos (usar tus valores existentes)
+        base_moment_arm = 0.05  # metro
+        max_pam_force = 300.0   # Newton estimado
+        
+        # ===== CADERAS (MÚSCULOS ANTAGÓNICOS) =====
+        
+        # Cadera izquierda (PAM 0=flexor, PAM 1=extensor)
+        left_hip_torque = desired_torques[0]
+        
+        if left_hip_torque > 0:  # Flexión necesaria
+            pam_pressures[0] = min(1.0, abs(left_hip_torque) / (base_moment_arm * max_pam_force))
+            pam_pressures[1] = 0.15  # Mínimo para extensor (permite el movimiento)
+        else:  # Extensión necesaria
+            pam_pressures[0] = 0.15  # Mínimo para flexor
+            pam_pressures[1] = min(1.0, abs(left_hip_torque) / (base_moment_arm * max_pam_force))
+        
+        # Cadera derecha (PAM 2=flexor, PAM 3=extensor)
+        right_hip_torque = desired_torques[2]
+        
+        if right_hip_torque > 0:  # Flexión necesaria
+            pam_pressures[2] = min(1.0, abs(right_hip_torque) / (base_moment_arm * max_pam_force))
+            pam_pressures[3] = 0.15
+        else:  # Extensión necesaria
+            pam_pressures[2] = 0.15
+            pam_pressures[3] = min(1.0, abs(right_hip_torque) / (base_moment_arm * max_pam_force))
+        
+        # ===== RODILLAS (SOLO FLEXORES ACTIVOS) =====
+        
+        # Rodilla izquierda (PAM 4)
+        left_knee_torque = desired_torques[1]
+        if left_knee_torque > 10.0:  # Umbral para activar flexor
+            pam_pressures[4] = min(1.0, left_knee_torque / (base_moment_arm * 250.0))
+        else:
+            pam_pressures[4] = 0.05  # Muy bajo para permitir extensión pasiva
+        
+        # Rodilla derecha (PAM 5)  
+        right_knee_torque = desired_torques[3]
+        if right_knee_torque > 10.0:  # Umbral para activar flexor
+            pam_pressures[5] = min(1.0, right_knee_torque / (base_moment_arm * 250.0))
+        else:
+            pam_pressures[5] = 0.05
+        
+        # ===== CORRECCIONES FINALES =====
+        
+        # Asegurar inhibición recíproca suave
+        pam_pressures = self._apply_smooth_reciprocal_inhibition(pam_pressures)
+        
+        # Limitar rango final
+        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
+        
+        return pam_pressures
+    
+    def _apply_smooth_reciprocal_inhibition(self, pam_pressures):
+        """
+        Aplicar inhibición recíproca suave a las caderas
+        """
+        
+        # Cadera izquierda
+        left_total = pam_pressures[0] + pam_pressures[1]
+        if left_total > 1.2:  # Si hay co-contracción excesiva
+            reduction_factor = 1.2 / left_total
+            pam_pressures[0] *= reduction_factor
+            pam_pressures[1] *= reduction_factor
+        
+        # Cadera derecha
+        right_total = pam_pressures[2] + pam_pressures[3]
+        if right_total > 1.2:  # Si hay co-contracción excesiva
+            reduction_factor = 1.2 / right_total
+            pam_pressures[2] *= reduction_factor
+            pam_pressures[3] *= reduction_factor
+        
+        return pam_pressures
     
     def seleccion_joint(self, i, joint_positions, joint_velocities):
         if i in [0, 1]:  # Cadera izquierda
@@ -936,34 +1057,45 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         return len(warnings) == 0
     
-def configure_robot_specific_pam_system(env):
+    def get_angle_action_info(self):
+        """
+        Información útil sobre el espacio de acciones de ángulos
+        """
+        return {
+            'action_space_type': 'target_angles',
+            'action_dimensions': 4,
+            'joint_names': ['left_hip', 'left_knee', 'right_hip', 'right_knee'],
+            'angle_ranges_deg': {
+                'left_hip': '[-69°, 69°]',
+                'left_knee': '[0°, 90°]', 
+                'right_hip': '[-69°, 69°]',
+                'right_knee': '[0°, 90°]'
+            },
+            'conversion_method': 'PD_control_to_PAM_pressures',
+            'benefits': [
+                'Faster convergence',
+                'More stable training', 
+                'Intuitive actions',
+                'Biomechanically sound'
+            ]
+        }
+    
+def create_angle_based_env(render_mode='human'):
     """
-    Configurar el sistema PAM específicamente para tu robot.
-    Llamar una vez después de crear el entorno.
+    Crear entorno que usa ángulos objetivo en lugar de presiones PAM
     """
     
-    # Verificar que las dimensiones coinciden
-    expected_mass = 25.0  # kg
-    expected_height = 1.20  # m
+    env = Simple_Lift_Leg_Angles_BipedEnv(
+        render_mode=render_mode,
+        enable_curriculum=True
+    )
     
-    log_print("🤖 Configuring PAM system for your specific robot:")
-    log_print(f"   Expected mass: {expected_mass}kg")
-    log_print(f"   Expected height: {expected_height}m")
-    log_print(f"   PAM configuration: 6 muscles (4 hip antagonistic + 2 knee flexors)")
-    log_print(f"   Moment arms: Hip 5.0-6.3cm, Knee 5.7cm")
-    log_print(f"   Passive springs: 32.5 N⋅m (gravity-compensated)")
+    print("🎯 Entorno configurado para ÁNGULOS OBJETIVO")
+    print("   Action space: 4 ángulos articulares")
+    print("   Conversión automática: ángulos → torques PD → presiones PAM")
+    print("   Beneficios: Convergencia más rápida y estable")
     
-    # Configurar parámetros específicos en el entorno
-    env.robot_specific_configured = True
-    env.expected_robot_mass = expected_mass
-    env.expected_robot_height = expected_height
-    
-    # Reemplazar el método de cálculo de torques
-    env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques
-    
-    log_print("✅ Robot-specific PAM system configured!")
-    
-    return True
+    return env
 
 def apply_reciprocal_inhibition(flexor_force, extensor_force, INHIBITION_FACTOR):
     """

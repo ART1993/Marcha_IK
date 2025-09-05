@@ -9,7 +9,9 @@ import time
 import os
 
 # Importar SOLO tu entorno existente (sin modificaciones)
-from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv
+from Gymnasium_Start.Simple_Lift_Leg_Angles_BipedEnv import Simple_Lift_Leg_Angles_BipedEnv
+
+from Archivos_Apoyo.simple_log_redirect import init_simple_logging, log_print, both_print
 
 def verificar_prerequisites():
     """
@@ -36,7 +38,7 @@ def verificar_prerequisites():
     
     # Verificar que podemos importar el entorno
     try:
-        env_test = Simple_Lift_Leg_BipedEnv(render_mode='direct', action_space="pam")
+        env_test = Simple_Lift_Leg_Angles_BipedEnv(render_mode='direct', action_space="pam")
         env_test.close()
         print("✅ Entorno importado y probado correctamente")
     except Exception as e:
@@ -293,6 +295,8 @@ def main():
     """
     Función principal que ejecuta todo el test paso a paso
     """
+    logger = init_simple_logging("./logs_balance_squat/test_single_leg.txt")
+
     print("🎯 TEST DE CONTROL DE UNA PIERNA")
     print("Usando tu modelo entrenado sin modificaciones")
     print("=" * 60)
@@ -308,7 +312,7 @@ def main():
     
     # Crear entorno (tu clase sin modificaciones)
     print("🏗️ Creando entorno de simulación...")
-    env = Simple_Lift_Leg_BipedEnv(
+    env = Simple_Lift_Leg_Angles_BipedEnv(
         render_mode='human',    # Para que puedas ver la simulación
         action_space="pam",     # Usando tus 6 PAMs
         enable_curriculum=False # Sin curriculum para control directo
@@ -327,7 +331,7 @@ def main():
         
         # Paso 5: Análisis de resultados
         analizar_resultados(results, total_steps)
-        
+        logger.close()  # CERRAR AL FINAL
     except KeyboardInterrupt:
         print("\n⏸️ Test interrumpido por el usuario")
     except Exception as e:
