@@ -42,6 +42,8 @@ class PAMMcKibben:
         self.max_radius = np.sqrt(2/3)*(self.r0/np.sin(self.alpha0)) 
         # Ángulo máximo de apertura de los hilos de refuerzo. Más allá de este ángulo, el modelo deja de ser válido.
         self.theta_max = np.atan(np.sqrt(2))
+        # Área transversal máxima, correspondiente al máximo inflado
+        self.max_area=np.pi*self.max_radius**2
         self.min_pressure=min_pressure
         self.max_pressure=min_pressure*max_factor_pressure
 
