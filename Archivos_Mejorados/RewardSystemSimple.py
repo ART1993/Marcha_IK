@@ -109,8 +109,8 @@ class SingleLegBalanceRewardSystem:
         """Calcular recompensa basada en patrón de contacto con el suelo"""
         
         # Verificar contactos (usando link IDs, no joint IDs ya que tobillos son fixed)
-        left_contacts = p.getContactPoints(self.robot_id, 0, 2, -1)  # left_foot_link
-        right_contacts = p.getContactPoints(self.robot_id, 0, 5, -1)  # right_foot_link
+        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, 2, -1)  # left_foot_link
+        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, 5, -1)  # right_foot_link
         
         left_contact = len(left_contacts) > 0
         right_contact = len(right_contacts) > 0
