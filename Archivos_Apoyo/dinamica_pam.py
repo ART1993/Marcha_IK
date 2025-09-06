@@ -8,82 +8,62 @@ class PAMMcKibben:
         los músculos artificiales neumáticos (PAM), 
         calculando fuerza y rigidez según parámetros físicos.
     """
-    def __init__(self, L0=0.3, r0=0.02, alpha0=np.pi/4):
+    def __init__(self, L0=0.3, r0=0.02, alpha0=np.pi/4, min_pressure=101325, max_factor_pressure=5):
         """
             L0: longitud inicial del músculo (m)
             r0: radio inicial (m)
             n_threads: número de hilos de refuerzo
             alpha0: ángulo inicial de los hilos rad
         """
+        # Longitud inicial del músculo
         self.L0 = L0
+        # radio inicial del músculo
         self.r0 = r0
+        # Superficie inicial
         self.area= np.pi * self.r0**2
+        # ángulo inicial de los hilos
         self.alpha0 = alpha0
-        self.a= 3/(np.tan(alpha0)**2) 
-        self.b = 1 / (np.sin(alpha0)**2)  # geometría del hilo
+        # Factores geométricos derivados del ángulo de trenzado. modelo clásico de Chou & Hannaford para la fuerza del PAM
+        # self.a= 3/(np.tan(alpha0)**2) 
+        # self.b = 1 / (np.sin(alpha0)**2)  # geometría del hilo
         # asumimos que la contracción es ideal y por tanto es constante
         self.volumen=self.area*self.L0
-        self._limites_parametros()
+        self._limites_parametros(min_pressure, max_factor_pressure)
 
     
-    def _limites_parametros(self):
+    def _limites_parametros(self, min_pressure, max_factor_pressure):
         """
             Se usa en  para definir los límites de los parámetros
         """
-        # Definimos los límites de los parámetros del PAM
-        # Estos valores son ejemplos, deben ajustarse según el diseño real del PAM
-        #F_es máxima para epsilon=0
-        self.F_max_factor= (self.a -self.b) # Fuerza máxima teórica (Pa) a 5 bar Debería de ser un multiplicador pero no he encontrado donde usarlo
-        self.epsilon_max = 1 - 1/(np.sqrt(3)*np.cos(self.alpha0)) # Epsilon máximo teórico
-        self.max_radious = np.sqrt(2/3)*(self.r0/np.sin(self.alpha0)) # Radio máximo teórico
-        self.max_area=np.pi*self.max_radious**2
+        # factor que multiplica la presión interna para obtener la fuerza máxima teórica cuando la contracción es cero (ε = 0)
+        # self.F_max_factor= (self.a -self.b)
+        # Deformación máxima (contracción relativa). Representa cuánto puede acortarse el músculo respecto a su longitud inicial.
+        self.epsilon_max = 1 - 1/(np.sqrt(3)*np.cos(self.alpha0)) 
+        # Radio máximo alcanzable debido a la expansión radial.
+        self.max_radius = np.sqrt(2/3)*(self.r0/np.sin(self.alpha0)) 
+        # Área transversal máxima, correspondiente al máximo inflado
+        self.max_area=np.pi*self.max_radius**2
+        # Ángulo máximo de apertura de los hilos de refuerzo. Más allá de este ángulo, el modelo deja de ser válido.
         self.theta_max = np.atan(np.sqrt(2))
-        self.min_pressure=101325
-        self.max_pressure=self.min_pressure*5
+        self.min_pressure=min_pressure
+        self.max_pressure=min_pressure*max_factor_pressure
 
         # ✅ CORRECCIÓN: Validar que epsilon_max sea positivo
         if self.epsilon_max <= 0:
             print(f"⚠️ Warning: epsilon_max = {self.epsilon_max}, adjusting to 0.3")
             self.epsilon_max = 0.3
+
     @property
     def L_min(self):
         return self.volumen/self.max_area
-    
-    def current_radius(self, contraction_ratio):
-        """
-        Radio actual del músculo durante la contracción
-        
-        En ε = 0: r = r₀
-        En ε = ε_max: r = r_max
 
-        Basado en conservación de volumen de la vejiga interna:
-        V = π * r² * L = constante
-
-        Returns:
-            float: Radio actual (m)
-        """
-        epsilon = contraction_ratio
-        if epsilon < 0 or epsilon >= self.epsilon_max:
-            return self.r0
-        
-        # Conservación de volumen en la vejiga
-        current_length = self.contaction_muscle(epsilon)
-        volume_ratio = self.L0 / current_length
-        
-        return self.r0 * np.sqrt(volume_ratio)
+    def force_factor(self,alpha):
+        # factor de fuerza del PAM. En este caso depende del ángulo de hilo de pam alpha
+        return 3.0 * (np.cos(alpha)**2) - 1.0
     
-    def current_area(self, contraction_ratio):
-        """
-        ✅ ÁREA ACTUAL de la sección transversal
-        
-        Esta es el área real sobre la que actúa la presión
-        """
-        current_r = self.current_radius(contraction_ratio)
-        return np.pi * current_r**2
-
-    
-    def contaction_muscle(self,contraction_ratio):
-        return self.L0*(1-contraction_ratio)
+    def contraction_muscle(self,contraction_ratio):
+        eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+        return max(self.L0 * (1.0 - eps), self.L_min)
 
 
     def force_model_new(self, pressure, contraction_ratio):
@@ -99,23 +79,16 @@ class PAMMcKibben:
             return 0.0
         
         # ✅ CORRECCIÓN: Validación mejorada de contraction_ratio
-        if contraction_ratio < 0:
-            contraction_ratio = 0.0
-        elif contraction_ratio >= self.epsilon_max:
-            contraction_ratio = self.epsilon_max - 0.01  # Pequeño margen
-            
-        epsilon = contraction_ratio
-
-        force_factor = ((1-epsilon**2)*self.a - self.b)
+        eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+        alpha = self.braid_angle(eps)
+        force_factor = self.force_factor(alpha)
         
-         # ✅ CORRECCIÓN: Si force_factor es negativo, usar mínimo
+        # ✅ CORRECCIÓN: Si force_factor es negativo, usar mínimo
         if force_factor <= 0:
             force_factor = 0.1  # Mínima fuerza positiva
-        #area=np.pi*(self.current_radius(epsilon))
-        Function = pressure * force_factor * self.current_area(epsilon)
-        # Aseguramos que la fuerza no sea negativa  
-        
-        return max(0.0, Function)
+        area = self.current_area(eps)
+        F = pressure * force_factor * area
+        return max(0.0, F)  # no permitimos tracción negativa
     
     def pressure_from_force_and_contraction(self, target_force, contraction_ratio):
         """
@@ -134,23 +107,16 @@ class PAMMcKibben:
             return self.min_pressure  # Presión atmosférica mínima
         
         # Validar contracción
-        if contraction_ratio < 0:
-            contraction_ratio = 0.0
-        elif contraction_ratio >= self.epsilon_max:
-            contraction_ratio = self.epsilon_max - 0.01
-            
-        epsilon = contraction_ratio
+        eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+        alpha = self.braid_angle(eps)
+        force_factor = self.force_factor(alpha)
         
-        # Calcular force_factor (mismo que en force_model_new)
-        force_factor = ((1-epsilon**2)*self.a - self.b)
+        area = self.current_area(eps)
+        denom = max(force_factor * area, 1e-9)  # evitar división por cero
         
-        if force_factor <= 0:
-            force_factor = 0.1  # Mínimo para evitar división por cero
-        #area=np.pi*(self.current_radius(epsilon))
-        # DESPEJE MATEMÁTICO: pressure = target_force / (force_factor * area)
-        required_pressure = target_force / (force_factor * self.current_area(epsilon))
+        P = target_force / denom
         
-        return np.clip(required_pressure, self.min_pressure, self.max_pressure)
+        return np.clip(P, self.min_pressure, self.max_pressure)
     
     def pressure_normalized_from_force_and_contraction(self, target_force, contraction_ratio):
         """
@@ -172,53 +138,70 @@ class PAMMcKibben:
     def normalized_pressure_PAM(self, real_pressure):
         # 1. Presión normalizada → Presión real
         return (real_pressure - self.min_pressure) / (self.max_pressure - self.min_pressure)
-
-
-    def calculate_contraction_from_joint_angle(self, joint_angle, joint_type='hip'):
+    
+    def epsilon_from_angle(self, theta, theta0, R):
+        dL = R * (theta - theta0)        # signo según tu convención
+        eps = dL / self.L0
+        return np.clip(eps, 0.0, self.epsilon_max)
+    
+    def braid_angle(self, contraction_ratio):
         """
-        ✅ NUEVO: Calcular contracción real desde ángulo articular
-        
-        Esta función conecta la geometría articular con la física del PAM
-        
-        Args:
-            joint_angle: Ángulo actual de la articulación (rad)
-            joint_type: 'hip' o 'knee' para diferentes geometrías
+        Ángulo dinámico α(ε) a partir de longitud de hilo constante:
+        cos α(ε) = (1 - ε) * cos α0
+        """
+        eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+        cos_alpha = (1.0 - eps) * np.cos(self.alpha0)
+        # Clamp numérico
+        cos_alpha = np.clip(cos_alpha, 0.0, 1.0)
+        alpha = np.arccos(cos_alpha)
+        # Limitar a [0, theta_max]
+        return np.clip(alpha, 0.0, self.theta_max)
+
+    def area_from_epsilon(self, eps):
+        return self.current_area(eps)
+    
+    def current_radius(self, contraction_ratio):
+        """
+            Radio actual del músculo durante la contracción
             
-        Returns:
-            float: Contracción real ε = (L0 - L) / L0
+            En ε = 0: r = r₀    En ε = ε_max: r = r_max
+
+            Basado en conservación de volumen de la vejiga interna:
+            V = π * r² * L = constante
+
+            Returns:
+                float: Radio actual (m)
         """
         
-        # Parámetros geométricos específicos para tu robot bípedo
-        # El cambio debería de realizarse en este caso en el entorno no en el musculo, como esta escrito no tiene sentido
-        if joint_type == 'hip':
-            # Para caderas: El PAM va desde pelvis hasta muslo
-            # Longitud base cuando cadera está en 0°
-            
-            # El cambio de longitud depende del ángulo de cadera
-            # Aproximación trigonométrica para unión músculo-hueso
-            length_change = self.L_min * np.sin(joint_angle)  # 10cm max change
-            
-        elif joint_type == 'knee':
-            # Para rodillas: El PAM cruza la articulación de la rodilla
-            # Más contracción cuando rodilla se flexiona
-            
-            # Rodilla flexionada = músculo flexor se contrae más
-            length_change = 0.08 * joint_angle  # 8cm change per radian
-            
-        else:
-            # Default: relación lineal simple
-            length_change = 0.05 * joint_angle
+        # Conservación de volumen en la vejiga
+        current_length = self.contraction_muscle(contraction_ratio)
+        r = self.r0 * np.sqrt(self.L0 / current_length)
+        r_max = self.max_radius
+        return min(r,r_max)  # Límite físico
+    
+    def current_area(self, contraction_ratio):
+        """
+        ✅ ÁREA ACTUAL de la sección transversal
         
-        # Longitud actual del músculo
-        current_length = self.L0 - length_change
-        current_length = max(current_length, self.L0 * (1 - self.epsilon_max + 0.01))  # Límite físico
-        
-        # Contracción real
-        actual_contraction = (self.L0 - current_length) / self.L0
-        
-        return np.clip(actual_contraction, 0.0, self.epsilon_max - 0.01)
+        Esta es el área real sobre la que actúa la presión
+        """
+        current_r = self.current_radius(contraction_ratio)
+        return np.pi * current_r**2
 
+    def pressure_for_torque(self, tau, theta, theta0, R):
+        eps = self.epsilon_from_angle(theta, theta0, R)
+        A = self.area_from_epsilon(eps)
+        alpha = self.braid_angle(eps)
+        factor = self.force_factor(alpha)
+        denom = max(R * A * factor, 1e-9)    # a(θ)=R en este caso
+        P = tau / denom
+        return float(np.clip(P, self.min_pressure, self.max_pressure))
+
+
+
+    # =========================================================================== #
     # Verificación de la consistencia de transformacion fuerza presión y viceversa
+    # =========================================================================== #
     
     def verify_inverse_consistency(self, test_pressure_normalized=0.5, test_contraction=0.15):
         """
