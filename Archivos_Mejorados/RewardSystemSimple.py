@@ -318,7 +318,11 @@ class SingleLegActionSelector:
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
         self.last_10_rewards = deque(maxlen=10)
         self.time_in_current_stance = 0
-        self.target_switch_time = 150
+        self.target_switch_time = env.switch_interval
+        frequency = env.frecuency_simulation
+        switch_time_seconds = self.target_switch_time / frequency
+        print(f"🤖 Action Selector synchronized:")
+        print(f"   Switch interval: {self.target_switch_time} steps ({switch_time_seconds:.1f}s)")
         
         log_print(f"✅ Angle-Based Single Leg Action Selector initialized")
         log_print(f"   Control method: Target angles → PD torques → PAM pressures")
@@ -625,3 +629,219 @@ class AngleBasedExpertController:
         pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
         
         return pam_pressures
+    
+# =============================================================================
+# SISTEMA DE RECOMPENSAS PROGRESIVO SIMPLE
+# Solo 3 niveles, fácil de entender y modificar
+# =============================================================================
+    
+class SimpleProgressiveReward:
+    """
+    Sistema súper simple: 3 niveles que van aumentando la dificultad y las recompensas
+    
+    NIVEL 1: Solo mantenerse de pie (recompensas pequeñas 0-3)
+    NIVEL 2: Balance estable (recompensas medias 0-5) 
+    NIVEL 3: Levantar piernas (recompensas altas 0-8)
+    """
+    
+    def __init__(self, robot_id, plane_id, frequency_simulation, switch_interval=2000):
+        self.robot_id = robot_id
+        self.plane_id = plane_id
+        self.frequency_simulation = frequency_simulation
+        self.switch_interval = switch_interval
+        
+        # ===== CONFIGURACIÓN SUPER SIMPLE =====
+        self.level = 1  # Empezamos en nivel 1
+        self.episode_count = 0
+        self.recent_episodes = []  # Últimos 5 episodios
+        
+        # Configuración por nivel (muy simple)
+        self.level_config = {
+            1: {'max_reward': 3.0, 'upgrade_threshold': 2.0, 'min_episodes': 10},
+            2: {'max_reward': 5.0, 'upgrade_threshold': 3.5, 'min_episodes': 15},  
+            3: {'max_reward': 8.0, 'upgrade_threshold': 999, 'min_episodes': 999}  # Nivel final
+        }
+        
+        # Para alternancia de piernas (solo nivel 3)
+        self.target_leg = 'right'
+        self.switch_timer = 0
+
+        # Debug para confirmar configuración
+        switch_time_seconds = self.switch_interval / self.frequency_simulation
+        both_print(f"🎯 Progressive System initialized:")
+        both_print(f"   Switch interval: {self.switch_interval} steps ({switch_time_seconds:.1f}s)")
+        both_print(f"   Frequency: {self.frequency_simulation} Hz")
+        both_print(f"🎯 Simple Progressive System: Starting at Level {self.level}")
+    
+    def calculate_reward(self, action, step_count):
+        """
+        Método principal: calcula reward según el nivel actual
+        """
+        
+        if self.level == 1:
+            reward = self._level_1_reward()      # Solo supervivencia
+        elif self.level == 2:
+            reward = self._level_2_reward()      # + balance estable
+        else:  # level == 3
+            reward = self._level_3_reward(step_count)  # + levantar piernas
+        
+        # Limitar reward según nivel
+        max_reward = self.level_config[self.level]['max_reward']
+        return max(-2.0, min(reward, max_reward))
+    
+    def _level_1_reward(self):
+        """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
+        
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        height = pos[2]
+        
+        # Recompensa simple por altura
+        if height > 0.9:
+            return 1.5  # Buena altura
+        elif height > 0.7:
+            return 0.8  # Altura mínima
+        else:
+            return -1.0  # Caída
+    
+    def _level_2_reward(self):
+        """NIVEL 2: Balance estable (recompensas 0-5)"""
+        
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        height = pos[2]
+        
+        # Recompensa por altura (igual que nivel 1)
+        if height > 0.9:
+            height_reward = 1.5
+        elif height > 0.7:
+            height_reward = 0.8
+        else:
+            return -1.0  # Caída
+        
+        # + Recompensa por estabilidad (NUEVA)
+        tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
+        if tilt < 0.2:
+            stability_reward = 1.5  # Muy estable
+        elif tilt < 0.4:
+            stability_reward = 0.5  # Moderadamente estable
+        else:
+            stability_reward = -0.5  # Inestable
+        
+        return height_reward + stability_reward
+    
+    def _level_3_reward(self, step_count):
+        """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
+        
+        # Recompensa base (igual que nivel 2)
+        base_reward = self._level_2_reward()
+        if base_reward < 0:  # Si se cayó, no calcular más
+            return base_reward
+        
+        # + Recompensa por levantar pierna (NUEVA)
+        leg_reward = self._calculate_leg_reward(step_count)
+        
+        return base_reward + leg_reward
+    
+    def _calculate_leg_reward(self, step_count):
+        """Calcular recompensa por levantar pierna correctamente"""
+        
+        # Cambiar pierna objetivo cada 5 segundos (150 steps a 30 FPS)
+        self.switch_timer += 1
+        if self.switch_timer >= self.switch_interval:
+            self.target_leg = 'left' if self.target_leg == 'right' else 'right'
+            self.switch_timer = 0
+
+            # DEBUG MEJORADO: Mostrar tiempo real además de steps
+            seconds_per_switch = self.switch_interval / self.frequency_simulation  # Asumiendo 400 Hz
+            print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
+        
+        # Detectar qué pies están en contacto
+        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, 2, -1)
+        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, 5, -1)
+        
+        left_down = len(left_contacts) > 0
+        right_down = len(right_contacts) > 0
+        
+        # Evaluar si está haciendo lo correcto
+        if self.target_leg == 'right':
+            # Quiero: pie izquierdo abajo, pie derecho arriba
+            if left_down and not right_down:
+                return 2.0  # ¡Perfecto!
+            elif left_down and right_down:
+                return 0.5  # Ambos abajo (transición)
+            else:
+                return -0.5  # Incorrecto
+        else:  # target_leg == 'left'
+            # Quiero: pie derecho abajo, pie izquierdo arriba
+            if right_down and not left_down:
+                return 2.0  # ¡Perfecto!
+            elif left_down and right_down:
+                return 0.5  # Ambos abajo (transición)
+            else:
+                return -0.5  # Incorrecto
+    
+    def update_after_episode(self, episode_reward):
+        """Actualizar nivel después de cada episodio"""
+        
+        self.episode_count += 1
+        self.recent_episodes.append(episode_reward)
+        
+        # Mantener solo últimos 5 episodios
+        if len(self.recent_episodes) > 5:
+            self.recent_episodes.pop(0)
+        
+        # Verificar si subir de nivel
+        if len(self.recent_episodes) >= 5:  # Necesitamos al menos 5 episodios
+            avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
+            config = self.level_config[self.level]
+            
+            # ¿Debemos subir de nivel?
+            if (avg_reward >= config['upgrade_threshold'] and 
+                self.episode_count >= config['min_episodes'] and 
+                self.level < 3):
+                
+                old_level = self.level
+                self.level += 1
+                
+                print(f"\n🎉 LEVEL UP! {old_level} → {self.level}")
+                print(f"   Average reward: {avg_reward:.1f}")
+                print(f"   Episodes completed: {self.episode_count}")
+                
+                if self.level == 3:
+                    print(f"   🦵 Now alternating legs every 5 seconds!")
+    
+    def is_episode_done(self, step_count):
+        """Criterios simples de terminación"""
+        
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        
+        # Caída
+        if pos[2] < 0.5:
+            log_print("❌ Episode done: Robot fell")
+            return True
+        
+        # Inclinación extrema
+        if abs(euler[0]) > 1.0 or abs(euler[1]) > 1.0:
+            log_print("❌ Episode done: Robot tilted too much")
+            return True
+        
+        # Tiempo máximo (crece con nivel)
+        max_steps = (200 + (self.level * 200))*10  # 2000, 3000, 4000 steps
+        if step_count >= max_steps:
+            log_print("⏰ Episode done: Max time reached")
+            return True
+        
+        return False
+    
+    def get_info(self):
+        """Info para debugging"""
+        avg_reward = sum(self.recent_episodes) / len(self.recent_episodes) if self.recent_episodes else 0
+        
+        return {
+            'level': self.level,
+            'episodes': self.episode_count,
+            'avg_reward': avg_reward,
+            'target_leg': self.target_leg if self.level == 3 else None,
+            'max_reward': self.level_config[self.level]['max_reward']
+        }

@@ -15,7 +15,7 @@ from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 from Archivos_Mejorados.RewardSystemSimple import SingleLegBalanceRewardSystem, \
-                                                    SingleLegActionSelector             
+                                                    SingleLegActionSelector, SimpleProgressiveReward           
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
@@ -45,7 +45,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.render_mode = render_mode
         self.action_space_type = action_space  # Solo "pam"
-        self.enable_curriculum=enable_curriculum
+        self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
+                        'right_hip_extensor', 'left_knee_flexor', 'right_knee_flexor']
 
         self.pam_control_active = False
         self.contact_established = False
@@ -56,12 +57,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
         self.urdf_path = "2_legged_human_like_robot.urdf"
-        self.frecuency_simulation=1500.0
+        self.frecuency_simulation=400.0
+        self.switch_interval=2000  # Intervalo para cambiar pierna objetivo en curriculum
         self.time_step = 1.0 / self.frecuency_simulation
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
         self.num_active_pams = 6
-        self.min_pressure = 101325  # 1 atm
-        self.max_pressure = 5 * self.min_pressure  # 5 atm
 
         self.pam_muscles = PAM_McKibben()
         
@@ -129,65 +129,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.episode_reward = 0
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
+
+        self.use_simple_progressive = enable_curriculum
+        self.simple_reward_system = None
         
         log_print(f"🤖 Simplified Lift legs Environment initialized")
         log_print(f"🤖 Environment initialized - Systems initiate in reset")
-
-
-    def _calculate_reward(self, action_applied):
-        """
-            Calcular recompensa según el modo de control activo
-        """
-        
-        if self.pam_control_active:
-            # Usar sistema de recompensas PAM completo
-            self.reward_system.pam_states = self.pam_states
-            reward, reward_components = self.reward_system.calculate_simple_reward(
-                action=action_applied,
-                pam_forces=self.pam_states['forces']
-            )
-        else:
-            # Recompensa simplificada para modo STANDING
-            reward, reward_components = self._calculate_standing_reward()
-        
-        return reward, reward_components
-
-    def _calculate_standing_reward(self):
-        """
-        Recompensa para modo STANDING_POSITION
-        """
-        
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
-        
-        reward_components = {}
-        
-        # Recompensa por mantener altura
-        height_reward = max(0, pos[2] - 0.8) * 5.0
-        reward_components['height'] = height_reward
-        
-        # Recompensa por orientación vertical
-        orientation_penalty = (abs(euler[0]) + abs(euler[1])) * 10.0
-        reward_components['orientation'] = -orientation_penalty
-        
-        # Recompensa por progreso hacia contacto
-        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_id, -1)
-        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_id, -1)
-        
-        contact_reward = 0
-        if len(left_contacts) > 0 and len(right_contacts) > 0:
-            contact_reward = 10.0  # Bonificación por contacto bilateral
-        elif len(left_contacts) > 0 or len(right_contacts) > 0:
-            contact_reward = 3.0   # Bonificación menor por contacto parcial
-        
-        reward_components['contact_progress'] = contact_reward
-        
-        # Recompensa base
-        reward_components['survival'] = 1.0
-        
-        total_reward = sum(reward_components.values())
-        
-        return total_reward, reward_components
     
 # ========================================================================================================================================================================= #
 # ===================================================== Métodos de paso y control del entorno Enhanced_PAMIKBipedEnv ====================================================== #
@@ -245,20 +192,28 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ✅ LLAMAR DEBUG OCASIONALMENTE
         self._debug_joint_angles_and_pressures(actual_action)
 
-        current_task = self.action_selector.current_action.value
-        reward = self.reward_system.calculate_reward(actual_action, current_task)
+        
+        if self.simple_reward_system:
+            reward = self.simple_reward_system.calculate_reward(actual_action, self.step_count)
+            done = self.simple_reward_system.is_episode_done(self.step_count)
+            system_used = "PROGRESSIVE"
+        else:
+            current_task = self.action_selector.current_action.value
+            reward = self.reward_system.calculate_reward(actual_action, current_task)
+            done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
+            system_used = "FALLBACK"
+            # Log cuando se usa fallback (para debugging)
+            if self.step_count == 1:
+                log_print(f"⚠️ Using fallback system instead of progressive system")
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
         
-        done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
         observation = self._get_simple_observation()
 
         # ===== APLICAR ACCIÓN PAM =====
-
-        self.episode_reward += reward
         self.action_selector.update_after_step(reward)
         
         # Info simplificado
@@ -266,14 +221,38 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'step_count': self.step_count,
             'reward': reward,
             'action_source': action_source,
-            'current_task': current_task,
             'episode_reward': self.episode_reward
         }
+
+        if self.simple_reward_system:
+            curriculum_info = self.simple_reward_system.get_info()  # Solo una llamada
+            info['curriculum'] = curriculum_info  # Añadir sin reemplazar
+            info['system_type'] = 'progressive'
+            info['current_level'] = curriculum_info.get('level', 1)
+            # Debug simple
+            if done:
+                episode_total = info['episode_reward']  # Ya calculado arriba
+                self.simple_reward_system.update_after_episode(episode_total)
+                log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
+        else:
+            info['current_task'] = current_task
+            info['system_type'] = 'fallback'
+            log_print(f"{self.current_task=:}")
         
-        # CONSERVAR tu debug existente
-        if self.step_count % 1500 == 0 or done:
-            log_print(f"{self.step_count=:}: {action_source} action, reward={reward:.2f}, task={current_task}")
-            log_print(f"Step {done=:}")
+        # CONSERVAR tu debug existente 
+        if self.step_count % self.frecuency_simulation == 0 or done:
+            log_print(f"{self.step_count=:}: {action_source} action, reward={reward:.2f}")
+            log_print(f"Step {done=:}, is_valid={is_valid}")
+
+        # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
+        if self.step_count % self.frecuency_simulation == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
+            status = self.simple_reward_system.get_info()
+            elapsed_time = self.step_count / self.frecuency_simulation
+            log_print(f"🎮 Active system: {system_used} at step {self.step_count}")
+            log_print(f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
+            log_print(f"   Current level: {status['level']}")
+            log_print(f"   Target leg: {status.get('target_leg', 'N/A')}")
+            log_print(f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
         
         return observation, reward, done, False, info
     
@@ -444,23 +423,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Calcular fuerzas PAM reales
         pam_forces = np.zeros(6)
-        muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
-                        'right_hip_extensor', 'left_knee_flexor', 'right_knee_flexor']
+        
         
         for i, pressure_normalized in enumerate(pam_pressures):
             # Determinar articulación correspondiente
             #joint_angle, joint_velocity=self.seleccion_joint(i, joint_positions, joint_velocities)
+            muscle_name = self.muscle_names[i]
+            pam_muscle = self.pam_muscles[muscle_name]
             
             # Presión real
-            real_pressure = self.min_pressure + pressure_normalized * (self.max_pressure - self.min_pressure)
+            real_pressure = pam_muscle.min_pressure + pressure_normalized * (pam_muscle.max_pressure - pam_muscle.min_pressure)
 
             # Contracción comandada (no basada en posición actual)
             commanded_contraction = pressure_normalized * self.MAX_CONTRACTION_RATIO
             
             
             # Calcular fuerza desde modelo PAM
-            muscle_name = muscle_names[i]
-            pam_muscle = self.pam_muscles[muscle_name]
+            
             raw_force = pam_muscle.force_model_new(real_pressure, commanded_contraction)
             
             ## Damping por velocidad específico para robot
@@ -696,7 +675,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         
         # Nuevo sistema de recompensas
-        self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, self.plane_id)
+        #self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, self.plane_id)
+        if self.use_simple_progressive:
+            self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
+                                                                self.frecuency_simulation,
+                                                                switch_interval=self.switch_interval)
+        else:
+            self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, 
+                                                              self.plane_id)
         
         # Nuevo selector de acciones
         if not hasattr(self, 'action_selector') or not self.action_selector:
@@ -925,7 +911,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== LOGGING CONDICIONAL =====
         
-        if warnings and self.step_count % 750 == 0:  # Cada 0.5 segundos aprox
+        if warnings and self.step_count % self.frecuency_simulation//2 == 0:  # Cada 0.5 segundos aprox
             log_print(f"🤖 Robot-specific validation (Step {self.step_count}):")
             for warning in warnings:
                 log_print(f"   ⚠️ {warning}")
