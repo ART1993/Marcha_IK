@@ -313,6 +313,8 @@ class SingleLegActionSelector:
         
         # ===== NUEVO: CONTROLADOR BASADO EN ÁNGULOS =====
         self.angle_controller = AngleBasedExpertController(env.robot_id)
+        # Musculos PAM McKibben usarlos para generar presiones y angulos
+        self.pam_muscle=env.pam_muscles
         
         # ===== ESTADO INTERNO =====
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
@@ -679,9 +681,9 @@ class SimpleProgressiveReward:
     """
     Sistema súper simple: 3 niveles que van aumentando la dificultad y las recompensas
     
-    NIVEL 1: Solo mantenerse de pie (recompensas pequeñas 0-3)
-    NIVEL 2: Balance estable (recompensas medias 0-5) 
-    NIVEL 3: Levantar piernas (recompensas altas 0-8)
+    NIVEL 1: Solo mantenerse de pie (recompensas pequeñas 0-3) (0-15 episodios)
+    NIVEL 2: Balance estable (recompensas medias 0-5)  (15-40 episodios)
+    NIVEL 3: Levantar piernas (recompensas altas 0-8) (40+ episodios)
     """
     
     def __init__(self, robot_id, plane_id, frequency_simulation, switch_interval=2000):
@@ -693,13 +695,33 @@ class SimpleProgressiveReward:
         # ===== CONFIGURACIÓN SUPER SIMPLE =====
         self.level = 1  # Empezamos en nivel 1
         self.episode_count = 0
-        self.recent_episodes = []  # Últimos 5 episodios
+        self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
+        self.success_streak = 0  # Episodios consecutivos exitosos
         
         # Configuración por nivel (muy simple)
+        # Configuración más graduada
         self.level_config = {
-            1: {'max_reward': 3.0, 'upgrade_threshold': 2.0, 'min_episodes': 10},
-            2: {'max_reward': 5.0, 'upgrade_threshold': 3.5, 'min_episodes': 15},  
-            3: {'max_reward': 8.0, 'upgrade_threshold': 999, 'min_episodes': 999}  # Nivel final
+            1: {
+                'description': 'Supervivencia básica',
+                'max_reward': 2.0,
+                'success_threshold': 1.0,    # Reward mínimo para considerar éxito
+                'episodes_needed': 10,       # Episodios mínimos en este nivel
+                'success_streak_needed': 3   # Episodios consecutivos exitosos para subir
+            },
+            2: {
+                'description': 'Balance estable',
+                'max_reward': 4.0,
+                'success_threshold': 2.5,
+                'episodes_needed': 15,
+                'success_streak_needed': 4
+            },
+            3: {
+                'description': 'Levantar piernas alternando',
+                'max_reward': 7.0,
+                'success_threshold': 999,    # Nivel final
+                'episodes_needed': 999,
+                'success_streak_needed': 999
+            }
         }
 
         # Inclinación crítica - MÁS PERMISIVO según nivel
@@ -710,8 +732,9 @@ class SimpleProgressiveReward:
         }
         
         # Para alternancia de piernas (solo nivel 3)
-        self.target_leg = 'right'
+        self.target_leg = 'left'
         self.switch_timer = 0
+        self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
 
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
