@@ -56,7 +56,7 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
         self.urdf_path = "2_legged_human_like_robot.urdf"
-        self.frecuency_simulation=1500.0
+        self.frecuency_simulation=400.0
         self.time_step = 1.0 / self.frecuency_simulation
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
         self.num_active_pams = 6
