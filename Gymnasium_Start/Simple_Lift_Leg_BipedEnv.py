@@ -14,7 +14,7 @@ from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
-from Archivos_Mejorados.RewardSystemSimple import SingleLegBalanceRewardSystem, \
+from Archivos_Mejorados.RewardSystemSimple import AngleBasedExpertController, \
                                                     SingleLegActionSelector, SimpleProgressiveReward           
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
@@ -151,10 +151,46 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
+        use_expert = False
+    
+        if self.action_selector and self.action_selector.should_use_expert_action():
+            use_expert = True
+
+        # NUEVA LÓGICA: Más ayuda experta en situaciones críticas
+        if self.simple_reward_system:
+            curriculum_info = self.simple_reward_system.get_info()
+            current_level = curriculum_info.get('level', 1)
+            episodes_completed = curriculum_info.get('episodes', 0)
+
+            # Obtener estado actual para decidir ayuda experta
+            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            current_tilt = abs(euler[0]) + abs(euler[1])
+            # LÓGICA INTELIGENTE: Más ayuda cuando hay problemas
+            base_expert_probability = {
+                1: 0.85,  # 85% en nivel 1
+                2: 0.65,  # 65% en nivel 2
+                3: 0.45   # 45% en nivel 3
+            }.get(current_level, 0.5)
+            
+            ## Aumentar ayuda si hay inestabilidad
+            if current_tilt > 0.2:  # Más de 11.5 grados total
+                base_expert_probability += 0.3
+            elif current_tilt > 0.15:  # Más de 8.6 grados total
+                base_expert_probability += 0.15
+            
+            # Más ayuda en episodios tempranos de cada nivel
+            if episodes_completed < 20:
+                base_expert_probability += 0.1
         
-        if self.action_selector.should_use_expert_action():
+            use_expert = np.random.random() < min(0.95, base_expert_probability)
+        
+        if use_expert and hasattr(self, 'angle_expert_controller'):
+            actual_action = self.angle_expert_controller.get_expert_action_for_level(self.simple_reward_system)
+            action_source = "ANGLE_EXPERT"
+        elif use_expert and self.action_selector:
             actual_action = self.action_selector.get_expert_action()
-            action_source = "EXPERT"
+            action_source = "BASIC_EXPERT"  
         else:
             actual_action = action
             action_source = "RL"
@@ -193,18 +229,18 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self._debug_joint_angles_and_pressures(actual_action)
 
         
-        if self.simple_reward_system:
-            reward = self.simple_reward_system.calculate_reward(actual_action, self.step_count)
-            done = self.simple_reward_system.is_episode_done(self.step_count)
-            system_used = "PROGRESSIVE"
-        else:
-            current_task = self.action_selector.current_action.value
-            reward = self.reward_system.calculate_reward(actual_action, current_task)
-            done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
-            system_used = "FALLBACK"
+        #if self.simple_reward_system:
+        reward = self.simple_reward_system.calculate_reward(actual_action, self.step_count)
+        done = self.simple_reward_system.is_episode_done(self.step_count)
+        system_used = "PROGRESSIVE"
+        #else:
+        #    current_task = self.action_selector.current_action.value
+        #    reward = self.reward_system.calculate_reward(actual_action, current_task)
+        #    done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
+        #    system_used = "FALLBACK"
             # Log cuando se usa fallback (para debugging)
-            if self.step_count == 1:
-                log_print(f"⚠️ Using fallback system instead of progressive system")
+        #    if self.step_count == 1:
+        #        log_print(f"⚠️ Using fallback system instead of progressive system")
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
@@ -234,20 +270,34 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.simple_reward_system.update_after_episode(episode_total)
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
-        else:
-            info['current_task'] = current_task
-            info['system_type'] = 'fallback'
-            log_print(f"{self.current_task=:}")
+        #else:
+            #info['current_task'] = current_task
+            #info['system_type'] = 'fallback'
+            #log_print(f"{self.current_task=:}")
         
         # CONSERVAR tu debug existente 
-        if self.step_count % self.frecuency_simulation == 0 or done:
-            log_print(f"{self.step_count=:}: {action_source} action, reward={reward:.2f}")
-            log_print(f"Step {done=:}, is_valid={is_valid}")
+        if self.step_count % 200 == 0 or done:
+            log_print(f"🔍 Step {self.step_count} - Control Analysis:")
+            log_print(f"   Height: {pos[2]:.2f}m")
+            log_print(f"   Tilt: Roll {math.degrees(euler[0]):.1f}°, Pitch {math.degrees(euler[1]):.1f}°")
+            log_print(f"   Action source: {action_source}")
+            
+            if self.simple_reward_system:
+                curriculum_info = self.simple_reward_system.get_info()
+                log_print(f"   Level: {curriculum_info.get('level')}, Target: {curriculum_info.get('target_leg', 'N/A')}")
+    
+            # Verificar si está cerca de límites
+            max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
+            if abs(euler[0]) > max_allowed_tilt * 0.8 or abs(euler[1]) > max_allowed_tilt * 0.8:
+                log_print(f"   ⚠️ Approaching tilt limit! Max allowed: ±{math.degrees(max_allowed_tilt):.1f}°")
+            
 
         # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
         if self.step_count % self.frecuency_simulation == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
             status = self.simple_reward_system.get_info()
             elapsed_time = self.step_count / self.frecuency_simulation
+            log_print(f" {action_source} action, reward={reward:.2f}")
+            log_print(f"Step {done=:}, is_valid={is_valid}")
             log_print(f"🎮 Active system: {system_used} at step {self.step_count}")
             log_print(f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
             log_print(f"   Current level: {status['level']}")
@@ -673,20 +723,19 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
-        
-        # Nuevo sistema de recompensas
-        #self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, self.plane_id)
+        # Sistemas de recompensas
         if self.use_simple_progressive:
             self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
                                                                 self.frecuency_simulation,
                                                                 switch_interval=self.switch_interval)
-        else:
-            self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, 
-                                                              self.plane_id)
+        #else:
+        #    self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, 
+        #                                                      self.plane_id)
         
         # Nuevo selector de acciones
         if not hasattr(self, 'action_selector') or not self.action_selector:
             self.action_selector = SingleLegActionSelector(self)
+            self.angle_expert_controller = self.action_selector.angle_controller
         
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
@@ -757,22 +806,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     @property
     def current_balance_status(self):
         """Información actual del equilibrio en una pierna"""
-        if hasattr(self, 'reward_system') and self.reward_system:
-            return {
-                'support_leg': self.reward_system.current_support_leg,
-                'raised_leg': self.reward_system.raised_leg,
-                'balance_time': self.reward_system.single_leg_time,
-                'target_knee_height': self.target_knee_height,
-                'episode_step': self.step_count
-            }
-        else:
-            return {
-                'support_leg': None,
-                'raised_leg': None,
-                'balance_time': 0,
-                'target_knee_height': self.target_knee_height,
-                'episode_step': self.step_count
-            }
+        #if hasattr(self, 'reward_system') and self.reward_system:
+        #    return {
+        #        'support_leg': self.reward_system.current_support_leg,
+        #        'raised_leg': self.reward_system.raised_leg,
+        #        'balance_time': self.reward_system.single_leg_time,
+        #        'target_knee_height': self.target_knee_height,
+        #        'episode_step': self.step_count
+        #    }
+        #else:
+        return {
+            'support_leg': None,
+            'raised_leg': None,
+            'balance_time': 0,
+            'target_knee_height': self.target_knee_height,
+            'episode_step': self.step_count
+        }
         
     def parametros_torque_pam(self):
         # Momentos de brazo calculados desde dimensiones reales

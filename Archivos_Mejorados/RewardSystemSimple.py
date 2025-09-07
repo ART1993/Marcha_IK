@@ -471,31 +471,39 @@ class AngleBasedExpertController:
         
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
-            # Equilibrio en pierna IZQUIERDA (derecha levantada)
-            'balance_left_support': {
-                'left_hip': 0.0,        # Cadera izq: recta para soporte
-                'left_knee': 0.0,       # Rodilla izq: extendida para soporte
-                'right_hip': 0.7,       # Cadera der: flexión 40° (0.7 rad ≈ 40°)
-                'right_knee': 0.7,      # Rodilla der: flexión 40° para levantar
-                'description': 'Pierna derecha levantada 40°'
+            # NIVEL 1: Solo balance básico
+            'level_1_balance': {
+                'left_hip': 0.0,
+                'left_knee': 0.0,
+                'right_hip': 0.0,
+                'right_knee': 0.0,
+                'description': 'Posición erguida básica'
             },
             
-            # Equilibrio en pierna DERECHA (izquierda levantada)
-            'balance_right_support': {
-                'left_hip': 0.7,        # Cadera izq: flexión 40°
-                'left_knee': 0.7,       # Rodilla izq: flexión 40° para levantar
-                'right_hip': 0.0,       # Cadera der: recta para soporte
-                'right_knee': 0.0,      # Rodilla der: extendida para soporte
-                'description': 'Pierna izquierda levantada 40°'
-            },
-            
-            # Transiciones - ángulos intermedios
-            'transition': {
-                'left_hip': 0.05,        # Ligera flexión bilateral
+            # NIVEL 2: Balance estable con micro-ajustes
+            'level_2_balance': {
+                'left_hip': 0.05,    # Ligera flexión para estabilidad
                 'left_knee': 0.05,
                 'right_hip': 0.05,
                 'right_knee': 0.05,
-                'description': 'Posición intermedia para transición'
+                'description': 'Balance estable con micro-flexión'
+            },
+            
+            # NIVEL 3: Equilibrio en una pierna
+            'level_3_left_support': {
+                'left_hip': 0.0,     # Pierna izq: soporte
+                'left_knee': 0.0,
+                'right_hip': 0.6,    # Pierna der: levantada 34°
+                'right_knee': 0.6,
+                'description': 'Pierna derecha levantada'
+            },
+            
+            'level_3_right_support': {
+                'left_hip': 0.6,     # Pierna izq: levantada 34°
+                'left_knee': 0.6,
+                'right_hip': 0.0,    # Pierna der: soporte
+                'right_knee': 0.0,
+                'description': 'Pierna izquierda levantada'
             }
         }
     
@@ -516,6 +524,38 @@ class AngleBasedExpertController:
             return self.target_angles['balance_right_support']
         else:  # Transiciones
             return self.target_angles['transition']
+        
+    def get_expert_action_for_level(self, reward_system):
+        """Obtener acción experta según nivel del curriculum"""
+        
+        if not reward_system:
+            return self._get_basic_balance_action()
+        
+        curriculum_info = reward_system.get_info()
+        current_level = curriculum_info.get('level', 1)
+        
+        if current_level == 1:
+            target_config = self.target_angles['level_1_balance']
+        elif current_level == 2:
+            target_config = self.target_angles['level_2_balance']
+        else:  # level == 3
+            target_leg = curriculum_info.get('target_leg', 'right')
+            if target_leg == 'right':
+                target_config = self.target_angles['level_3_left_support']  # Izq soporte, der levantada
+            else:
+                target_config = self.target_angles['level_3_right_support']  # Der soporte, izq levantada
+        
+        # Calcular torques PD hacia ángulos objetivo
+        pd_torques = self.calculate_pd_torques(target_config)
+        
+        # Convertir a presiones PAM
+        pam_pressures = self.torques_to_pam_pressures(pd_torques)
+        
+        return pam_pressures
+    
+    def _get_basic_balance_action(self):
+        """Fallback: acción básica de balance"""
+        return np.array([0.4, 0.5, 0.4, 0.5, 0.1, 0.1])
     
     def calculate_pd_torques(self, target_angles_dict):
         """
@@ -660,6 +700,13 @@ class SimpleProgressiveReward:
             1: {'max_reward': 3.0, 'upgrade_threshold': 2.0, 'min_episodes': 10},
             2: {'max_reward': 5.0, 'upgrade_threshold': 3.5, 'min_episodes': 15},  
             3: {'max_reward': 8.0, 'upgrade_threshold': 999, 'min_episodes': 999}  # Nivel final
+        }
+
+        # Inclinación crítica - MÁS PERMISIVO según nivel
+        self.max_tilt_by_level = {
+            1: 0.8,  # ~85 grados - muy permisivo para aprender básicos
+            2: 0.6,  # ~70 grados - moderadamente permisivo  
+            3: 0.3   # ~57 grados - estricto para habilidades avanzadas
         }
         
         # Para alternancia de piernas (solo nivel 3)
@@ -821,8 +868,10 @@ class SimpleProgressiveReward:
             log_print("❌ Episode done: Robot fell")
             return True
         
+        
+        max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
         # Inclinación extrema
-        if abs(euler[0]) > 1.0 or abs(euler[1]) > 1.0:
+        if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
             log_print("❌ Episode done: Robot tilted too much")
             return True
         
