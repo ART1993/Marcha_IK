@@ -28,8 +28,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - left knee joint: 1
             - left ankle joint: 2
             - right hip joint: 3
-            - right hip joint: 4
-            - right hip joint: 5
+            - right knee joint: 4
+            - right anckle joint: 5
     """
     
     def __init__(self, render_mode='human', action_space="pam", enable_curriculum=True):
@@ -233,14 +233,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         reward = self.simple_reward_system.calculate_reward(actual_action, self.step_count)
         done = self.simple_reward_system.is_episode_done(self.step_count)
         system_used = "PROGRESSIVE"
-        #else:
-        #    current_task = self.action_selector.current_action.value
-        #    reward = self.reward_system.calculate_reward(actual_action, current_task)
-        #    done = self.reward_system.is_episode_done(self.step_count, self.frecuency_simulation)
-        #    system_used = "FALLBACK"
-            # Log cuando se usa fallback (para debugging)
-        #    if self.step_count == 1:
-        #        log_print(f"⚠️ Using fallback system instead of progressive system")
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
@@ -403,8 +395,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         knee_velocity = p.getJointState(self.robot_id, knee_joint_id)[1]
         
         # Torque de control automático
-        kp = 80.0  # Ganancia proporcional para h
-        kd = 12.0   # Ganancia derivativa de h
+        kp = self.KP  # Ganancia proporcional para h
+        kd = self.KD   # Ganancia derivativa de h
         
         control_torque = kp * height_error - kd * knee_velocity
         
@@ -415,7 +407,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
 
         # Limitar torque final
-        max_knee_torque = 100.0
+        max_knee_torque = self.MAX_REASONABLE_TORQUE
         base_torques[controlled_knee_idx] = np.clip(
             base_torques[controlled_knee_idx], 
             -max_knee_torque, 
@@ -472,32 +464,46 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         joint_velocities = [state[1] for state in joint_states]
         
         # Calcular fuerzas PAM reales
-        pam_forces = np.zeros(6)
+        pam_forces = np.zeros(6, dtype=float)
         
+        def eps_from(theta, R_abs,muscle_name):
+            # θ0=0 como referencia; el método ya hace clip a [0, εmax]
+            return self.pam_muscles[muscle_name].epsilon_from_angle(theta, 0.0, max(abs(R_abs), 1e-9))
         
-        for i, pressure_normalized in enumerate(pam_pressures):
-            # Determinar articulación correspondiente
-            #joint_angle, joint_velocity=self.seleccion_joint(i, joint_positions, joint_velocities)
-            muscle_name = self.muscle_names[i]
-            pam_muscle = self.pam_muscles[muscle_name]
-            
-            # Presión real
-            real_pressure = pam_muscle.min_pressure + pressure_normalized * (pam_muscle.max_pressure - pam_muscle.min_pressure)
+        P = np.array([self.pam_muscles[muscle_names].real_pressure_PAM(u) for muscle_names,u in zip(self.muscle_names, pam_pressures)], dtype=float)
 
-            # Contracción comandada (no basada en posición actual)
-            commanded_contraction = pressure_normalized * self.MAX_CONTRACTION_RATIO
-            
-            
-            # Calcular fuerza desde modelo PAM
-            
-            raw_force = pam_muscle.force_model_new(real_pressure, commanded_contraction)
-            
-            ## Damping por velocidad específico para robot
-            joint_idx = 0 if i < 2 else (2 if i < 4 else (1 if i == 4 else 3))
-            velocity_damping = 1.0 - self.VELOCITY_DAMPING_FACTOR * abs(joint_velocities[joint_idx])
-            velocity_damping = np.clip(velocity_damping, 0.6, 1.0)
-            
-            pam_forces[i] = raw_force * velocity_damping
+        # Cadera izquierda j0
+        flexor_cadera_L, extensor_cadera_L=self.muscle_names[0], self.muscle_names[1]
+        thL = joint_positions[0]
+        R_flex_L = self.hip_flexor_moment_arm(thL)
+        R_ext_L  = self.hip_extensor_moment_arm(thL)
+        eps_flex_L = eps_from(thL, R_flex_L,flexor_cadera_L)
+        eps_ext_L  = eps_from(thL, R_ext_L, extensor_cadera_L)
+        pam_forces[0] = self.pam_muscles[flexor_cadera_L].force_model_new(P[0], eps_flex_L)  # flexor L
+        pam_forces[1] = self.pam_muscles[extensor_cadera_L].force_model_new(P[1], eps_ext_L)   # extensor L
+
+        # Cadera derecha j2
+        flexor_cadera_R, extensor_cadera_R=self.muscle_names[2], self.muscle_names[3]
+        thR = joint_positions[2]
+        R_flex_R = self.hip_flexor_moment_arm(thL)
+        R_ext_R  = self.hip_extensor_moment_arm(thR)
+        eps_flex_R = eps_from(thR, R_flex_R,flexor_cadera_R)
+        eps_ext_R  = eps_from(thR, R_ext_R,extensor_cadera_R)
+        pam_forces[2] = self.pam_muscles[flexor_cadera_R].force_model_new(P[2], eps_flex_R)  # flexor L
+        pam_forces[3] = self.pam_muscles[extensor_cadera_R].force_model_new(P[3], eps_ext_R)   # extensor L
+
+        # RODILLAS (solo flexores activos)  (j1 = left_knee, j3 = right_knee)
+        flexor_rodilla_L, flexor_rodilla_R=self.muscle_names[4], self.muscle_names[5]
+        thK_L = joint_positions[1]
+        thK_R = joint_positions[3]
+        R_knee_L = self.knee_flexor_moment_arm(thK_L)
+        R_knee_R = self.knee_flexor_moment_arm(thK_R)
+        eps_knee_L = eps_from(thK_L, R_knee_L,flexor_rodilla_L)
+        eps_knee_R = eps_from(thK_R, R_knee_R,flexor_rodilla_R)
+        pam_forces[4] = self.pam_muscles[flexor_rodilla_L].force_model_new(P[4], eps_knee_L)  # flexor rodilla L
+        pam_forces[5] = self.pam_muscles[flexor_rodilla_R].force_model_new(P[5], eps_knee_R)  # flexor rodilla R
+
+        
 
         # Aplicar a las caderas (tienen músculos antagónicos)
         pam_forces[0], pam_forces[1] = apply_reciprocal_inhibition(pam_forces[0], 
@@ -513,40 +519,29 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         joint_torques = np.zeros(4)
 
          # CADERA IZQUIERDA (antagónica: flexor vs extensor)
-        left_hip_angle = joint_positions[0]
-        flexor_arm = self.hip_flexor_moment_arm(left_hip_angle)
-        extensor_arm = self.hip_extensor_moment_arm(left_hip_angle)
+        #left_hip_angle = joint_positions[0]
+        #flexor_arm = self.hip_flexor_moment_arm(left_hip_angle)
+        #extensor_arm = self.hip_extensor_moment_arm(left_hip_angle)
         
-        flexor_torque = pam_forces[0] * flexor_arm
-        extensor_torque = -pam_forces[1] * extensor_arm  # Negativo (dirección opuesta)
-        joint_torques[0] = flexor_torque + extensor_torque
-        
-        # Rodilla izquierda (flexor + resorte pasivo)
-        left_knee_angle = joint_positions[1]
-        knee_arm = self.knee_flexor_moment_arm(left_knee_angle)
-        flexor_torque = pam_forces[4] * knee_arm
-        # Resorte pasivo calculado para contrarrestar gravedad de tu robot específico
-        passive_spring = -self.PASSIVE_SPRING_STRENGTH * np.sin(left_knee_angle)
-        passive_damping = -self.DAMPING_COEFFICIENT * joint_velocities[1]
-        joint_torques[1] = flexor_torque + passive_spring + passive_damping
-        
-        # CADERA DERECHA (antagónica: flexor vs extensor)
-        right_hip_angle = joint_positions[2]
-        flexor_arm = self.hip_flexor_moment_arm(right_hip_angle)
-        extensor_arm = self.hip_extensor_moment_arm(right_hip_angle)
+        #flexor_torque = pam_forces[0] * flexor_arm
+        #extensor_torque = -pam_forces[1] * extensor_arm  # Negativo (dirección opuesta)
+        #joint_torques[0] = flexor_torque + extensor_torque
 
-        flexor_torque = pam_forces[2] * flexor_arm
-        extensor_torque = -pam_forces[3] * extensor_arm
-        joint_torques[2] = flexor_torque + extensor_torque
+        # Cadera izquierda: flexión positiva por flexor, extensión por extensor
+        joint_torques[0]  = ( pam_forces[0] * R_flex_L) + (-pam_forces[1] * R_ext_L)
+
+        # Rodilla izquierda: flexor + resorte/damping pasivos (como tenías)
+        passive_spring  = - self.PASSIVE_SPRING_STRENGTH * np.sin(thK_L)
+        passive_damping = - self.DAMPING_COEFFICIENT    * joint_velocities[1]
+        joint_torques[1]  = (pam_forces[4] * R_knee_L) + passive_spring + passive_damping
         
-        # RODILLA DERECHA (flexor PAM + resorte extensor pasivo)
-        right_knee_angle = joint_positions[3]
-        knee_arm = self.knee_flexor_moment_arm(right_knee_angle)
+        # Cadera derecha
+        joint_torques[2]  = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
         
-        flexor_torque = pam_forces[5] * knee_arm
-        passive_spring = -self.PASSIVE_SPRING_STRENGTH * np.sin(right_knee_angle)
-        passive_damping = -self.DAMPING_COEFFICIENT * joint_velocities[3]
-        joint_torques[3] = flexor_torque + passive_spring + passive_damping
+       # Rodilla derecha
+        passive_spring_R  = - self.PASSIVE_SPRING_STRENGTH * np.sin(thK_R)
+        passive_damping_R = - self.DAMPING_COEFFICIENT    * joint_velocities[3]
+        joint_torques[3]  = (pam_forces[5] * R_knee_R) + passive_spring_R + passive_damping_R
         
         joint_torques = np.clip(joint_torques, -self.MAX_REASONABLE_TORQUE, self.MAX_REASONABLE_TORQUE)
     
@@ -558,12 +553,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'raw_forces': pam_forces,
             'joint_torques': joint_torques.copy(),
             'moment_arms': {
-                'left_hip_flexor': self.hip_flexor_moment_arm(left_hip_angle),
-                'left_hip_extensor': self.hip_extensor_moment_arm(left_hip_angle),
-                'right_hip_flexor': self.hip_flexor_moment_arm(right_hip_angle),
-                'right_hip_extensor': self.hip_extensor_moment_arm(right_hip_angle),
-                'left_knee_flexor': self.knee_flexor_moment_arm(left_knee_angle),
-                'right_knee_flexor': self.knee_flexor_moment_arm(right_knee_angle)
+                'left_hip_flexor': R_flex_L,
+                'left_hip_extensor': R_ext_L,
+                'right_hip_flexor': R_flex_R,
+                'right_hip_extensor': R_ext_R,
+                'left_knee_flexor': R_knee_L,
+                'right_knee_flexor': R_knee_R
             },
             'inhibition_applied': True,
             'robot_specific_params': True
@@ -806,15 +801,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     @property
     def current_balance_status(self):
         """Información actual del equilibrio en una pierna"""
-        #if hasattr(self, 'reward_system') and self.reward_system:
-        #    return {
-        #        'support_leg': self.reward_system.current_support_leg,
-        #        'raised_leg': self.reward_system.raised_leg,
-        #        'balance_time': self.reward_system.single_leg_time,
-        #        'target_knee_height': self.target_knee_height,
-        #        'episode_step': self.step_count
-        #    }
-        #else:
         return {
             'support_leg': None,
             'raised_leg': None,
@@ -827,6 +813,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Momentos de brazo calculados desde dimensiones reales
         self.HIP_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
         self.HIP_FLEXOR_VARIATION = 0.0101     # ±1.01cm variación por ángulo
+
+        self.KP = 80.0   # Ganancia proporcional
+        self.KD = 12.0   # Ganancia derivativa
         
         self.HIP_EXTENSOR_BASE_ARM = 0.0628    # 6.28cm - extensores más potentes (glúteos)
         self.HIP_EXTENSOR_VARIATION = 0.0126   # ±1.26cm variación por ángulo
