@@ -153,7 +153,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== DECISIÓN: EXPERTO vs RL =====
         use_expert = False
     
-        if self.action_selector and self.action_selector.should_use_expert_action():
+        if self.action_selector is not None and self.action_selector.should_use_expert_action():
             use_expert = True
 
         # NUEVA LÓGICA: Más ayuda experta en situaciones críticas
@@ -188,12 +188,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if use_expert and hasattr(self, 'angle_expert_controller'):
             actual_action = self.angle_expert_controller.get_expert_action_for_level(self.simple_reward_system)
             action_source = "ANGLE_EXPERT"
-        elif use_expert and self.action_selector:
+        elif use_expert and self.action_selector is not None:
             actual_action = self.action_selector.get_expert_action()
             action_source = "BASIC_EXPERT"  
         else:
             actual_action = action
             action_source = "RL"
+
+        self.ep_total_actions += 1
+        if action_source in ("ANGLE_EXPERT", "BASIC_EXPERT"):
+            self.ep_expert_actions += 1
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
     
@@ -259,6 +263,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['current_level'] = curriculum_info.get('level', 1)
             # Debug simple
             if done:
+                expert_pct = 100.0 * self.ep_expert_actions / max(1, self.ep_total_actions)
+                log_print(f"🎯 Expert usage this episode: {expert_pct:.1f}% "
+                        f"({self.ep_expert_actions}/{self.ep_total_actions})")
+                info['expert_usage_pct'] = expert_pct
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.simple_reward_system.update_after_episode(episode_total)
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
@@ -268,7 +276,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             #log_print(f"{self.current_task=:}")
         
         # CONSERVAR tu debug existente 
-        if self.step_count % 200 == 0 or done:
+        if self.step_count % self.frecuency_simulation//2 == 0 or done:
             log_print(f"🔍 Step {self.step_count} - Control Analysis:")
             log_print(f"   Height: {pos[2]:.2f}m")
             log_print(f"   Tilt: Roll {math.degrees(euler[0]):.1f}°, Pitch {math.degrees(euler[1]):.1f}°")
@@ -681,6 +689,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         Reemplazar el método reset() del entorno original con este.
         """
         super().reset(seed=seed)
+
+        self.ep_total_actions = 0
+        self.ep_expert_actions = 0
         
         # Actualizar reward system y action selector del episodio anterior si existen
         if hasattr(self, 'action_selector') and self.action_selector and hasattr(self, 'episode_reward'):
@@ -723,14 +734,18 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
                                                                 self.frecuency_simulation,
                                                                 switch_interval=self.switch_interval)
-        #else:
-        #    self.reward_system = SingleLegBalanceRewardSystem(self.robot_id, 
-        #                                                      self.plane_id)
-        
+                 
         # Nuevo selector de acciones
-        if not hasattr(self, 'action_selector') or not self.action_selector:
+        if self.action_selector is None:
+            log_print("🎯 Initializing action_selector for single leg balance")
             self.action_selector = SingleLegActionSelector(self)
             self.angle_expert_controller = self.action_selector.angle_controller
+        else:
+            # Actualiza el env dentro del selector (por si cambian intervalos/refs)
+            self.action_selector.env = self
+            self.action_selector.target_switch_time = self.switch_interval
+            self.action_selector.angle_controller = AngleBasedExpertController(self)
+        self.angle_expert_controller = self.action_selector.angle_controller
         
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
