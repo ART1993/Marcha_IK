@@ -694,8 +694,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.ep_expert_actions = 0
         
         # Actualizar reward system y action selector del episodio anterior si existen
-        if hasattr(self, 'action_selector') and self.action_selector and hasattr(self, 'episode_reward'):
-            self.action_selector.update_after_episode(self.episode_reward)
+        if self.action_selector is not None and hasattr(self, 'episode_reward'):
+            self.action_selector.on_episode_end(self.episode_reward)
 
         
         # ===== RESET FÍSICO =====
@@ -730,10 +730,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
-        if self.use_simple_progressive:
+        if self.use_simple_progressive and self.simple_reward_system is None:
             self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
                                                                 self.frecuency_simulation,
                                                                 switch_interval=self.switch_interval)
+        else:
+            # solo re-vincula IDs si cambiaron, sin perder contadores/racha
+            self.simple_reward_system.robot_id = self.robot_id
+            self.simple_reward_system.plane_id = self.plane_id
                  
         # Nuevo selector de acciones
         if self.action_selector is None:

@@ -164,7 +164,7 @@ class SingleLegActionSelector:
         self.last_10_rewards.append(reward)
         self.decide_current_action()
     
-    def update_after_episode(self, total_episode_reward):
+    def on_episode_end(self, total_episode_reward):
         """Actualizar después de cada episodio"""
         self.episode_count += 1
         log_print(f"📊 Episode {self.episode_count} ended with total reward: {total_episode_reward:.1f}")
