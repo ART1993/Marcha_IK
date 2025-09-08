@@ -212,6 +212,36 @@ class PAMMcKibben:
         # 3) inverso común
         return float(self.pressure_from_force_and_contraction(F, eps))
     
+    def stiffness_axial_constP(self, pressure, contraction_ratio):
+        """
+        k_x = dF/dx | P  con x = L0*eps (acortamiento).
+        Devuelve N/m (puede ser negativo en modo presión fija).
+        """
+        eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+        A0 = np.pi * (self.r0 ** 2)
+        dF_deps = - pressure * A0 * ( (1.0 / (1.0 - eps)**2) + 3.0 * (np.cos(self.alpha0)**2) )
+        k_x = dF_deps / self.L0
+        return float(k_x)
+
+    def dF_dP_const_eps(self, contraction_ratio):
+        """
+        Sensibilidad de fuerza a presión: dF/dP | eps  (N/Pa)
+        """
+        eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+        A = self.current_area(eps)  # o usa A0/(1-eps) si prefieres
+        alpha = self.braid_angle(eps)
+        g = self.force_factor(alpha)  # = 3*cos^2(alpha) - 1
+        return float(A * g)
+
+    def joint_stiffness_constP(self, pressure, theta, theta0, R):
+        """
+        K_theta = dTau/dTheta | P  (N·m/rad), para brazo constante R.
+        """
+        eps = self.epsilon_from_angle(theta, theta0, R)
+        A0 = np.pi * (self.r0 ** 2)
+        dF_deps = - pressure * A0 * ( (1.0 / (1.0 - eps)**2) + 3.0 * (np.cos(self.alpha0)**2) )
+        return float((R**2 / self.L0) * dF_deps)
+    
     #def pressure_for_torque(self, tau, theta, theta0, R):
     #    eps = self.epsilon_from_angle(theta, theta0, R)
     #    A = self.area_from_epsilon(eps)
