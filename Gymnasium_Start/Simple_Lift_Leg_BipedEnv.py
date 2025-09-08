@@ -485,7 +485,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Cadera derecha j2
         flexor_cadera_R, extensor_cadera_R=self.muscle_names[2], self.muscle_names[3]
         thR = joint_positions[2]
-        R_flex_R = self.hip_flexor_moment_arm(thL)
+        R_flex_R = self.hip_flexor_moment_arm(thR)
         R_ext_R  = self.hip_extensor_moment_arm(thR)
         eps_flex_R = eps_from(thR, R_flex_R,flexor_cadera_R)
         eps_ext_R  = eps_from(thR, R_ext_R,extensor_cadera_R)
@@ -603,8 +603,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Contactos
-        left_contact = len(p.getContactPoints(self.robot_id, 0, 2, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, 0, 5, -1)) > 0
+        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 2, -1)) > 0
+        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 5, -1)) > 0
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de rodillas

@@ -63,23 +63,6 @@ class PAMMcKibben:
     def contraction_muscle(self,contraction_ratio):
         eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
         return max(self.L0 * (1.0 - eps), self.L_min)
-    
-    def current_radius(self, contraction_ratio):
-        """
-        Radio actual del músculo durante la contracción
-        
-        En ε = 0: r = r₀
-        En ε = ε_max: r = r_max
-        """
-        epsilon = contraction_ratio
-        if epsilon < 0 or epsilon >= self.epsilon_max:
-            return self.r0
-        
-        # Conservación de volumen en la vejiga
-        current_length = self.L0 * (1 - epsilon)
-        volume_ratio = self.L0 / current_length
-        
-        return self.r0 * np.sqrt(volume_ratio)
 
 
     def force_model_new(self, pressure, contraction_ratio):

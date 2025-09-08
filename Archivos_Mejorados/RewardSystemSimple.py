@@ -48,8 +48,10 @@ class SingleLegBalanceRewardSystem:
         # ===== HISTORIA PARA ESTABILIDAD =====
         self.height_history = deque(maxlen=20)
         self.orientation_history = deque(maxlen=20)
+
+        self.last_done_reason = None
         
-        print(f"✅ Single Leg Balance Reward System initialized")
+        both_print(f"✅ Single Leg Balance Reward System initialized")
     
     def calculate_reward(self, action, current_task="single_leg_balance"):
         """
@@ -521,11 +523,16 @@ class AngleBasedExpertController:
         """
         
         if current_task == SingleLegActionType.BALANCE_LEFT_SUPPORT:
-            return self.target_angles['balance_left_support']
+            return self.target_angles['level_3_left_support']
         elif current_task == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
-            return self.target_angles['balance_right_support']
+            return self.target_angles['level_3_right_support']
+        elif current_task in (SingleLegActionType.TRANSITION,
+                          SingleLegActionType.TRANSITION_TO_LEFT,
+                          SingleLegActionType.TRANSITION_TO_RIGHT):
+            # Postura intermedia estable para transiciones
+            return self.target_angles['level_2_balance']
         else:  # Transiciones
-            return self.target_angles['transition']
+            return self.target_angles['level_1_balance']
         
     def get_expert_action_for_level(self, reward_system):
         """Obtener acción experta según nivel del curriculum"""
@@ -728,7 +735,7 @@ class SimpleProgressiveReward:
                 'description': 'Supervivencia básica',
                 'max_reward': 2.0,
                 'success_threshold': 1.0,    # Reward mínimo para considerar éxito
-                'episodes_needed': 10,       # Episodios mínimos en este nivel
+                'episodes_needed': 5,       # Episodios mínimos en este nivel
                 'success_streak_needed': 3   # Episodios consecutivos exitosos para subir
             },
             2: {
@@ -873,35 +880,45 @@ class SimpleProgressiveReward:
             else:
                 return -0.5  # Incorrecto
     
-    def update_after_episode(self, episode_reward):
+    def update_after_episode(self, episode_reward, success=None):
         """Actualizar nivel después de cada episodio"""
         
         self.episode_count += 1
         self.recent_episodes.append(episode_reward)
+        has_fallen = (self.last_done_reason in ("fall", "tilt"))
         
         # Mantener solo últimos 5 episodios
         if len(self.recent_episodes) > 5:
             self.recent_episodes.pop(0)
+
+        # Determinar éxito si no te lo pasan explícitamente
+        cfg = self.level_config[self.level]
+
+        if success is None:
+            # Éxito si supera umbral y no hubo caída
+            success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
+
+        # Actualizar racha
+        self.success_streak = self.success_streak + 1 if success else 0
+
+        # (Opcional) logging
+        both_print(f"🏁 Episode {self.episode_count}: "
+                f"reward={episode_reward:.1f} | success={success} | "
+                f"streak={self.success_streak}/{cfg['success_streak_needed']}")
         
         # Verificar si subir de nivel
         if len(self.recent_episodes) >= 5:  # Necesitamos al menos 5 episodios
-            avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
-            config = self.level_config[self.level]
+            #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
+            #config = self.level_config[self.level]
             
-            # ¿Debemos subir de nivel?
-            if (avg_reward >= config['upgrade_threshold'] and 
-                self.episode_count >= config['min_episodes'] and 
-                self.level < 3):
-                
-                old_level = self.level
+            # Promoción de nivel si cumple racha y episodios mínimos
+            if (self.success_streak >= cfg['success_streak_needed']
+                and self.episode_count >= cfg['episodes_needed']
+                and self.level < 3):
+                old = self.level
                 self.level += 1
-                
-                print(f"\n🎉 LEVEL UP! {old_level} → {self.level}")
-                print(f"   Average reward: {avg_reward:.1f}")
-                print(f"   Episodes completed: {self.episode_count}")
-                
-                if self.level == 3:
-                    print(f"   🦵 Now alternating legs every 5 seconds!")
+                self.success_streak = 0
+                both_print(f"🎉 LEVEL UP! {old} → {self.level}")
     
     def is_episode_done(self, step_count):
         """Criterios simples de terminación"""
@@ -911,6 +928,7 @@ class SimpleProgressiveReward:
         
         # Caída
         if pos[2] < 0.5:
+            self.last_done_reason = "fall"
             log_print("❌ Episode done: Robot fell")
             return True
         
@@ -918,14 +936,18 @@ class SimpleProgressiveReward:
         max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
         # Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
+            self.last_done_reason = "tilt"
             log_print("❌ Episode done: Robot tilted too much")
             return True
         
         # Tiempo máximo (crece con nivel)
-        max_steps = (200 + (self.level * 200))*10  # 2000, 3000, 4000 steps
+        max_steps = (200 + (self.level * 200))*10  # 4000, 6000, 8000 steps
         if step_count >= max_steps:
+            self.last_done_reason = "time"
             log_print("⏰ Episode done: Max time reached")
             return True
+        
+        self.last_done_reason = None
         
         return False
     
