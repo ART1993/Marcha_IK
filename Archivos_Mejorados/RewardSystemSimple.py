@@ -312,23 +312,44 @@ class SingleLegActionSelector:
         self.min_expert_help = 0.2
         
         # ===== NUEVO: CONTROLADOR BASADO EN ÁNGULOS =====
-        self.angle_controller = AngleBasedExpertController(env.robot_id)
+        self.angle_controller = AngleBasedExpertController(env)
         
         # ===== ESTADO INTERNO =====
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
         self.last_10_rewards = deque(maxlen=10)
         self.time_in_current_stance = 0
-        self.target_switch_time = 150
+        # Sincronizar timing con el entorno
+        self.target_switch_time = getattr(env, 'switch_interval', 2000)
+
+        # Logging mejorado
+        frequency = getattr(env, 'frecuency_simulation', 400)
+        switch_time_seconds = self.target_switch_time / frequency
+        both_print(f"🤖 Action Selector inicializado:")
+        both_print(f"   Switch interval: {self.target_switch_time} steps ({switch_time_seconds:.1f}s)")
+        both_print(f"   Control method: Target angles → PD torques → PAM pressures (unified)")
         
         log_print(f"✅ Angle-Based Single Leg Action Selector initialized")
         log_print(f"   Control method: Target angles → PD torques → PAM pressures")
         log_print(f"   Leg raise angle: 40° (0.7 rad)")
     
     def should_use_expert_action(self):
-        """Decidir si usar acción experta o del modelo RL"""
+        """
+            🎯 Decidir si usar acción experta o dejar que el RL explore.
+            
+            Esta decisión estratégica considera:
+            - Fase del curriculum (más ayuda al inicio)
+            - Dificultad de la tarea actual
+            - Progreso del episodio
+            
+            Returns:
+                bool: True si debemos usar acción experta
+                
+            🎓 CURRICULUM LEARNING: El principio pedagógico de dar más
+            ayuda al principio y gradualmente aumentar la independencia.
+        """
         
         # Más ayuda al inicio del episodio (equilibrio en una pierna es difícil)
-        if self.env.step_count < 200:
+        if self.env.step_count < self.target_switch_time:
             effective_ratio = min(1.0, self.expert_help_ratio + 0.15)
         else:
             effective_ratio = self.expert_help_ratio
@@ -337,35 +358,134 @@ class SingleLegActionSelector:
     
     def get_expert_action(self):
         """
-        NUEVO: Obtener acción experta usando control basado en ángulos objetivo
-        
-        Proceso:
-        1. Definir ángulos objetivo según tarea actual
-        2. Calcular torques PD necesarios para alcanzar esos ángulos
-        3. Convertir torques a presiones PAM equivalentes
-        4. Añadir pequeñas correcciones por estabilidad
-        
-        Returns:
-            numpy.array: Presiones PAM normalizadas [0,1]
+            MÉTODO PRINCIPAL: Coordinar y ejecutar acción experta.
+            
+            Este método ahora es mucho más simple y claro porque:
+            1. Se enfoca solo en coordinación estratégica
+            2. Delega todos los cálculos técnicos al especialista
+            3. Mantiene responsabilidades bien separadas
+            
+            Flujo de trabajo:
+            Coordinador: "Necesito equilibrio en pierna izquierda"
+                ↓
+            Especialista: "Calculando ángulos, torques y presiones..."
+                ↓
+            Resultado: Presiones PAM listas para usar
+            
+            Returns:
+                numpy.array: Acción PAM [0,1] para el entorno
         """
         
-        # PASO 1: Obtener ángulos objetivo
-        target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
+        # PASO 1: Decidir qué tarea realizar (responsabilidad del coordinador)
+        current_task = self._decide_current_task()
+
+        # PASO 2: Obtener ángulos objetivo del especialista
+        target_angles_dict = self.angle_controller.get_target_angles_for_task(current_task)
         
-        # PASO 2: Calcular torques PD
-        pd_torques = self.angle_controller.calculate_pd_torques(target_angles)
+        # PASO 2: Delegar la ejecución técnica al especialista
+        #expert_pressures = self.angle_controller.convert_intention_to_pressures(current_task)
+
+        # PASO 3: Convertir diccionario a array de 4 ángulos
+        base_angles = np.array([
+            target_angles_dict['left_hip'],
+            target_angles_dict['left_knee'], 
+            target_angles_dict['right_hip'],
+            target_angles_dict['right_knee']
+        ], dtype=np.float32)
         
-        # PASO 3: Convertir a presiones PAM
-        base_pressures = self.angle_controller.torques_to_pam_pressures(pd_torques)
+        # PASO 3: Aplicar políticas de coordinación (si las hay)
+        final_angles  = self._apply_coordination_policies_angles(base_angles, current_task)
+        assert final_angles .shape == (4,), f"❌ final_action shape incorrecta: {final_angles.shape}, esperada: (4,)"
+        return final_angles 
+    
+    def _decide_current_task(self):
+        """
+            Lógica estratégica para decidir qué tarea realizar.
         
-        # PASO 4: Añadir correcciones por estabilidad (opcional)
-        corrected_pressures = self._add_stability_corrections(base_pressures)
+            Esta función encapsula la "inteligencia" del coordinador:
+            - Analiza el rendimiento reciente
+            - Decide cuándo cambiar de pierna
+            - Gestiona transiciones
+            
+            Returns:
+                SingleLegActionType: Tarea a realizar
+                
+            GAME THEORY: Como un estratega que analiza el "estado del juego"
+            y decide la mejor acción siguiente basándose en el contexto.
+        """
         
-        # PASO 5: Variación natural pequeña
-        noise = np.random.normal(0, 0.02, size=6)
-        final_pressures = corrected_pressures + noise
+        # Actualizar decisión basada en contexto
+        self.decide_current_action()  # Método que ya tienes
         
-        return np.clip(final_pressures, 0.0, 1.0)
+        return self.current_action
+    
+    def _apply_coordination_policies(self, base_action, task_type):
+        """
+        Aplicar políticas de coordinación de alto nivel.
+        
+        Como un entrenador que puede decir "hazlo un poco más suave"
+        o "añade más energía" dependiendo del contexto del juego.
+        """
+        
+        # POLÍTICA 1: Reducir intensidad si hay inestabilidad
+        if hasattr(self.env, 'robot_id'):
+            pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            instability = abs(euler[0]) + abs(euler[1])  # roll + pitch
+            
+            if instability > 0.3:  # Robot inestable
+                # Reducir todas las presiones para movimientos más suaves
+                stability_factor = max(0.7, 1.0 - instability)
+                base_action *= stability_factor
+        
+        # POLÍTICA 2: Modular intensidad según fase del curriculum
+        curriculum_factor = 0.8 + 0.2 * (1.0 - self.expert_help_ratio)
+        base_action *= curriculum_factor
+        
+        # POLÍTICA 3: Asegurar límites de seguridad
+        final_action = np.clip(base_action, 0.0, 1.0)
+        
+        return final_action
+    
+    def _apply_coordination_policies_angles(self, base_angles, task_type):
+        """
+        🎪 NUEVO: Aplicar políticas de coordinación sobre ángulos (no presiones).
+        
+        Args:
+            base_angles: Array de 4 ángulos [left_hip, left_knee, right_hip, right_knee]
+            task_type: Tipo de tarea siendo ejecutada
+            
+        Returns:
+            numpy.array: 4 ángulos con políticas aplicadas
+        """
+        
+        modified_angles = base_angles.copy()
+        
+        # POLÍTICA 1: Reducir amplitud si hay inestabilidad
+        if hasattr(self.env, 'robot_id'):
+            pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
+            euler = p.getEulerFromQuaternion(orn)
+            instability = abs(euler[0]) + abs(euler[1])  # roll + pitch
+            
+            if instability > 0.3:  # Robot inestable
+                # Reducir amplitud de movimientos (acercar a posición neutral)
+                stability_factor = max(0.7, 1.0 - instability)
+                modified_angles *= stability_factor
+        
+        # POLÍTICA 2: Modular según fase del curriculum
+        curriculum_factor = 0.8 + 0.2 * (1.0 - self.expert_help_ratio)
+        modified_angles *= curriculum_factor
+        
+        # POLÍTICA 3: Añadir variación biológica realista
+        noise = np.random.normal(0, 0.01, size=4)  # 1% de variación
+        modified_angles += noise
+        
+        # POLÍTICA 4: Aplicar límites del action_space
+        final_angles = np.clip(modified_angles, 
+                              self.env.action_space.low, 
+                              self.env.action_space.high)
+        
+        return final_angles.astype(np.float32)
     
     def _add_stability_corrections(self, base_pressures):
         """
@@ -393,7 +513,12 @@ class SingleLegActionSelector:
         return corrected
     
     def decide_current_action(self):
-        """Decidir qué acción tomar basado en el contexto"""
+        """
+            Lógica de decisión para cambio de acciones.
+            
+            NOTA: Esta función mantiene tu lógica existente probada.
+            Solo la estamos llamando desde el nuevo flujo arquitectural.
+        """
         
         self.time_in_current_stance += 1
         
@@ -438,9 +563,9 @@ class SingleLegActionSelector:
         
         # Curriculum más conservador para tarea difícil
         if total_episode_reward > 80:  # Episodio muy exitoso
-            self.expert_help_ratio *= 0.98  # Reducción más gradual
+            self.expert_help_ratio *= 0.80  # Reducción más gradual
         elif total_episode_reward > 40:  # Episodio moderadamente exitoso
-            self.expert_help_ratio *= 0.99
+            self.expert_help_ratio *= 0.90
         else:  # Episodio problemático
             self.expert_help_ratio = min(0.95, self.expert_help_ratio * 1.02)
         
@@ -450,6 +575,13 @@ class SingleLegActionSelector:
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
         self.time_in_current_stance = 0
 
+        # Logging del progreso del curriculum
+        if self.episode_count % 10 == 0:  # Cada 10 episodios
+            both_print(f"📚 Curriculum Update - Episodio {self.episode_count}")
+            both_print(f"   Expert help ratio: {self.expert_help_ratio:.2%}")
+            both_print(f"   Episode reward: {total_episode_reward:.1f}")
+            both_print(f"   Tendencia: {'🔻 Menos ayuda' if total_episode_reward > 60 else '🔺 Más ayuda'}")
+
 class AngleBasedExpertController:
     """
     Control experto que trabaja con ángulos objetivo en lugar de presiones PAM directas.
@@ -457,13 +589,23 @@ class AngleBasedExpertController:
     Mucho más intuitivo: "levanta la pierna 40°" vs "presión PAM 0.7"
     """
     
-    def __init__(self, robot_id):
-        self.robot_id = robot_id
+    def __init__(self, env_ref=None):
+        """
+        Recibe referencia al entorno para 
+        acceder directamente a los métodos de conversión PAM.
+        
+        Args:
+            robot_id: ID del robot en PyBullet
+            env_reference: Referencia al entorno para acceder a métodos PAM
+        """
+        self.env = env_ref  # Guardamos referencia al entorno
+        self.robot_id = env_ref.robot_id
+        
         
         # ===== PARÁMETROS DEL CONTROLADOR PD =====
         self.kp = 80.0   # Ganancia proporcional
         self.kd = 12.0   # Ganancia derivativa
-        self.max_torque = 50.0  # Torque máximo por articulación
+        self.max_torque = env_ref.MAX_REASONABLE_TORQUE  # Torque máximo por articulación
         
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
@@ -494,6 +636,10 @@ class AngleBasedExpertController:
                 'description': 'Posición intermedia para transición'
             }
         }
+
+        both_print(f"✅ AngleBasedExpertController inicializado con referencia al entorno")
+        both_print(f"   Robot ID: {self.robot_id}")
+        both_print(f"   Método de conversión: env._torques_to_pam_pressures()")
     
     def get_target_angles_for_task(self, current_task):
         """
@@ -501,33 +647,53 @@ class AngleBasedExpertController:
         
         Args:
             current_task: SingleLegActionType enum
+            puede usarse task type
             
         Returns:
             dict: Ángulos objetivo para cada articulación
+
+        💡 PATRÓN DE DISEÑO: Lookup table
+        En lugar de calcular ángulos complejos cada vez, mantenemos
+        una tabla de consulta con posturas pre-calculadas y probadas.
         """
         
         if current_task == SingleLegActionType.BALANCE_LEFT_SUPPORT:
             return self.target_angles['balance_left_support']
         elif current_task == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
             return self.target_angles['balance_right_support']
+        elif current_task in [SingleLegActionType.TRANSITION, 
+                          SingleLegActionType.TRANSITION_TO_LEFT,
+                          SingleLegActionType.TRANSITION_TO_RIGHT]:
+            return self.target_angles['transition']
         else:  # Transiciones
+            # Fallback seguro: posición neutral
+            print(f"⚠️ Tarea desconocida {current_task}, usando transición")
             return self.target_angles['transition']
     
     def calculate_pd_torques(self, target_angles_dict):
         """
-        Calcular torques usando control PD hacia ángulos objetivo
-        
-        Args:
-            target_angles_dict: Diccionario con ángulos objetivo
+            ⚙️ Calcular torques necesarios para alcanzar ángulos objetivo.
             
-        Returns:
-            numpy.array: Torques para [left_hip, left_knee, right_hip, right_knee]
+            Usa control PD (Proporcional-Derivativo) que simula cómo el
+            sistema nervioso humano controla los músculos: fuerte cuando
+            estás lejos del objetivo, suave cuando te acercas.
+            
+            Args:
+                target_angles_dict: Diccionario con ángulos objetivo
+                
+            Returns:
+                numpy.array: Torques [left_hip, left_knee, right_hip, right_knee]
+                
+            🧠 BIOMECÁNICA: El control PD imita la retroalimentación propioceptiva
+            Los receptores en músculos y articulaciones le dicen al cerebro
+            dónde está cada parte del cuerpo y qué tan rápido se mueve.
         """
         
         # Obtener estados actuales de articulaciones
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
+        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
         current_angles = [state[0] for state in joint_states]
         current_velocities = [state[1] for state in joint_states]
+        current_torques = [state[2] for state in joint_states]
         
         # Ángulos objetivo en orden correcto
         target_angles = [
@@ -541,7 +707,9 @@ class AngleBasedExpertController:
         angle_errors = np.array(target_angles) - np.array(current_angles)
         velocity_errors = -np.array(current_velocities)  # Queremos velocidad 0
         
-        # Control PD
+        # Aplicar control PD
+        # Proporcional: más fuerza cuando más lejos del objetivo
+        # Derivativo: menos fuerza cuando te mueves hacia el objetivo
         pd_torques = self.kp * angle_errors + self.kd * velocity_errors
         
         # Limitar torques
@@ -549,79 +717,76 @@ class AngleBasedExpertController:
         
         return pd_torques
     
-    def torques_to_pam_pressures(self, desired_torques):
+    def convert_intention_to_pressures(self, task_type):
         """
-        Convertir torques deseados en presiones PAM equivalentes
+        🆕 MÉTODO PRINCIPAL: Convertir intención de alto nivel a presiones PAM.
         
-        Esta es la función INVERSA de _apply_pam_forces()
+        Este es el método que el SingleLegActionSelector va a llamar.
+        Es como decirle al especialista: "Necesito equilibrio en pierna izquierda"
+        y él se encarga de todos los detalles técnicos.
         
         Args:
-            desired_torques: Array de torques [left_hip, left_knee, right_hip, right_knee]
+            task_type: SingleLegActionType
             
         Returns:
-            numpy.array: Presiones PAM normalizadas [0,1] para 6 PAMs
+            numpy.array: Presiones PAM [0,1] listas para usar
         """
         
-        # Obtener estados actuales para cálculos biomecánicos
-        joint_states = p.getJointStates(self.robot_id, [0, 1, 3, 4])
-        joint_angles = [state[0] for state in joint_states]
+        # PASO 1: ¿Qué ángulos necesito para esta tarea?
+        target_angles_dict = self.get_target_angles_for_task(task_type)
         
-        # Inicializar presiones PAM
-        pam_pressures = np.zeros(6)
+        # PASO 2: ¿Qué torques necesito para esos ángulos?
+        pd_torques = self.calculate_pd_torques(target_angles_dict)
         
-        # Parámetros biomecánicos (mismos que en _apply_pam_forces)
-        moment_arm = 0.05
-        max_pressure_normalized = 1.0
+        # PASO 3: ¿Qué presiones PAM generan esos torques?
+        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
+        current_angles = [state[0] for state in joint_states]
         
-        # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
+        # Usar el método unificado del entorno
+        base_pressures = self.env._torques_to_pam_pressures(pd_torques, current_angles)
         
-        # CADERA IZQUIERDA (PAM 0=flexor, PAM 1=extensor)
-        hip_left_torque = desired_torques[0]
+        # PASO 4: Añadir pequeñas correcciones por estabilidad
+        corrected_pressures = self._add_stability_corrections(base_pressures)
         
-        if hip_left_torque > 0:  # Flexión necesaria
-            # Activar flexor, desactivar extensor
-            pam_pressures[0] = min(max_pressure_normalized, 
-                                 abs(hip_left_torque) / (moment_arm * 300))  # 300N estimado por PAM
-            pam_pressures[1] = 0.1  # Mínimo para el extensor
-        else:  # Extensión necesaria
-            # Activar extensor, desactivar flexor
-            pam_pressures[0] = 0.1  # Mínimo para el flexor
-            pam_pressures[1] = min(max_pressure_normalized,
-                                 abs(hip_left_torque) / (moment_arm * 300))
+        # PASO 5: Variación natural pequeña
+        noise = np.random.normal(0, 0.02, size=6)
+        final_pressures = corrected_pressures + noise
         
-        # CADERA DERECHA (PAM 2=flexor, PAM 3=extensor)
-        hip_right_torque = desired_torques[2]
+        return np.clip(final_pressures, 0.0, 1.0)
+
+    
+    def _add_stability_corrections(self, base_pressures):
+        """
+        Añadir correcciones pequeñas por inclinación para mayor estabilidad
+        """
         
-        if hip_right_torque > 0:  # Flexión necesaria
-            pam_pressures[2] = min(max_pressure_normalized,
-                                 abs(hip_right_torque) / (moment_arm * 300))
-            pam_pressures[3] = 0.1
-        else:  # Extensión necesaria
-            pam_pressures[2] = 0.1
-            pam_pressures[3] = min(max_pressure_normalized,
-                                 abs(hip_right_torque) / (moment_arm * 300))
+        # Obtener orientación actual
+        pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch = euler[0], euler[1]
         
-        # RODILLAS (PAM 4=izq_flexor, PAM 5=der_flexor)
-        # Solo flexores, extensión es pasiva por resortes
+        corrected = base_pressures.copy()
         
-        knee_left_torque = desired_torques[1]
-        knee_right_torque = desired_torques[3]
+        # Corrección por inclinación lateral (roll)
+        if abs(roll) > 0.05:  # Más de 3 grados de inclinación
+            correction_factor = min(0.1, abs(roll) * 0.3)  # Max 10% corrección
+            
+            if roll > 0:  # Inclinado hacia derecha → fortalecer lado izquierdo
+                corrected[0] += correction_factor  # left_hip_flexor
+                corrected[1] += correction_factor  # left_hip_extensor
+            else:  # Inclinado hacia izquierda → fortalecer lado derecho
+                corrected[2] += correction_factor  # right_hip_flexor
+                corrected[3] += correction_factor  # right_hip_extensor
         
-        # Rodilla izquierda - solo flexión activa
-        if knee_left_torque > 5.0:  # Umbral para activar flexor
-            pam_pressures[4] = min(max_pressure_normalized,
-                                 knee_left_torque / (moment_arm * 200))  # 200N para rodilla
-        else:
-            pam_pressures[4] = 0.05  # Muy bajo para permitir extensión pasiva
+        # Corrección por inclinación frontal (pitch)
+        if abs(pitch) > 0.05:  # Más de 3 grados hacia adelante/atrás
+            correction_factor = min(0.08, abs(pitch) * 0.25)
+            
+            if pitch > 0:  # Inclinado hacia adelante → activar extensores
+                corrected[1] += correction_factor  # left_hip_extensor
+                corrected[3] += correction_factor  # right_hip_extensor
+            else:  # Inclinado hacia atrás → activar flexores
+                corrected[0] += correction_factor  # left_hip_flexor
+                corrected[2] += correction_factor  # right_hip_flexor
         
-        # Rodilla derecha - solo flexión activa
-        if knee_right_torque > 5.0:  # Umbral para activar flexor
-            pam_pressures[5] = min(max_pressure_normalized,
-                                 knee_right_torque / (moment_arm * 200))
-        else:
-            pam_pressures[5] = 0.05  # Muy bajo para permitir extensión pasiva
-        
-        # Asegurar rango [0, 1]
-        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
-        
-        return pam_pressures
+        return corrected

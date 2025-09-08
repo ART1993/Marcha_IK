@@ -72,10 +72,11 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN DE ESPACIOS =====
         self.recent_rewards=deque(maxlen=50)
         # Action space: Angulos limite escritos en el URDF
+        # Numero de angulos=4
         self.action_space = spaces.Box(
             low=np.array([-1.2, 0.0, -1.2, 0.0]),    # [left_hip, left_knee, right_hip, right_knee]
             high=np.array([1.2, 1.571, 1.2, 1.571]), # Límites de tu URDF
-            shape=(self.num_active_pams,), 
+            shape=(4,), 
             dtype=np.float32
         )
         
@@ -203,6 +204,8 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
             4. ✅ Mejor integración con sistema de recompensas
         """
         self.step_count += 1
+        # ===== VERIFICACIÓN DE DIMENSIONES =====
+        assert action.shape == (4,), f"❌ Action shape incorrecta: {action.shape}, esperada: (4,)"
         # ===== DECISIÓN: EXPERTO vs RL =====
         
         if self.action_selector.should_use_expert_action():
@@ -212,10 +215,16 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
             actual_action = action
             action_source = "RL"
 
+        # ===== VERIFICACIÓN CRÍTICA =====
+        assert actual_action.shape == (4,), f"❌ Actual action shape: {actual_action.shape}, esperada: (4,)"
+
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
     
         # Usar tu controlador existente pero con ángulos del agente RL
         pam_pressures = self._convert_angles_to_pam_pressures(actual_action)
+
+        # ===== VERIFICACIÓN =====
+        assert pam_pressures.shape == (6,), f"❌ PAM pressures shape: {pam_pressures.shape}, esperada: (6,)"
         
         # Aplicar fuerzas PAM normalizadas
         joint_torques = self._apply_pam_forces(pam_pressures)
@@ -593,92 +602,107 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
         left_knee_angle = current_angles[1] 
         right_hip_angle = current_angles[2]
         right_knee_angle = current_angles[3]
-        # Cadera izquierda (PAM 0=flexor, PAM 1=extensor)
-        left_hip_torque = desired_torques[0]
-        # Rodilla izquierda (PAM 4)
-        left_knee_torque = desired_torques[1]
-        # Cadera derecha (PAM 2=flexor, PAM 3=extensor)
-        right_hip_torque = desired_torques[2]
-        # Rodilla derecha (PAM 5)  
-        right_knee_torque = desired_torques[3]
 
-        # Calcular momentos de brazo (MISMOS métodos que en _calculate_robot_specific_joint_torques)
-        moment_arms = {
-        self.muscle_names[0]: self.hip_flexor_moment_arm(left_hip_angle),
-        self.muscle_names[1]: self.hip_extensor_moment_arm(left_hip_angle),
-        self.muscle_names[2]: self.hip_flexor_moment_arm(right_hip_angle),
-        self.muscle_names[3]: self.hip_extensor_moment_arm(right_hip_angle),
-        self.muscle_names[4]: self.knee_flexor_moment_arm(left_knee_angle),
-        self.muscle_names[5]: self.knee_flexor_moment_arm(right_knee_angle)
-        }
-        # Fuerzas generadas durante flexion
-        target_forces = np.zeros(6)
+        # Inicializar array de presiones reales (en Pascales)
+        pam_pressures_real = np.zeros(6)
         
-        # ===== CADERAS (MÚSCULOS ANTAGÓNICOS) =====
-        
-        if left_hip_torque > 0:  # Flexión necesaria
-            target_forces[0] = left_hip_torque / moment_arms[self.muscle_names[0]]
-            target_forces[1] = 0.00  # Mínimo para extensor (permite el movimiento)
-        else:  # Extensión necesaria
-            target_forces[0] = 0.00  # Mínimo para flexor
-            target_forces[1] = abs(left_hip_torque) / moment_arms[self.muscle_names[1]]
-        
-        
-        if right_hip_torque > 0:  # Flexión necesaria
-            target_forces[2] = right_hip_torque / moment_arms[self.muscle_names[2]]
-            target_forces[3] = 0.00
-        else:  # Extensión necesaria
-            target_forces[2] = 0.00
-            target_forces[3] = abs(right_hip_torque) / moment_arms[self.muscle_names[3]]
-        
-        # ===== RODILLAS (SOLO FLEXORES ACTIVOS) =====
-        
-        if left_knee_torque > 0.0:  # Umbral para activar flexor
-            target_forces[4] = left_knee_torque / moment_arms[self.muscle_names[4]]
+
+        # ===== PAM 0: LEFT HIP FLEXOR =====
+        if desired_torques[0] > 0:  # Torque de flexión positivo
+            pam_pressures_real[0] = self.pam_muscles['left_hip_flexor'].pressure_for_torque(
+                tau=desired_torques[0],                    # Torque deseado
+                theta=left_hip_angle,                      # Ángulo actual
+                theta0=0.0,                               # Ángulo neutro
+                R=self.hip_flexor_moment_arm(left_hip_angle)  # Moment arm variable
+            )
         else:
-            target_forces[4] = 0.00  # Muy bajo para permitir extensión pasiva
-        
-        if right_knee_torque > 0.0:  # Umbral para activar flexor
-            target_forces[5] = right_knee_torque / moment_arms[self.muscle_names[5]]
+            # Si no necesitamos flexión, presión mínima
+            pam_pressures_real[0] = self.pam_muscles['left_hip_flexor'].min_pressure
+
+        # ===== PAM 1: LEFT HIP EXTENSOR =====
+        if desired_torques[0] < 0:  # Torque de extensión (negativo)
+            pam_pressures_real[1] = self.pam_muscles['left_hip_extensor'].pressure_for_torque(
+                tau=abs(desired_torques[0]),              # Usar valor absoluto
+                theta=-left_hip_angle,                    # Ángulo negativo para extensor
+                theta0=0.0,                               
+                R=self.hip_extensor_moment_arm(left_hip_angle)
+            )
         else:
-            target_forces[5] = 0.0
+            pam_pressures_real[1] = self.pam_muscles['left_hip_extensor'].min_pressure
+
+        # ===== PAM 2: RIGHT HIP FLEXOR =====
+        if desired_torques[2] > 0:  # Torque de flexión en cadera derecha
+            pam_pressures_real[2] = self.pam_muscles['right_hip_flexor'].pressure_for_torque(
+                tau=desired_torques[2],
+                theta=right_hip_angle,
+                theta0=0.0,
+                R=self.hip_flexor_moment_arm(right_hip_angle)
+            )
+        else:
+            pam_pressures_real[2] = self.pam_muscles['right_hip_flexor'].min_pressure
         
+        # ===== PAM 3: RIGHT HIP EXTENSOR =====
+        if desired_torques[2] < 0:  # Torque de extensión en cadera derecha
+            pam_pressures_real[3] = self.pam_muscles['right_hip_extensor'].pressure_for_torque(
+                tau=abs(desired_torques[2]),
+                theta=-right_hip_angle,
+                theta0=0.0,
+                R=self.hip_extensor_moment_arm(right_hip_angle)
+            )
+        else:
+            pam_pressures_real[3] = self.pam_muscles['right_hip_extensor'].min_pressure
+        
+        # ===== PAM 4: LEFT KNEE FLEXOR =====
+        if desired_torques[1] > 0.5:  # Solo flexión activa en rodillas
+            pam_pressures_real[4] = self.pam_muscles['left_knee_flexor'].pressure_for_torque(
+                tau=desired_torques[1],
+                theta=left_knee_angle,
+                theta0=0.0,
+                R=self.knee_flexor_moment_arm(left_knee_angle)
+            )
+        else:
+            # Las rodillas tienen extensión pasiva, así que presión muy baja
+            pam_pressures_real[4] = self.pam_muscles['left_knee_flexor'].min_pressure
+        
+        # ===== PAM 5: RIGHT KNEE FLEXOR =====
+        if desired_torques[3] > 0.5:  # Solo flexión activa en rodillas
+            pam_pressures_real[5] = self.pam_muscles['right_knee_flexor'].pressure_for_torque(
+                tau=desired_torques[3],
+                theta=right_knee_angle,
+                theta0=0.0,
+                R=self.knee_flexor_moment_arm(right_knee_angle)
+            )
+        else:
+            pam_pressures_real[5] = self.pam_muscles['right_knee_flexor'].min_pressure
+
+        # ===== CONVERTIR A PRESIONES NORMALIZADAS [0,1] =====
         pam_pressures_normalized = np.zeros(6)
-        # Parámetros de contracción comandada (mismos que en _calculate_robot_specific_joint_torques)
-        # commanded_contraction = pressure_normalized * self.MAX_CONTRACTION_RATIO
-        base_contraction = 0.15  # Contracción Ver como se podría obtener la contracción a partir de ángulos
-
-        for i, target_force in enumerate(target_forces):
-            if target_force > 0:  # Solo calcular para fuerzas positivas
-                muscle_name = self.muscle_names[i]
-                pam_muscle = self.pam_muscles[muscle_name]
-                
-                # ✅ USAR MÉTODO INVERSO DEL PAM REAL
-                pam_pressures_normalized[i] = pam_muscle.pressure_normalized_from_force_and_contraction(
-                    target_force=target_force,
-                    contraction_ratio=base_contraction,
-                    min_pressure=pam_muscle.min_pressure,
-                    max_pressure=pam_muscle.max_pressure
-                )
-            else:
-                # Fuerza muy pequeña para músculos "inhibidos"
-                pam_pressures_normalized[i] = 0.05  # ~5% mínimo
-
         
-        # Caderas antagónicas
+        for i, real_pressure in enumerate(pam_pressures_real):
+            muscle_name = self.muscle_names[i]
+            pam_muscle = self.pam_muscles[muscle_name]
+            
+            # Usar el método de normalización de cada PAM
+            pam_pressures_normalized[i] = pam_muscle.normalized_pressure_PAM(real_pressure)
+
+        # ===== APLICAR INHIBICIÓN RECÍPROCA EN CADERAS =====
+        # Los músculos antagónicos de cadera deben coordinarse
         pam_pressures_normalized[0], pam_pressures_normalized[1] = self._apply_reciprocal_inhibition_normalized(
-            pam_pressures_normalized[0], pam_pressures_normalized[1]
-        )
+            pam_pressures_normalized[0], pam_pressures_normalized[1])
         
         pam_pressures_normalized[2], pam_pressures_normalized[3] = self._apply_reciprocal_inhibition_normalized(
-            pam_pressures_normalized[2], pam_pressures_normalized[3]
-        )
-    
-        # ===== PASO 6: LÍMITES FINALES =====
-    
-        pam_pressures_normalized = np.clip(pam_pressures_normalized, 0.0, 1.0)
+            pam_pressures_normalized[2], pam_pressures_normalized[3])
+
+        normalized_pressures = np.clip(pam_pressures_normalized, 0.0, 1.0)
+        # Logging periódico para debugging
+        if hasattr(self, 'step_count') and self.step_count % self.frecuency_simulation == 0:
+            log_print(f"🔍 PAM Conversion Debug (Step {self.step_count}):")
+            log_print(f"   Desired torques: {desired_torques}")
+            log_print(f"   Real pressures (Pa): {pam_pressures_real}")
+            log_print(f"   Normalized pressures: {normalized_pressures}")
+            log_print(f"   Moment arms: hip={self.hip_flexor_moment_arm(current_angles[0]):.3f}, knee={self.knee_flexor_moment_arm(current_angles[1]):.3f}")
         
-        return pam_pressures_normalized
+        return normalized_pressures
     
     def _apply_reciprocal_inhibition_normalized(self, flexor_pressure, extensor_pressure):
         """
@@ -947,6 +971,12 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
             }
         
     def parametros_torque_pam(self):
+        """
+            🎛️ Parámetros centralizados del sistema de control PAM y torques.
+            
+            Incluye todos los parámetros físicos, biomecánicos y de control
+            calibrados para tu robot específico (25kg, 1.20m).
+        """
         # Momentos de brazo calculados desde dimensiones reales
         self.HIP_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
         self.HIP_FLEXOR_VARIATION = 0.0101     # ±1.01cm variación por ángulo
@@ -1126,7 +1156,7 @@ class Simple_Lift_Leg_Angles_BipedEnv(gym.Env):
         print(f"\n🔍 Verificando consistencia angle→PAM→torque:")
         
         # Test con ángulos objetivo típicos
-        test_angles = np.array([0.2, 0.1, -0.15, 0.05])  # Postura de equilibrio típica
+        test_angles = np.array([0.2, 0.0, 0.2, 0.0])  # Postura de equilibrio típica
         
         # 1. Calcular presiones PAM desde ángulos
         pam_pressures = self._convert_angles_to_pam_pressures(test_angles)
