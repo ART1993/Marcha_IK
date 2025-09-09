@@ -151,57 +151,31 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
-        use_expert = False
-    
-        if self.action_selector is not None and self.action_selector.should_use_expert_action():
-            use_expert = True
 
-        # NUEVA LÓGICA: Más ayuda experta en situaciones críticas
-        if self.simple_reward_system:
-            curriculum_info = self.simple_reward_system.get_info()
-            current_level = curriculum_info.get('level', 1)
-            episodes_completed = curriculum_info.get('episodes', 0)
+        # En env.step (o donde construyas la acción final)
+        u_expert = self.action_selector.get_expert_action()            # [0,1]^6
+        u_rl     = np.clip(action, 0.0, 1.0)                     # [0,1]^6
 
-            # Obtener estado actual para decidir ayuda experta
-            pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-            euler = p.getEulerFromQuaternion(orn)
-            current_tilt = abs(euler[0]) + abs(euler[1])
-            # LÓGICA INTELIGENTE: Más ayuda cuando hay problemas
-            base_expert_probability = {
-                1: 0.85,  # 85% en nivel 1
-                2: 0.65,  # 65% en nivel 2
-                3: 0.45   # 45% en nivel 3
-            }.get(current_level, 0.5)
-            
-            ## Aumentar ayuda si hay inestabilidad
-            if current_tilt > 0.2:  # Más de 11.5 grados total
-                base_expert_probability += 0.3
-            elif current_tilt > 0.15:  # Más de 8.6 grados total
-                base_expert_probability += 0.15
-            
-            # Más ayuda en episodios tempranos de cada nivel
-            if episodes_completed < 20:
-                base_expert_probability += 0.1
+        assist = self.action_selector.expert_help_ratio                # 0.85→0.2
+        tilt_boost = 0.0
+        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        self.euler = p.getEulerFromQuaternion(orn)
         
-            use_expert = np.random.random() < min(0.95, base_expert_probability)
-        
-        if use_expert and hasattr(self, 'angle_expert_controller'):
-            actual_action = self.angle_expert_controller.get_expert_action_for_level(self.simple_reward_system)
-            action_source = "ANGLE_EXPERT"
-        elif use_expert and self.action_selector is not None:
-            actual_action = self.action_selector.get_expert_action()
-            action_source = "BASIC_EXPERT"  
-        else:
-            actual_action = action
-            action_source = "RL"
+        current_tilt = abs(self.euler[0]) + abs(self.euler[1])
+        if current_tilt > 0.20: tilt_boost = 0.30
+        elif current_tilt > 0.15: tilt_boost = 0.15
+        assist = float(np.clip(assist + tilt_boost, 0.0, 0.95))
+        u_final = assist * u_expert + (1.0 - assist) * u_rl
 
+        #delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
+        #u_final = self.prev_action + delta
+        #self.prev_action = u_final.copy()
         self.ep_total_actions += 1
-        if action_source in ("ANGLE_EXPERT", "BASIC_EXPERT"):
-            self.ep_expert_actions += 1
+        self.ep_expert_weight += float(np.clip(assist, 0.0, 1.0))
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
     
-        normalized_pressures = np.clip(actual_action, 0.0, 1.0) 
+        normalized_pressures = np.clip(u_final, 0.0, 1.0) 
         
         # Aplicar fuerzas PAM normalizadas
         joint_torques = self._apply_pam_forces(normalized_pressures)
@@ -230,11 +204,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.stepSimulation()
 
         # ✅ LLAMAR DEBUG OCASIONALMENTE
-        self._debug_joint_angles_and_pressures(actual_action)
+        self._debug_joint_angles_and_pressures(u_final)
 
         
         #if self.simple_reward_system:
-        reward = self.simple_reward_system.calculate_reward(actual_action, self.step_count)
+        reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
         done = self.simple_reward_system.is_episode_done(self.step_count)
         system_used = "PROGRESSIVE"
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
@@ -252,7 +226,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         info = {
             'step_count': self.step_count,
             'reward': reward,
-            'action_source': action_source,
+            #'action_source': action_source,
             'episode_reward': self.episode_reward
         }
 
@@ -263,32 +237,28 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['current_level'] = curriculum_info.get('level', 1)
             # Debug simple
             if done:
-                expert_pct = 100.0 * self.ep_expert_actions / max(1, self.ep_total_actions)
+                expert_pct = 100.0 * self.ep_expert_weight  / max(1, self.ep_total_actions)
                 log_print(f"🎯 Expert usage this episode: {expert_pct:.1f}% "
-                        f"({self.ep_expert_actions}/{self.ep_total_actions})")
+                        f"({self.ep_expert_weight }/{self.ep_total_actions})")
                 info['expert_usage_pct'] = expert_pct
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.simple_reward_system.update_after_episode(episode_total)
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
-        #else:
-            #info['current_task'] = current_task
-            #info['system_type'] = 'fallback'
-            #log_print(f"{self.current_task=:}")
         
         # CONSERVAR tu debug existente 
         if self.step_count % self.frecuency_simulation//2 == 0 or done:
             log_print(f"🔍 Step {self.step_count} - Control Analysis:")
-            log_print(f"   Height: {pos[2]:.2f}m")
-            log_print(f"   Tilt: Roll {math.degrees(euler[0]):.1f}°, Pitch {math.degrees(euler[1]):.1f}°")
-            log_print(f"   Action source: {action_source}")
+            log_print(f"   Height: {self.pos[2]:.2f}m")
+            log_print(f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
+            #log_print(f"   Action source: {action_source}")
             
             if self.simple_reward_system:
                 curriculum_info = self.simple_reward_system.get_info()
-                log_print(f"   Level: {curriculum_info.get('level')}, Target: {curriculum_info.get('target_leg', 'N/A')}")
+                log_print(f"   Level: {info.get('level')}, Target: {self.action_selector.current_action}")
     
             # Verificar si está cerca de límites
             max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
-            if abs(euler[0]) > max_allowed_tilt * 0.8 or abs(euler[1]) > max_allowed_tilt * 0.8:
+            if abs(self.euler[0]) > max_allowed_tilt * 0.8 or abs(self.euler[1]) > max_allowed_tilt * 0.8:
                 log_print(f"   ⚠️ Approaching tilt limit! Max allowed: ±{math.degrees(max_allowed_tilt):.1f}°")
             
 
@@ -296,7 +266,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.step_count % self.frecuency_simulation == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
             status = self.simple_reward_system.get_info()
             elapsed_time = self.step_count / self.frecuency_simulation
-            log_print(f" {action_source} action, reward={reward:.2f}")
+            #log_print(f" {action_source} action, reward={reward:.2f}")
             log_print(f"Step {done=:}, is_valid={is_valid}")
             log_print(f"🎮 Active system: {system_used} at step {self.step_count}")
             log_print(f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
@@ -364,9 +334,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
         log_print(f"🔧 Contact friction configured:")
-        log_print(f"   Feet: μ=1.2 (high grip)")
-        log_print(f"   Legs: μ=0.6 (moderate)")
-        log_print(f"   Ground: μ=1.0 (standard)")
+        log_print(f"   Feet: μ=0.8 (high grip)")
+        log_print(f"   Legs: μ=0.1 (moderate)")
+        log_print(f"   Ground: μ=0.6 (standard)")
     
 
 # ==================================================================================================================================================================== #
@@ -639,10 +609,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
+        self.euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación
-        obs.extend([self.pos[0], self.pos[2], euler[0], euler[1]])  # x, z, roll, pitch
+        obs.extend([self.pos[0], self.pos[2], self.euler[0], self.euler[1]])  # x, z, roll, pitch
         
         # Velocidades
         obs.extend([lin_vel[0], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
@@ -689,9 +659,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         Reemplazar el método reset() del entorno original con este.
         """
         super().reset(seed=seed)
-
+        self.prev_action = np.zeros(self.num_active_pams)
         self.ep_total_actions = 0
-        self.ep_expert_actions = 0
+        self.ep_expert_weight = 0.0
         
         # Actualizar reward system y action selector del episodio anterior si existen
         if self.action_selector is not None and hasattr(self, 'episode_reward'):

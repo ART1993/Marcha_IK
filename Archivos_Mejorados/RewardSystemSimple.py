@@ -60,7 +60,7 @@ class SingleLegActionSelector:
         """Decidir si usar acción experta o del modelo RL"""
         
         # Más ayuda al inicio del episodio (equilibrio en una pierna es difícil)
-        if self.env.step_count < 200:
+        if self.env.step_count <= 600:
             effective_ratio = min(1.0, self.expert_help_ratio + 0.15)
         else:
             effective_ratio = self.expert_help_ratio
@@ -110,19 +110,34 @@ class SingleLegActionSelector:
         roll, pitch = euler[0], euler[1]
         
         corrected = base_pressures.copy()
+
+        # Ganancias muy pequeñas para no dominar la política
+        k_pitch = 0.10   # corrige inclinación hacia delante/atrás
+        k_roll  = 0.08   # corrige caída lateral
+
+        if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
+            corrected[1] += k_pitch * max(pitch, 0.0)  # L_hip_ext ↑
+            corrected[0] -= k_pitch * max(pitch, 0.0)  # L_hip_flex ↓
+        elif self.current_action == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
+            corrected[3] += k_pitch * max(pitch, 0.0)  # R_hip_ext ↑
+            corrected[2] -= k_pitch * max(pitch, 0.0)  # R_hip_flex ↓
+
+        # Roll: empuja a “plantar” más la cadera del lado que sube
+        corrected[0] += k_roll * max(-roll, 0.0)  # roll<0 → flexión cadera izq
+        corrected[2] += k_roll * max( roll, 0.0)  # roll>0 → flexión cadera dcha
         
         # Corrección sutil por inclinación lateral (roll)
-        if abs(roll) > 0.05:  # > 3 grados
-            correction_factor = min(0.1, abs(roll) * 0.3)
+        #if abs(roll) > 0.05:  # > 3 grados
+        #    correction_factor = min(0.1, abs(roll) * 0.3)
             
-            if roll > 0:  # Inclinado hacia derecha → fortalecer lado izquierdo
-                corrected[0] += correction_factor  # left_hip_flexor
-                corrected[1] += correction_factor  # left_hip_extensor
-            else:  # Inclinado hacia izquierda → fortalecer lado derecho
-                corrected[2] += correction_factor  # right_hip_flexor
-                corrected[3] += correction_factor  # right_hip_extensor
+        #    if roll > 0:  # Inclinado hacia derecha → fortalecer lado izquierdo
+        #        corrected[0] += correction_factor  # left_hip_flexor
+        #        corrected[1] += correction_factor  # left_hip_extensor
+        #    else:  # Inclinado hacia izquierda → fortalecer lado derecho
+        #        corrected[2] += correction_factor  # right_hip_flexor
+        #        corrected[3] += correction_factor  # right_hip_extensor
         
-        return corrected
+        return np.clip(corrected, 0.0, 1.0)
     
     def decide_current_action(self):
         """Decidir qué acción tomar basado en el contexto"""
@@ -130,27 +145,36 @@ class SingleLegActionSelector:
         self.time_in_current_stance += 1
         
         # Si no hay suficiente historial, mantener acción actual
-        if len(self.last_10_rewards) < 3:
+        if len(self.last_10_rewards) < 5:
             return
         
+        
+        
         recent_performance = np.mean(list(self.last_10_rewards)[-3:])
+
+        if self.time_in_current_stance >= self.target_switch_time:
+            if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
+                self.current_action = SingleLegActionType.BALANCE_RIGHT_SUPPORT
+            else:
+                self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
+            self.time_in_current_stance = 0
         
         # ===== LÓGICA DE CAMBIO DE PIERNA =====
         
         # Si el rendimiento es bueno y ha pasado suficiente tiempo, cambiar pierna
-        if (recent_performance > 4.0 and 
-            self.time_in_current_stance > self.target_switch_time):
+        #if (recent_performance > 4.0 and 
+        #    self.time_in_current_stance > self.target_switch_time):
             
-            if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
-                self.current_action = SingleLegActionType.TRANSITION_TO_RIGHT
-            elif self.current_action == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
-                self.current_action = SingleLegActionType.TRANSITION_TO_LEFT
-            elif self.current_action == SingleLegActionType.TRANSITION_TO_RIGHT:
-                self.current_action = SingleLegActionType.BALANCE_RIGHT_SUPPORT
-            elif self.current_action == SingleLegActionType.TRANSITION_TO_LEFT:
-                self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
+        #    if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
+        #        self.current_action = SingleLegActionType.TRANSITION_TO_RIGHT
+        #    elif self.current_action == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
+        #        self.current_action = SingleLegActionType.TRANSITION_TO_LEFT
+        #    elif self.current_action == SingleLegActionType.TRANSITION_TO_RIGHT:
+        #        self.current_action = SingleLegActionType.BALANCE_RIGHT_SUPPORT
+        #    elif self.current_action == SingleLegActionType.TRANSITION_TO_LEFT:
+        #        self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
             
-            self.time_in_current_stance = 0
+        #    self.time_in_current_stance = 0
         
         # Si el rendimiento es malo, volver a posición estable
         elif recent_performance < 1.0:
@@ -345,10 +369,12 @@ class AngleBasedExpertController:
         joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
         thetas = [state[0] for state in joint_states] # [left_hip, left_knee, right_hip, right_knee]
 
-        R_min = 1e-3 # Para evitar división por cero
-        F_co = 30.0 #Genero rigidez y evito saturación
+        R_min_base = 1e-3 # Para evitar división por cero
+        R_min_knee  = 1e-2    # ↑ mayor que base
+        F_co_hip = 30.0 #Genero rigidez y evito saturación
+        F_co_knee   = 50.0    # nueva rigidez basal de rodilla
 
-        def eps_from(theta, R_abs, muscle_name):
+        def eps_from(theta, R_abs, R_min, muscle_name):
             return pam_muscles[muscle_name].epsilon_from_angle(theta, 0.0, max(abs(R_abs), R_min))
         def P_to_u(P,muscle_name):
             return float(np.clip(pam_muscles[muscle_name].normalized_pressure_PAM(P), 0.0, 1.0))
@@ -364,16 +390,16 @@ class AngleBasedExpertController:
         thL    = thetas[0]
         RfL = env.hip_flexor_moment_arm(thL)
         ReL = env.hip_extensor_moment_arm(thL)
-        eps_flex_L = eps_from(thL, RfL, flexor_cadera_L)
-        eps_ext_L  = eps_from(thL, ReL, extensor_cadera_L)
+        eps_flex_L = eps_from(thL, RfL, R_min_base, flexor_cadera_L)
+        eps_ext_L  = eps_from(thL, ReL, R_min_base, extensor_cadera_L)
         if tau_LH >= 0.0:  # flexión
-            F_main = tau_LH / max(RfL, R_min)
-            P0 = pam_muscles[flexor_cadera_L].pressure_from_force_and_contraction(F_co + F_main, eps_flex_L)
-            P1 = pam_muscles[extensor_cadera_L].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_ext_L)
+            F_main = tau_LH / max(RfL, R_min_base)
+            P0 = pam_muscles[flexor_cadera_L].pressure_from_force_and_contraction(F_co_hip + F_main, eps_flex_L)
+            P1 = pam_muscles[extensor_cadera_L].pressure_from_force_and_contraction(max(F_co_hip - 0.5*F_main, 0.0), eps_ext_L)
         else:              # extensión
-            F_main = (-tau_LH) / max(ReL, R_min)
-            P0 = pam_muscles[flexor_cadera_L].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_flex_L)
-            P1 = pam_muscles[extensor_cadera_L].pressure_from_force_and_contraction(F_co + F_main, eps_ext_L)
+            F_main = (-tau_LH) / max(ReL, R_min_base)
+            P0 = pam_muscles[flexor_cadera_L].pressure_from_force_and_contraction(max(F_co_hip - 0.5*F_main, 0.0), eps_flex_L)
+            P1 = pam_muscles[extensor_cadera_L].pressure_from_force_and_contraction(F_co_hip + F_main, eps_ext_L)
         pam_pressures[0], pam_pressures[1] = P_to_u(P0,flexor_cadera_L), P_to_u(P1, extensor_cadera_L)
         
         # ------ CADERA DERECHA (PAM2 flexor, PAM3 extensor) ------
@@ -382,16 +408,16 @@ class AngleBasedExpertController:
         thR    = thetas[2]
         RfR = env.hip_flexor_moment_arm(thR)
         ReR = env.hip_extensor_moment_arm(thR)
-        eps_flex_R = eps_from(thR, RfR, flexor_cadera_R)
-        eps_ext_R  = eps_from(thR, ReR, extensor_cadera_R )
+        eps_flex_R = eps_from(thR, RfR, R_min_base, flexor_cadera_R)
+        eps_ext_R  = eps_from(thR, ReR, R_min_base, extensor_cadera_R )
         if tau_RH >= 0.0:
-            F_main = tau_RH / max(RfR, R_min)
-            P2 = pam_muscles[flexor_cadera_R].pressure_from_force_and_contraction(F_co + F_main, eps_flex_R)
-            P3 = pam_muscles[extensor_cadera_R].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_ext_R)
+            F_main = tau_RH / max(RfR, R_min_base)
+            P2 = pam_muscles[flexor_cadera_R].pressure_from_force_and_contraction(F_co_hip + F_main, eps_flex_R)
+            P3 = pam_muscles[extensor_cadera_R].pressure_from_force_and_contraction(max(F_co_hip - 0.5*F_main, 0.0), eps_ext_R)
         else:
-            F_main = (-tau_RH) / max(ReR, R_min)
-            P2 = pam_muscles[flexor_cadera_R].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_flex_R)
-            P3 = pam_muscles[extensor_cadera_R].pressure_from_force_and_contraction(F_co + F_main, eps_ext_R)
+            F_main = (-tau_RH) / max(ReR, R_min_base)
+            P2 = pam_muscles[flexor_cadera_R].pressure_from_force_and_contraction(max(F_co_hip - 0.5*F_main, 0.0), eps_flex_R)
+            P3 = pam_muscles[extensor_cadera_R].pressure_from_force_and_contraction(F_co_hip + F_main, eps_ext_R)
         pam_pressures[2], pam_pressures[3] = P_to_u(P2,flexor_cadera_R), P_to_u(P3,extensor_cadera_R)
         
         
@@ -400,24 +426,26 @@ class AngleBasedExpertController:
         tau_LK = desired_torques[1]
         thKL   = thetas[1]
         RkL = env.knee_flexor_moment_arm(thKL)
-        eps_kL = eps_from(thKL, RkL,flexor_rodilla_L)
+        eps_kL = eps_from(thKL, RkL,R_min_knee, flexor_rodilla_L)
         if tau_LK > 0.0:  # flexión
-            Fk = tau_LK / max(RkL, R_min)
-            P4 = pam_muscles[flexor_rodilla_L].pressure_from_force_and_contraction(Fk, eps_kL)
+            Fk = tau_LK / max(RkL, R_min_knee)
+            P4 = pam_muscles[flexor_rodilla_L].pressure_from_force_and_contraction(F_co_knee + Fk, eps_kL)
         else:
-            P4 = pam_muscles[flexor_rodilla_L].min_pressure
+            Fk = (-tau_LK) / max(RkL, R_min_knee)
+            P4 = pam_muscles[flexor_rodilla_L].pressure_from_force_and_contraction(max(F_co_knee - 0.5*Fk, 0.0), eps_kL)
         pam_pressures[4] = P_to_u(P4,flexor_rodilla_L)
         
         # ------ RODILLA DERECHA (solo flexor activo: PAM5) ------
         tau_RK = desired_torques[3]
         thKR   = thetas[3]
         RkR = env.knee_flexor_moment_arm(thKR)
-        eps_kR = eps_from(thKR, RkR,flexor_rodilla_R)
+        eps_kR = eps_from(thKR, RkR,R_min_knee,flexor_rodilla_R)
         if tau_RK > 0.0:
-            Fk = tau_RK / max(RkR, R_min)
-            P5 = pam_muscles[flexor_rodilla_R].pressure_from_force_and_contraction(Fk, eps_kR)
+            Fk = tau_RK / max(RkR, R_min_knee)
+            P5 = pam_muscles[flexor_rodilla_R].pressure_from_force_and_contraction(F_co_knee  +Fk, eps_kR)
         else:
-            P5 = pam_muscles[flexor_rodilla_R].min_pressure
+            Fk = (-tau_RK) / max(RkR, R_min_knee)
+            P5 = pam_muscles[flexor_rodilla_R].pressure_from_force_and_contraction(max(F_co_knee - 0.5*Fk, 0.0), eps_kR)
         pam_pressures[5] = P_to_u(P5,flexor_rodilla_R)
 
    
@@ -577,7 +605,7 @@ class SimpleProgressiveReward:
 
             # DEBUG MEJORADO: Mostrar tiempo real además de steps
             seconds_per_switch = self.switch_interval / self.frequency_simulation  # Asumiendo 400 Hz
-            print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
+            log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
         # Detectar qué pies están en contacto
         left_contacts = p.getContactPoints(self.robot_id, self.plane_id, 2, -1)
@@ -621,19 +649,18 @@ class SimpleProgressiveReward:
         if success is None:
             # Éxito si supera umbral y no hubo caída
             success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
-
-        # Actualizar racha
-        self.success_streak = self.success_streak + 1 if success else 0
-
-        # (Opcional) logging
-        both_print(f"🏁 Episode {self.episode_count}: "
-                f"reward={episode_reward:.1f} | success={success} | "
-                f"streak={self.success_streak}/{cfg['success_streak_needed']}")
         
         # Verificar si subir de nivel
         if len(self.recent_episodes) >= 5:  # Necesitamos al menos 5 episodios
             #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
             #config = self.level_config[self.level]
+            # Actualizar racha
+            self.success_streak = self.success_streak + 1 if success else 0
+
+            # (Opcional) logging
+            both_print(f"🏁 Episode {self.episode_count}: "
+                    f"reward={episode_reward:.1f} | success={success} | "
+                    f"streak={self.success_streak}/{cfg['success_streak_needed']}")
             
             # Promoción de nivel si cumple racha y episodios mínimos
             if (self.success_streak >= cfg['success_streak_needed']
@@ -665,7 +692,7 @@ class SimpleProgressiveReward:
             return True
         
         # Tiempo máximo (crece con nivel)
-        max_steps = (200 + (self.level * 200))*10  # 4000, 6000, 8000 steps
+        max_steps = (200 + ((self.level-1) * 200))*10  # 2000, 4000, 6000 steps
         if step_count >= max_steps:
             self.last_done_reason = "time"
             log_print("⏰ Episode done: Max time reached")
