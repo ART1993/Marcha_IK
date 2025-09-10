@@ -509,8 +509,8 @@ class SimpleProgressiveReward:
         # Inclinación crítica - MÁS PERMISIVO según nivel
         self.max_tilt_by_level = {
             1: 0.8,  # ~85 grados - muy permisivo para aprender básicos
-            2: 0.6,  # ~70 grados - moderadamente permisivo  
-            3: 0.3   # ~57 grados - estricto para habilidades avanzadas
+            2: 0.7,  # ~70 grados - moderadamente permisivo  
+            3: 0.5   # ~57 grados - estricto para habilidades avanzadas
         }
         
         # Para alternancia de piernas (solo nivel 3)

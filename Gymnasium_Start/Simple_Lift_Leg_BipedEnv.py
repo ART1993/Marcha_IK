@@ -337,6 +337,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         log_print(f"   Feet: μ=0.8 (high grip)")
         log_print(f"   Legs: μ=0.1 (moderate)")
         log_print(f"   Ground: μ=0.6 (standard)")
+
+    def contact_with_force(self, link_id, min_F=50.0):
+        cps = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=link_id)# -1 para el suelo
+        if not cps: 
+            return False
+        # campo normalForce = índice 9 en PyBullet
+        totalF = sum(cp[9] for cp in cps)
+        return totalF > min_F
     
 
 # ==================================================================================================================================================================== #
@@ -347,8 +355,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """Control automático de la rodilla levantada basado en altura"""
         
         # Determinar qué pierna está levantada basado en contactos
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 2, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 5, -1)) > 0
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
+        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
+
+        
         
         if left_contact and not right_contact:
             # Pierna derecha levantada - controlar rodilla derecha (índice 3)
@@ -423,6 +433,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         balance_info = self.current_balance_status
         if self.step_count%100==0:
+
             log_print(f"Pierna de apoyo: {balance_info['support_leg']}")
             log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
 
@@ -496,28 +507,24 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Convertir a torques articulares
         joint_torques = np.zeros(4)
 
-         # CADERA IZQUIERDA (antagónica: flexor vs extensor)
-        #left_hip_angle = joint_positions[0]
-        #flexor_arm = self.hip_flexor_moment_arm(left_hip_angle)
-        #extensor_arm = self.hip_extensor_moment_arm(left_hip_angle)
-        
-        #flexor_torque = pam_forces[0] * flexor_arm
-        #extensor_torque = -pam_forces[1] * extensor_arm  # Negativo (dirección opuesta)
-        #joint_torques[0] = flexor_torque + extensor_torque
-
         # Cadera izquierda: flexión positiva por flexor, extensión por extensor
         joint_torques[0]  = ( pam_forces[0] * R_flex_L) + (-pam_forces[1] * R_ext_L)
 
-        # Rodilla izquierda: flexor + resorte/damping pasivos (como tenías)
-        passive_spring  = - self.PASSIVE_SPRING_STRENGTH * np.sin(thK_L)
+        # Rodilla izquierda: flexor + resorte/damping pasivos
+        left_contact  = len(p.getContactPoints(self.robot_id, self.plane_id, 2, -1)) > 0
+        right_contact  = len(p.getContactPoints(self.robot_id, self.plane_id, 5, -1)) > 0
+        #left_contact, right_contact=self.contacto_pies
+        spring_scale_L   = 1.0 if left_contact else 0.3
+        passive_springL  = - self.PASSIVE_SPRING_STRENGTH * np.sin(thK_L)*spring_scale_L
         passive_damping = - self.DAMPING_COEFFICIENT    * joint_velocities[1]
-        joint_torques[1]  = (pam_forces[4] * R_knee_L) + passive_spring + passive_damping
+        joint_torques[1]  = (pam_forces[4] * R_knee_L) + passive_springL + passive_damping
         
         # Cadera derecha
         joint_torques[2]  = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
         
        # Rodilla derecha
-        passive_spring_R  = - self.PASSIVE_SPRING_STRENGTH * np.sin(thK_R)
+        spring_scale_R    = 1.0 if right_contact else 0.3
+        passive_spring_R  = - self.PASSIVE_SPRING_STRENGTH * np.sin(thK_R) * spring_scale_R
         passive_damping_R = - self.DAMPING_COEFFICIENT    * joint_velocities[3]
         joint_torques[3]  = (pam_forces[5] * R_knee_R) + passive_spring_R + passive_damping_R
         
@@ -581,8 +588,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Contactos
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 2, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, 5, -1)) > 0
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
+        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de rodillas
@@ -635,7 +642,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             obs.extend([0.0, 0.0])
         
         # ===== CONTACTOS DE PIES (2 elementos) =====
-        left_contact, right_contact=self.contacto_pies    
+        left_contact, right_contact=self.contacto_pies_log   
 
         #print ("contacto pies", left_contact, right_contact)
         obs.extend([float(left_contact), float(right_contact)])
@@ -643,12 +650,18 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         return np.array(obs, dtype=np.float32)
     
     @property
-    def contacto_pies(self):
-        left_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.left_foot_link_id, -1)) > 0
-        right_contact = len(p.getContactPoints(self.robot_id, self.plane_id, self.right_foot_link_id, -1)) > 0
+    def contacto_pies_log(self):
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
+        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
         if self.step_count<=150 and self.step_count%10==0:
             log_print(f"Contactos pie izquierdo: {left_contact}")
             log_print(f"Contactos pie derecho: {right_contact}")
+        return left_contact, right_contact
+    
+    @property
+    def contacto_pies(self):
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
+        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
         return left_contact, right_contact
     
 
@@ -790,9 +803,19 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     @property
     def current_balance_status(self):
         """Información actual del equilibrio en una pierna"""
+        left_contact, right_contact=self.contacto_pies
+        if left_contact and not right_contact:
+            support_leg = 'left'
+            raised_leg = 'right'
+        elif right_contact and not left_contact:
+            support_leg = 'right'
+            raised_leg = 'left'
+        else:
+            support_leg = 'both_or_none'
+            raised_leg = None
         return {
-            'support_leg': None,
-            'raised_leg': None,
+            'support_leg': support_leg,
+            'raised_leg': raised_leg,
             'balance_time': 0,
             'target_knee_height': self.target_knee_height,
             'episode_step': self.step_count
@@ -822,7 +845,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        self.MAX_REASONABLE_TORQUE = 120.0     # N⋅m (factor de seguridad incluido)
+        self.MAX_REASONABLE_TORQUE = 160.0     # N⋅m (factor de seguridad incluido)
 
     def hip_flexor_moment_arm(self, angle):
         """
