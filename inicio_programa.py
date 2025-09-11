@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 import pybullet as p
 
-from Gymnasium_Start.Simplified_Lift_Leg_Trainer import create_balance_leg_trainer
+from Gymnasium_Start.Simplified_Lift_Leg_Trainer import create_balance_leg_trainer, create_balance_leg_trainer_no_curriculum
 from Archivos_Apoyo.simple_log_redirect import init_simple_logging, log_print, both_print
 
 def _setup_multiprocessing_simple():
@@ -53,4 +53,34 @@ def train_single_leg_balance(total_timesteps=2000000, n_envs=4, resume=True):
         # DETALLES SOLO AL LOG
         log_print(f"📊 Logs disponibles en: {trainer.logs_dir}")
     logger.close()  # CERRAR AL FINAL
+    return trainer, model
+
+
+def train_balance_pure_rl(total_timesteps=1000000, n_envs=4, resume=True):
+    """
+    Función principal para entrenar balance con RL PURO (sin ayuda experta)
+    """
+    
+    print("🎯 PURE RL BALANCE TRAINING")
+    print("=" * 60)
+    print("Objetivo específico:")
+    print("  ✅ Mantener equilibrio básico de pie")
+    print("  ✅ Sin ayuda experta (assist=0)")
+    print("  ✅ Sin progression de niveles")
+    print("  ✅ RL puro - el modelo aprende solo")
+    print("=" * 60)
+    
+    trainer = create_balance_leg_trainer_no_curriculum(
+        total_timesteps=total_timesteps,
+        n_envs=n_envs
+    )
+    
+    model = trainer.train(resume=resume)
+    
+    if model:
+        print("\n🎉 ¡Entrenamiento RL puro completado!")
+        print(f"📁 Modelo guardado en: {trainer.model_dir}")
+        print(f"📊 Logs disponibles en: {trainer.logs_dir}")
+        print("🤖 El modelo aprendió sin ayuda experta")
+    
     return trainer, model

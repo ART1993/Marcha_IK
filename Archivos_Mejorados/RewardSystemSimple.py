@@ -34,11 +34,29 @@ class SingleLegActionSelector:
         self.episode_count = 0
         
         # ===== PARÁMETROS DE CURRICULUM =====
-        self.expert_help_ratio = 0.85
-        self.min_expert_help = 0.2
-        
+        if hasattr(env, 'use_simple_progressive') and not env.use_simple_progressive:
+            # MODO SIN CURRICULUM: RL puro
+            self.expert_help_ratio = 0.0  # ⭐ CLAVE: Sin ayuda experta
+            self.min_expert_help = 0.0
+            self.curriculum_enabled = False
+            log_print(f"🎯 Action Selector: CURRICULUM DISABLED - Pure RL mode")
+        else:
+            # MODO CON CURRICULUM: comportamiento normal
+            self.expert_help_ratio = 0.85
+            self.min_expert_help = 0.0
+            self.curriculum_enabled = True
+            log_print(f"🎯 Action Selector: CURRICULUM ENABLED - Expert help starts at {self.expert_help_ratio:.1%}")
+
+        # Solo crear si realmente necesitamos acciones expertas
         # ===== NUEVO: CONTROLADOR BASADO EN ÁNGULOS =====
-        self.angle_controller = AngleBasedExpertController(env)
+        if self.expert_help_ratio > 0.0:
+            self.angle_controller = AngleBasedExpertController(env)
+            log_print(f"   Control method: Target angles → PD torques → PAM pressures")
+        else:
+            self.angle_controller = None
+            log_print(f"   Control method: Pure RL (no expert controller needed)")
+        
+        
         # Musculos PAM McKibben usarlos para generar presiones y angulos
         self.pam_muscle=env.pam_muscles
         
@@ -55,17 +73,6 @@ class SingleLegActionSelector:
         log_print(f"✅ Angle-Based Single Leg Action Selector initialized")
         log_print(f"   Control method: Target angles → PD torques → PAM pressures")
         log_print(f"   Leg raise angle: 40° (0.7 rad)")
-    
-    def should_use_expert_action(self):
-        """Decidir si usar acción experta o del modelo RL"""
-        
-        # Más ayuda al inicio del episodio (equilibrio en una pierna es difícil)
-        if self.env.step_count <= 600:
-            effective_ratio = min(1.0, self.expert_help_ratio + 0.15)
-        else:
-            effective_ratio = self.expert_help_ratio
-        
-        return np.random.random() < effective_ratio
     
     def get_expert_action(self):
         """
@@ -192,15 +199,19 @@ class SingleLegActionSelector:
         """Actualizar después de cada episodio"""
         self.episode_count += 1
         log_print(f"📊 Episode {self.episode_count} ended with total reward: {total_episode_reward:.1f}")
-        # Curriculum más conservador para tarea difícil
-        if total_episode_reward > 80:  # Episodio muy exitoso
-            self.expert_help_ratio *= 0.98  # Reducción más gradual
-        elif total_episode_reward > 40:  # Episodio moderadamente exitoso
-            self.expert_help_ratio *= 0.99
-        else:  # Episodio problemático
-            self.expert_help_ratio = min(0.95, self.expert_help_ratio * 1.02)
-        
-        self.expert_help_ratio = max(self.min_expert_help, self.expert_help_ratio)
+        if self.curriculum_enabled:
+            # Curriculum más conservador para tarea difícil
+            if total_episode_reward > 80:  # Episodio muy exitoso
+                self.expert_help_ratio *= 0.80  # Reducción más gradual
+            elif total_episode_reward > 40:  # Episodio moderadamente exitoso
+                self.expert_help_ratio *= 0.90
+            else:  # Episodio problemático
+                self.expert_help_ratio = min(0.95, self.expert_help_ratio * 1.02)
+            
+            self.expert_help_ratio = max(self.min_expert_help, self.expert_help_ratio)
+            log_print(f"   Expert help ratio updated to: {self.expert_help_ratio:.1%}")
+        else:
+            log_print(f"   Pure RL mode - no expert help adjustment")
         
         # Reset para nuevo episodio
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
@@ -281,38 +292,6 @@ class AngleBasedExpertController:
             return self.target_angles['level_2_balance']
         else:  # Transiciones
             return self.target_angles['level_1_balance']
-        
-    def get_expert_action_for_level(self, reward_system):
-        """Obtener acción experta según nivel del curriculum"""
-        
-        if not reward_system:
-            return self._get_basic_balance_action()
-        
-        curriculum_info = reward_system.get_info()
-        current_level = curriculum_info.get('level', 1)
-        
-        if current_level == 1:
-            target_config = self.target_angles['level_1_balance']
-        elif current_level == 2:
-            target_config = self.target_angles['level_2_balance']
-        else:  # level == 3
-            target_leg = curriculum_info.get('target_leg', 'right')
-            if target_leg == 'right':
-                target_config = self.target_angles['level_3_left_support']  # Izq soporte, der levantada
-            else:
-                target_config = self.target_angles['level_3_right_support']  # Der soporte, izq levantada
-        
-        # Calcular torques PD hacia ángulos objetivo
-        pd_torques = self.calculate_pd_torques(target_config)
-        
-        # Convertir a presiones PAM
-        pam_pressures = self.torques_to_pam_pressures(pd_torques)
-        
-        return pam_pressures
-    
-    def _get_basic_balance_action(self):
-        """Fallback: acción básica de balance"""
-        return np.array([0.4, 0.5, 0.4, 0.5, 0.1, 0.1])
     
     def calculate_pd_torques(self, target_angles_dict):
         """
@@ -468,14 +447,29 @@ class SimpleProgressiveReward:
     NIVEL 3: Levantar piernas (recompensas altas 0-8) (40+ episodios)
     """
     
-    def __init__(self, robot_id, plane_id, frequency_simulation, switch_interval=2000):
+    def __init__(self, robot_id, plane_id, frequency_simulation, 
+                 switch_interval=2000, enable_curriculum=True):
         self.robot_id = robot_id
         self.plane_id = plane_id
         self.frequency_simulation = frequency_simulation
         self.switch_interval = switch_interval
+        self.enable_curriculum = enable_curriculum
+
+        if self.enable_curriculum==False:
+            # MODO SIN CURRICULUM: sistema fijo y permisivo
+            self.level = 1  # Siempre nivel 1
+            self.level_progression_disabled = True
+            both_print(f"🎯 Progressive System: CURRICULUM DISABLED")
+            both_print(f"   Mode: Fixed basic balance (Level 1 only)")
+            both_print(f"   Max tilt: 45° (permisivo)")
+        else:
+            # MODO CON CURRICULUM: comportamiento normal
+            self.level = 1
+            self.level_progression_disabled = False
+            both_print(f"🎯 Progressive System: CURRICULUM ENABLED")
+            both_print(f"   Mode: Level progression 1→2→3")
         
         # ===== CONFIGURACIÓN SUPER SIMPLE =====
-        self.level = 1  # Empezamos en nivel 1
         self.episode_count = 0
         self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
         self.success_streak = 0  # Episodios consecutivos exitosos
@@ -507,11 +501,19 @@ class SimpleProgressiveReward:
         }
 
         # Inclinación crítica - MÁS PERMISIVO según nivel
-        self.max_tilt_by_level = {
-            1: 0.8,  # ~85 grados - muy permisivo para aprender básicos
-            2: 0.7,  # ~70 grados - moderadamente permisivo  
-            3: 0.5   # ~57 grados - estricto para habilidades avanzadas
-        }
+        if self.enable_curriculum==False:
+            self.max_tilt_by_level = {
+                1: 0.7,  # 
+                2: 0.7,  # 
+                3: 0.7   # 
+            }
+            both_print(f"   Max tilt: 70° (permisivo)")
+        else:
+            self.max_tilt_by_level = {
+                1: 0.8,  # ~85 grados - muy permisivo para aprender básicos
+                2: 0.7,  # ~70 grados - moderadamente permisivo  
+                3: 0.5   # ~57 grados - estricto para habilidades avanzadas
+            }
         
         # Para alternancia de piernas (solo nivel 3)
         self.target_leg = 'left'
@@ -651,7 +653,7 @@ class SimpleProgressiveReward:
             success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
         
         # Verificar si subir de nivel
-        if len(self.recent_episodes) >= 5:  # Necesitamos al menos 5 episodios
+        if self.level_progression_disabled and len(self.recent_episodes) >= 5:  # Necesitamos al menos 5 episodios
             #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
             #config = self.level_config[self.level]
             # Actualizar racha
@@ -670,6 +672,11 @@ class SimpleProgressiveReward:
                 self.level += 1
                 self.success_streak = 0
                 both_print(f"🎉 LEVEL UP! {old} → {self.level}")
+        else:
+            # MODO SIN CURRICULUM: solo logging básico
+            both_print(f"🏁 Episode {self.episode_count}: "
+                    f"reward={episode_reward:.1f} | success={success} | "
+                    f"fixed_level=1")
     
     def is_episode_done(self, step_count):
         """Criterios simples de terminación"""
@@ -711,5 +718,7 @@ class SimpleProgressiveReward:
             'episodes': self.episode_count,
             'avg_reward': avg_reward,
             'target_leg': self.target_leg if self.level == 3 else None,
-            'max_reward': self.level_config[self.level]['max_reward']
+            'max_reward': self.level_config[self.level]['max_reward'],
+            'curriculum_enabled': self.enable_curriculum,
+            'level_progression_disabled': getattr(self, 'level_progression_disabled', False)
         }

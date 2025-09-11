@@ -455,6 +455,71 @@ class Simplified_Lift_Leg_Trainer:
 
         return env
     
+    # Ya que he creado clase sin RL para testing, también creo con este un modelo de entrenamiento sin RL
+
+def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, learning_rate=3e-4):
+    """
+    Función para crear fácilmente un entrenador SIN curriculum
+    """
+    
+    trainer = Simplified_Lift_Leg_Trainer(
+        total_timesteps=total_timesteps,
+        n_envs=n_envs,
+        learning_rate=learning_rate
+    )
+    
+    # Modificar solo la creación del entorno para deshabilitar curriculum
+    original_create_training = trainer.create_training_env
+    original_create_eval = trainer.create_eval_env
+    
+    def create_training_env_no_curriculum():
+        config = trainer.env_configs
+        log_print(f"🏗️ Creating NO-CURRICULUM training environment: {config['description']}")
+        
+        def make_env():
+            def _init():
+                env = Simple_Lift_Leg_BipedEnv(
+                    render_mode='human' if trainer.n_envs == 1 else 'direct', 
+                    action_space=trainer.action_space,
+                    enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
+                )
+                env = Monitor(env, trainer.logs_dir)
+                return env
+            return _init
+        
+        return trainer._create_parallel_env(make_env=make_env, config=config)
+    
+    def create_eval_env_no_curriculum():
+        def make_eval_env():
+            def _init():
+                env = Simple_Lift_Leg_BipedEnv(
+                    render_mode='direct', 
+                    action_space=trainer.action_space,
+                    enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
+                )
+                env = Monitor(env, os.path.join(trainer.logs_dir, "eval"))
+                return env
+            return _init
+        
+        eval_env = DummyVecEnv([make_eval_env()])
+        eval_env = VecNormalize(eval_env, 
+                               norm_obs=True, 
+                               norm_reward=True, 
+                               clip_obs=trainer.env_configs['clip_obs'], 
+                               training=False)
+        return eval_env
+    
+    # Reemplazar métodos
+    trainer.create_training_env = create_training_env_no_curriculum
+    trainer.create_eval_env = create_eval_env_no_curriculum
+    
+    print(f"✅ Trainer created (NO CURRICULUM)")
+    print(f"   Focus: Balance básico con RL puro")
+    print(f"   Expert help: 0% (assist=0 siempre)")
+    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
+    
+    return trainer
+    
 
 # ===== FUNCIONES DE UTILIDAD =====
 

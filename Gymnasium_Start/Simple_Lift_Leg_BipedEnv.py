@@ -720,7 +720,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.simple_reward_system is None:
             self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
                                                                 self.frecuency_simulation,
-                                                                switch_interval=self.switch_interval)
+                                                                switch_interval=self.switch_interval,
+                                                                enable_curriculum=self.use_simple_progressive,)
         else:
             # solo re-vincula IDs si cambiaron, sin perder contadores/racha
             self.simple_reward_system.robot_id = self.robot_id
