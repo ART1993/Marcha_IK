@@ -153,25 +153,29 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== DECISIÓN: EXPERTO vs RL =====
 
         # En env.step (o donde construyas la acción final)
-        u_expert = self.action_selector.get_expert_action()            # [0,1]^6
-        u_rl     = np.clip(action, 0.0, 1.0)                     # [0,1]^6
+        if self.use_simple_progressive:
+            u_expert = self.action_selector.get_expert_action()            # [0,1]^6
+            u_rl = np.clip(action, 0.0, 1.0)                     # [0,1]^6
 
-        assist = self.action_selector.expert_help_ratio                # 0.85→0.2
-        tilt_boost = 0.0
-        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-        self.euler = p.getEulerFromQuaternion(orn)
-        
-        current_tilt = abs(self.euler[0]) + abs(self.euler[1])
-        if current_tilt > 0.20: tilt_boost = 0.30
-        elif current_tilt > 0.15: tilt_boost = 0.15
-        assist = float(np.clip(assist + tilt_boost, 0.0, 0.95))
-        u_final = assist * u_expert + (1.0 - assist) * u_rl
+            assist = self.action_selector.expert_help_ratio                # 0.85→0.2
+            tilt_boost = 0.0
+            self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+            self.euler = p.getEulerFromQuaternion(orn)
+            
+            current_tilt = abs(self.euler[0]) + abs(self.euler[1])
+            if current_tilt > 0.20: tilt_boost = 0.30
+            elif current_tilt > 0.15: tilt_boost = 0.15
+            assist = float(np.clip(assist + tilt_boost, 0.0, 0.95))
+            
+            u_final = assist * u_expert + (1.0 - assist) * u_rl
+            self.ep_expert_weight += float(np.clip(assist, 0.0, 1.0))
+        else:
+            u_final = np.clip(action, 0.0, 1.0)
 
         #delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
         #u_final = self.prev_action + delta
         #self.prev_action = u_final.copy()
         self.ep_total_actions += 1
-        self.ep_expert_weight += float(np.clip(assist, 0.0, 1.0))
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
     
@@ -713,7 +717,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
-        if self.use_simple_progressive and self.simple_reward_system is None:
+        if self.simple_reward_system is None:
             self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
                                                                 self.frecuency_simulation,
                                                                 switch_interval=self.switch_interval)
@@ -777,7 +781,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        for _ in range(150):
+        for _ in range(self.frecuency_simulation//10):
             p.stepSimulation()
         
         # Obtener observación inicial
@@ -804,15 +808,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def current_balance_status(self):
         """Información actual del equilibrio en una pierna"""
         left_contact, right_contact=self.contacto_pies
-        if left_contact and not right_contact:
-            support_leg = 'left'
-            raised_leg = 'right'
-        elif right_contact and not left_contact:
-            support_leg = 'right'
-            raised_leg = 'left'
-        else:
-            support_leg = 'both_or_none'
-            raised_leg = None
+        support_leg = {'left':left_contact, 'right':right_contact}
+        raised_leg = {'left':not left_contact, 'right':not right_contact}
         return {
             'support_leg': support_leg,
             'raised_leg': raised_leg,
