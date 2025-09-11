@@ -342,13 +342,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         log_print(f"   Legs: μ=0.1 (moderate)")
         log_print(f"   Ground: μ=0.6 (standard)")
 
-    def contact_with_force(self, link_id, min_F=50.0):
-        cps = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=link_id)# -1 para el suelo
+    def contact_with_force(self, link_id, min_F=15.0):
+        cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False
         # campo normalForce = índice 9 en PyBullet
         totalF = sum(cp[9] for cp in cps)
+        both_print(f"Contact force on link {link_id}: {totalF:.2f} N")
         return totalF > min_F
+    
+    def debug_contacts_once(self):
+        for name, lid in [("L_foot", self.left_foot_link_id), ("R_foot", self.right_foot_link_id)]:
+            cps = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=lid, linkIndexB=-1)
+            print(f"[DEBUG] {name} contacts: {len(cps)}")
+            for i, cp in enumerate(cps[:5]):
+                # cp[9]=Fnormal, cp[6]=linkA, cp[4]=linkB
+                print(f"   #{i} nF={cp[9]:.2f}N  linkA={cp[6]}  linkB={cp[4]}  posA={cp[5]}")
     
 
 # ==================================================================================================================================================================== #
@@ -762,8 +771,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             robot_id=self.robot_id,
             left_foot_id=2,   # left_foot_link
             right_foot_id=5,  # right_foot_link
-            dt=self.time_step,
-            robot_data=self.robot_data
+            frecuency_simulation=self.frecuency_simulation,
+            robot_data=self.robot_data,
+            ground_id=self.plane_id
         )
         
         self._configure_contact_friction()
@@ -782,7 +792,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        for _ in range(self.frecuency_simulation//10):
+        for _ in range(int(self.frecuency_simulation//10)):
             p.stepSimulation()
         
         # Obtener observación inicial
@@ -843,7 +853,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        self.MAX_REASONABLE_TORQUE = 160.0     # N⋅m (factor de seguridad incluido)
+        self.MAX_REASONABLE_TORQUE = 240.0     # N⋅m (factor de seguridad incluido)
 
     def hip_flexor_moment_arm(self, angle):
         """

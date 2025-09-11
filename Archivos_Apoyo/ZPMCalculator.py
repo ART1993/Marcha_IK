@@ -20,16 +20,20 @@ class ZMPCalculator:
     
     def __init__(self, robot_id, left_foot_id, 
                  right_foot_id, 
-                 dt=1.0/1500,
-                 robot_data=None):
+                 frecuency_simulation=1500,
+                 robot_data=None,
+                 ground_id=None):
         
         # ===== CONFIGURACIÓN BÁSICA =====
         
         self.robot_id = robot_id
         self.left_foot_id = left_foot_id  
         self.right_foot_id = right_foot_id
-        self.dt=dt
+        self.frecuency_simulation=frecuency_simulation
+        self.dt=1.0/frecuency_simulation  # Paso de tiempo
+        #robot_id y floor_id
         self.robot_data = robot_data
+        self.ground_id=ground_id
         
         # ===== PARÁMETROS FÍSICOS SIMPLIFICADOS =====
         
@@ -126,15 +130,17 @@ class ZMPCalculator:
         """
         
         support_points = []
+
+        ground = self.ground_id if self.ground_id is not None else 0  # fallback 0
+        left_contacts  = p.getContactPoints(self.robot_id, ground, linkIndexA=self.left_foot_id, linkIndexB=-1)
+        right_contacts = p.getContactPoints(self.robot_id, ground, linkIndexA=self.right_foot_id, linkIndexB=-1)
         
         # Verificar contacto pie izquierdo
-        left_contacts = p.getContactPoints(self.robot_id, 0, self.left_foot_id)
         if left_contacts:
             left_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
             support_points.append([left_pos[0], left_pos[1]])  # Solo x, y
         
-        # Verificar contacto pie derecho  
-        right_contacts = p.getContactPoints(self.robot_id, 0, self.right_foot_id)
+        # Verificar contacto pie derecho
         if right_contacts:
             right_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
             support_points.append([right_pos[0], right_pos[1]])  # Solo x, y
