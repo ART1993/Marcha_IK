@@ -245,9 +245,9 @@ class AngleBasedExpertController:
             
             # NIVEL 2: Balance estable con micro-ajustes
             'level_2_balance': {
-                'left_hip': 0.05,    # Ligera flexión para estabilidad
+                'left_hip': -0.05,    # Ligera flexión para estabilidad
                 'left_knee': 0.05,
-                'right_hip': 0.05,
+                'right_hip': -0.05,
                 'right_knee': 0.05,
                 'description': 'Balance estable con micro-flexión'
             },
@@ -256,13 +256,13 @@ class AngleBasedExpertController:
             'level_3_left_support': {
                 'left_hip': 0.0,     # Pierna izq: soporte
                 'left_knee': 0.0,
-                'right_hip': 0.6,    # Pierna der: levantada 34°
+                'right_hip': -0.6,    # Pierna der: levantada 34°
                 'right_knee': 0.6,
                 'description': 'Pierna derecha levantada'
             },
             
             'level_3_right_support': {
-                'left_hip': 0.6,     # Pierna izq: levantada 34°
+                'left_hip': -0.6,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
                 'right_hip': 0.0,    # Pierna der: soporte
                 'right_knee': 0.0,
@@ -651,27 +651,28 @@ class SimpleProgressiveReward:
         if success is None:
             # Éxito si supera umbral y no hubo caída
             success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
-        
+        log_print(f"{self.level_progression_disabled=:}, {self.enable_curriculum=:}")
         # Verificar si subir de nivel
-        if self.level_progression_disabled and len(self.recent_episodes) >= 5:  # Necesitamos al menos 5 episodios
+        if self.level_progression_disabled :  # Necesitamos al menos 5 episodios
             #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
             #config = self.level_config[self.level]
             # Actualizar racha
-            self.success_streak = self.success_streak + 1 if success else 0
+            if len(self.recent_episodes) >= 5:
+                self.success_streak = self.success_streak + 1 if success else 0
 
-            # (Opcional) logging
-            both_print(f"🏁 Episode {self.episode_count}: "
-                    f"reward={episode_reward:.1f} | success={success} | "
-                    f"streak={self.success_streak}/{cfg['success_streak_needed']}")
-            
-            # Promoción de nivel si cumple racha y episodios mínimos
-            if (self.success_streak >= cfg['success_streak_needed']
-                and self.episode_count >= cfg['episodes_needed']
-                and self.level < 3):
-                old = self.level
-                self.level += 1
-                self.success_streak = 0
-                both_print(f"🎉 LEVEL UP! {old} → {self.level}")
+                # (Opcional) logging
+                both_print(f"🏁 Episode {self.episode_count}: "
+                        f"reward={episode_reward:.1f} | success={success} | "
+                        f"streak={self.success_streak}/{cfg['success_streak_needed']}")
+                
+                # Promoción de nivel si cumple racha y episodios mínimos
+                if (self.success_streak >= cfg['success_streak_needed']
+                    and self.episode_count >= cfg['episodes_needed']
+                    and self.level < 3):
+                    old = self.level
+                    self.level += 1
+                    self.success_streak = 0
+                    both_print(f"🎉 LEVEL UP! {old} → {self.level}")
         else:
             # MODO SIN CURRICULUM: solo logging básico
             both_print(f"🏁 Episode {self.episode_count}: "

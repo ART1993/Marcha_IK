@@ -348,7 +348,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             return False
         # campo normalForce = índice 9 en PyBullet
         totalF = sum(cp[9] for cp in cps)
-        both_print(f"Contact force on link {link_id}: {totalF:.2f} N")
+        if self.step_count % (self.frecuency_simulation) == 0:  # Cada segundos aprox
+            log_print(f"Contact force on link {link_id}: {totalF:.2f} N")
         return totalF > min_F
     
     def debug_contacts_once(self):
