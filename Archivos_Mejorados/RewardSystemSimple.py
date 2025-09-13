@@ -447,13 +447,15 @@ class SimpleProgressiveReward:
     NIVEL 3: Levantar piernas (recompensas altas 0-8) (40+ episodios)
     """
     
-    def __init__(self, robot_id, plane_id, frequency_simulation, 
+    def __init__(self, env, frequency_simulation, 
                  switch_interval=2000, enable_curriculum=True):
-        self.robot_id = robot_id
-        self.plane_id = plane_id
+        # self.robot_id = robot_id
+        # self.plane_id = plane_id
+        self.env=env
         self.frequency_simulation = frequency_simulation
         self.switch_interval = switch_interval
         self.enable_curriculum = enable_curriculum
+        self.env
 
         if self.enable_curriculum==False:
             # MODO SIN CURRICULUM: sistema fijo y permisivo
@@ -532,7 +534,7 @@ class SimpleProgressiveReward:
         Método principal: calcula reward según el nivel actual
         """
 
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         if self.level == 1 and self.enable_curriculum:
@@ -592,41 +594,68 @@ class SimpleProgressiveReward:
     
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
+
+        left_foot_id=self.env.left_foot_link_id
+        right_foot_id=self.env.right_foot_link_id
+        left_hip_id, left_knee_id, right_hip_id, right_knee_id = self.env.joint_indices
         
         # Cambiar pierna objetivo cada 5 segundos (150 steps a 30 FPS)
         self.switch_timer += 1
         if self.switch_timer >= self.switch_interval:
             self.target_leg = 'left' if self.target_leg == 'right' else 'right'
             self.switch_timer = 0
-
             # DEBUG MEJORADO: Mostrar tiempo real además de steps
             seconds_per_switch = self.switch_interval / self.frequency_simulation  # Asumiendo 400 Hz
             log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
         # Detectar qué pies están en contacto
-        left_contacts = p.getContactPoints(self.robot_id, self.plane_id, 2, -1)
-        right_contacts = p.getContactPoints(self.robot_id, self.plane_id, 5, -1)
-        
-        left_down = len(left_contacts) > 0
-        right_down = len(right_contacts) > 0
-        
+        left_down = self.env.contact_with_force(left_foot_id,  min_F=15.0)
+        right_down = self.env.contact_with_force(right_foot_id,  min_F=15.0)
+
+        target_is_right   = (self.target_leg == 'right')
+        target_foot_id    = right_foot_id if target_is_right else left_foot_id
+        target_foot_down  = right_down if target_is_right else left_down
+        support_foot_down = left_down if target_is_right else right_down
+
+        # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
+        # Clearance
+        foot_z = p.getLinkState(self.robot_id, target_foot_id)[0][2]
+        clearance_target = 0.08  # 8 cm
+        clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 1.5
+
+        # Rodilla (≈0.6 rad)
+        knee_id  = right_knee_id if target_is_right else left_knee_id
+        knee_ang = p.getJointState(self.robot_id, knee_id)[0]
+        knee_bonus = (1.0 - min(abs(knee_ang - 0.6), 1.0)) * 1.0
+        knee_bonus = 0.0 if target_foot_down else knee_bonus
+
+        # Cadera (≈|0.6| rad) — uso el módulo para no depender del signo
+        hip_id  = right_hip_id if target_is_right else left_hip_id
+        hip_ang = p.getJointState(self.robot_id, hip_id)[0]
+        hip_bonus = (1.0 - min(abs(abs(hip_ang) - 0.6), 1.0)) * 0.7
+        hip_bonus = 0.0 if target_foot_down else hip_bonus
+
         # Evaluar si está haciendo lo correcto
         if self.target_leg == 'right':
             # Quiero: pie izquierdo abajo, pie derecho arriba
             if left_down and not right_down:
-                return 2.0  # ¡Perfecto!
+                contacto_reward = 2.0  # ¡Perfecto!
             elif left_down and right_down:
-                return 0.5  # Ambos abajo (transición)
+                contacto_reward = 0.5  # Ambos abajo (transición)
             else:
-                return -0.5  # Incorrecto
+                contacto_reward = -0.5  # Incorrecto
         else:  # target_leg == 'left'
             # Quiero: pie derecho abajo, pie izquierdo arriba
             if right_down and not left_down:
-                return 2.0  # ¡Perfecto!
+                contacto_reward = 2.0  # ¡Perfecto!
             elif left_down and right_down:
-                return 0.5  # Ambos abajo (transición)
+                contacto_reward = 0.5  # Ambos abajo (transición)
             else:
-                return -0.5  # Incorrecto
+                contacto_reward = -0.5  # Incorrecto
+
+        # Suma a tu recompensa de contacto existente:
+        leg_reward = contacto_reward + clearance_bonus + knee_bonus + hip_bonus
+        return leg_reward
     
     def update_after_episode(self, episode_reward, success=None):
         """Actualizar nivel después de cada episodio"""

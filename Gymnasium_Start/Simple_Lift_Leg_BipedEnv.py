@@ -294,11 +294,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.robot_id, 
             self.left_foot_link_id,
             lateralFriction=0.8,        # Reducido de 1.2 a 0.8
-            spinningFriction=0.3,       # Reducido de 0.8 a 0.3
-            rollingFriction=0.02,       # Reducido de 0.1 a 0.02
+            spinningFriction=0.15,       # Reducido de 0.8 a 0.15
+            rollingFriction=0.01,       # Reducido de 0.1 a 0.01
             restitution=0.01,           # Reducido de 0.05 a 0.01 (menos rebote)
             contactDamping=100,         # Aumentado de 50 a 100 (más amortiguación)
-            contactStiffness=15000      # Aumentado de 10000 a 15000 (más rigidez)
+            contactStiffness=15000,      # Aumentado de 10000 a 15000 (más rigidez)
+            frictionAnchor=1
         )
         
         # Pie derecho - mismas propiedades
@@ -306,11 +307,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.robot_id,
             self.right_foot_link_id, 
             lateralFriction=0.8,
-            spinningFriction=0.3,
-            rollingFriction=0.02,
+            spinningFriction=0.15,
+            rollingFriction=0.01,
             restitution=0.01,
             contactDamping=100,
-            contactStiffness=15000
+            contactStiffness=15000,
+            frictionAnchor=1
         )
         
         # ===== FRICCIÓN PARA OTROS LINKS =====
@@ -728,14 +730,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
         if self.simple_reward_system is None:
-            self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
+            self.simple_reward_system = SimpleProgressiveReward(self, 
                                                                 self.frecuency_simulation,
                                                                 switch_interval=self.switch_interval,
                                                                 enable_curriculum=self.use_simple_progressive)
         else:
             # solo re-vincula IDs si cambiaron, sin perder contadores/racha
-            self.simple_reward_system.robot_id = self.robot_id
-            self.simple_reward_system.plane_id = self.plane_id
+            # self.simple_reward_system.robot_id = self.robot_id
+            # self.simple_reward_system.plane_id = self.plane_id
+            self.simple_reward_system.env=self
                  
         # Nuevo selector de acciones
         if self.action_selector is None:
