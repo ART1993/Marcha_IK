@@ -151,7 +151,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
-
+        log_print(f"\n--- Step {self.use_simple_progressive=:} ---")
         # En env.step (o donde construyas la acción final)
         if self.use_simple_progressive:
             u_expert = self.action_selector.get_expert_action()            # [0,1]^6
@@ -258,7 +258,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
             if self.simple_reward_system:
                 curriculum_info = self.simple_reward_system.get_info()
-                log_print(f"   Level: {info.get('level')}, Target: {self.action_selector.current_action}")
+                log_print(f"   Level: {info['curriculum'].get('level')}, Target: {self.action_selector.current_action}")
     
             # Verificar si está cerca de límites
             max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
@@ -731,7 +731,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system = SimpleProgressiveReward(self.robot_id, self.plane_id, 
                                                                 self.frecuency_simulation,
                                                                 switch_interval=self.switch_interval,
-                                                                enable_curriculum=self.use_simple_progressive,)
+                                                                enable_curriculum=self.use_simple_progressive)
         else:
             # solo re-vincula IDs si cambiaron, sin perder contadores/racha
             self.simple_reward_system.robot_id = self.robot_id

@@ -147,7 +147,8 @@ class Simplified_Lift_Leg_Trainer:
         def make_eval_env():
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
-                                             action_space=self.action_space
+                                             action_space=self.action_space,
+                                             enable_curriculum=False  # Evaluación sin curriculum
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env

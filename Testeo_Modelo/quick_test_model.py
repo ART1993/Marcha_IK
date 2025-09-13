@@ -11,7 +11,7 @@ from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv
 
-def quick_test_model(duration=30):
+def quick_test_model(model_path= "./models_lift_leg/best_model.zip", duration=30):
     """
     Prueba rápida del modelo entrenado
     
@@ -23,7 +23,6 @@ def quick_test_model(duration=30):
     print("=" * 50)
     
     # Buscar modelo
-    model_path = "./models_lift_leg/best_model.zip"
     if not os.path.exists(model_path):
         # Buscar checkpoint más reciente
         import glob

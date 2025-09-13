@@ -202,11 +202,11 @@ class SingleLegActionSelector:
         if self.curriculum_enabled:
             # Curriculum más conservador para tarea difícil
             if total_episode_reward > 80:  # Episodio muy exitoso
-                self.expert_help_ratio *= 0.80  # Reducción más gradual
+                self.expert_help_ratio *= 0.90  # Reducción más gradual
             elif total_episode_reward > 40:  # Episodio moderadamente exitoso
-                self.expert_help_ratio *= 0.90
+                self.expert_help_ratio *= 0.95
             else:  # Episodio problemático
-                self.expert_help_ratio = min(0.95, self.expert_help_ratio * 1.02)
+                self.expert_help_ratio = min(0.97, self.expert_help_ratio * 1.02)
             
             self.expert_help_ratio = max(self.min_expert_help, self.expert_help_ratio)
             log_print(f"   Expert help ratio updated to: {self.expert_help_ratio:.1%}")
@@ -503,9 +503,9 @@ class SimpleProgressiveReward:
         # Inclinación crítica - MÁS PERMISIVO según nivel
         if self.enable_curriculum==False:
             self.max_tilt_by_level = {
-                1: 0.7,  # 
-                2: 0.7,  # 
-                3: 0.7   # 
+                1: 0.5,  # 
+                2: 0.5,  # 
+                3: 0.5   # 
             }
             both_print(f"   Max tilt: 70° (permisivo)")
         else:
@@ -531,22 +531,26 @@ class SimpleProgressiveReward:
         """
         Método principal: calcula reward según el nivel actual
         """
+
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
         
-        if self.level == 1:
-            reward = self._level_1_reward()      # Solo supervivencia
-        elif self.level == 2:
-            reward = self._level_2_reward()      # + balance estable
+        if self.level == 1 and self.enable_curriculum:
+            reward = self._level_1_reward(pos)      # Solo supervivencia
+        elif self.level == 2 and self.enable_curriculum:
+            reward = self._level_2_reward(pos, euler)      # + balance estable
         else:  # level == 3
-            reward = self._level_3_reward(step_count)  # + levantar piernas
+            reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
+        level = self.level if self.enable_curriculum else 3
+        max_reward = self.level_config[level]['max_reward']
         
         # Limitar reward según nivel
-        max_reward = self.level_config[self.level]['max_reward']
+        
+        
         return max(-2.0, min(reward, max_reward))
     
-    def _level_1_reward(self):
+    def _level_1_reward(self,pos):
         """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
-        
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         height = pos[2]
         
         # Recompensa simple por altura
@@ -557,20 +561,10 @@ class SimpleProgressiveReward:
         else:
             return -1.0  # Caída
     
-    def _level_2_reward(self):
+    def _level_2_reward(self,pos,euler):
         """NIVEL 2: Balance estable (recompensas 0-5)"""
         
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
-        height = pos[2]
-        
-        # Recompensa por altura (igual que nivel 1)
-        if height > 0.9:
-            height_reward = 1.5
-        elif height > 0.7:
-            height_reward = 0.8
-        else:
-            return -1.0  # Caída
+        height_reward=self._level_1_reward(pos)
         
         # + Recompensa por estabilidad (NUEVA)
         tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
@@ -583,11 +577,11 @@ class SimpleProgressiveReward:
         
         return height_reward + stability_reward
     
-    def _level_3_reward(self, step_count):
+    def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
         
         # Recompensa base (igual que nivel 2)
-        base_reward = self._level_2_reward()
+        base_reward = self._level_2_reward(pos,euler)
         if base_reward < 0:  # Si se cayó, no calcular más
             return base_reward
         
@@ -653,7 +647,7 @@ class SimpleProgressiveReward:
             success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
         log_print(f"{self.level_progression_disabled=:}, {self.enable_curriculum=:}")
         # Verificar si subir de nivel
-        if self.level_progression_disabled :  # Necesitamos al menos 5 episodios
+        if self.level_progression_disabled is False:  # Necesitamos al menos 5 episodios
             #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
             #config = self.level_config[self.level]
             # Actualizar racha
@@ -700,7 +694,7 @@ class SimpleProgressiveReward:
             return True
         
         # Tiempo máximo (crece con nivel)
-        max_steps = (200 + ((self.level-1) * 200))*10  # 2000, 4000, 6000 steps
+        max_steps = (200 + ((self.level-1) * 200))*10 if self.enable_curriculum else 6000 # 2000, 4000, 6000 steps
         if step_count >= max_steps:
             self.last_done_reason = "time"
             log_print("⏰ Episode done: Max time reached")
