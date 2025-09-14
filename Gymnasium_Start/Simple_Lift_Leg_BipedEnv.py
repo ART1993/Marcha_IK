@@ -33,7 +33,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 5
     """
     
-    def __init__(self, render_mode='human', use_knee_extensor_pams=True,
+    def __init__(self, render_mode='human', use_knee_extensor_pams=False,
                  action_space="pam", enable_curriculum=True):
         
         """
@@ -62,7 +62,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.contact_stable_steps = 0
         # Para tracking de tiempo en balance
         self._balance_start_time = 0
-        
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
         self.urdf_path = "2_legged_human_like_robot.urdf"
@@ -129,6 +128,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.robot_id = None
         self.plane_id = None
         self.joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
+        self.joint_names = ['left_hip', 'left_knee', 'right_hip', 'right_knee']
         self.left_foot_link_id = 2
         self.right_foot_link_id = 5
 
@@ -144,6 +144,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         log_print(f"🤖 Simplified Lift legs Environment initialized")
         log_print(f"🤖 Environment initialized - Systems initiate in reset")
+        log_print(f"🤖 Using {self.num_active_pams=:} {use_knee_extensor_pams=:} {enable_curriculum=:}")
     
 # ========================================================================================================================================================================= #
 # ===================================================== Métodos de paso y control del entorno Enhanced_PAMIKBipedEnv ====================================================== #
@@ -161,14 +162,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
         # En env.step (o donde construyas la acción final)
+        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        self.euler = p.getEulerFromQuaternion(orn)
         if self.enable_curriculum:
             u_expert = self.action_selector.get_expert_action()            # [0,1]^6
             u_rl = np.clip(action, 0.0, 1.0)                     # [0,1]^6
 
             assist = self.action_selector.expert_help_ratio                # 0.85→0.2
             tilt_boost = 0.0
-            self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-            self.euler = p.getEulerFromQuaternion(orn)
+            
             
             current_tilt = abs(self.euler[0]) + abs(self.euler[1])
             if current_tilt > 0.20: tilt_boost = 0.30
@@ -484,15 +486,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         obs = []
         
         # ===== ESTADO DEL TORSO (8 elementos) =====
-        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
-        lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
+        self.init_pos, orn = p.getBasePositionAndOrientation(self.robot_id)
+        init_lin_vel, init_ang_vel = p.getBaseVelocity(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación  
-        obs.extend([pos[0], pos[2], euler[0], euler[1]])  # x, z, roll, pitch
+        obs.extend([self.init_pos[0], self.init_pos[2], euler[0], euler[1]])  # x, z, roll, pitch
         
         # Velocidades
-        obs.extend([lin_vel[0], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
+        obs.extend([init_lin_vel[0], init_lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # Solo joints activos
@@ -849,11 +851,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== VALIDAR TORQUES DENTRO DE CAPACIDAD FÍSICA =====
         
-        # Para tu robot específico: torques >120 N⋅m son físicamente imposibles
+        # Para el robot específico:
         for i, torque in enumerate(joint_torques):
-            if abs(torque) > self.MAX_REASONABLE_TORQUE*0.8:  # Warning a 100 N⋅m (antes del límite de 120)
-                joint_names = ['left_hip', 'left_knee', 'right_hip', 'right_knee']
-                warnings.append(f"{joint_names[i]}: High torque {torque:.1f} N⋅m")
+            if abs(torque) > self.MAX_REASONABLE_TORQUE*0.6:  # Warning de uso excesivo de torques
+                warnings.append(f"{self.joint_names[i]}: High torque {torque:.1f} N⋅m")
         
         # ===== VALIDAR EFICIENCIA ENERGÉTICA =====
         

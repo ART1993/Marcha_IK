@@ -41,10 +41,10 @@ def PAM_McKibben(include_knee_extensors: bool = False):
             'right_hip_extensor': PAMMcKibben(L0=0.6, r0=0.025, alpha0=np.pi/4),
             
             # Rodillas - Control antagónico completo
-            'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
-            'left_knee_extensor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
-            'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
-            'right_knee_extensor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
+            'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
+            'left_knee_extensor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
+            'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
+            'right_knee_extensor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
         }
     else:
         return {
@@ -55,8 +55,8 @@ def PAM_McKibben(include_knee_extensors: bool = False):
             'right_hip_extensor': PAMMcKibben(L0=0.6, r0=0.025, alpha0=np.pi/4),
             
             # Rodillas - Solo flexores (extensión pasiva)
-            'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
-            'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.02, alpha0=np.pi/4),
+            'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
+            'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
         }
     
 

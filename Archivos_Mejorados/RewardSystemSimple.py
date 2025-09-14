@@ -133,17 +133,6 @@ class SingleLegActionSelector:
         corrected[0] += k_roll * max(-roll, 0.0)  # roll<0 → flexión cadera izq
         corrected[2] += k_roll * max( roll, 0.0)  # roll>0 → flexión cadera dcha
         
-        # Corrección sutil por inclinación lateral (roll)
-        #if abs(roll) > 0.05:  # > 3 grados
-        #    correction_factor = min(0.1, abs(roll) * 0.3)
-            
-        #    if roll > 0:  # Inclinado hacia derecha → fortalecer lado izquierdo
-        #        corrected[0] += correction_factor  # left_hip_flexor
-        #        corrected[1] += correction_factor  # left_hip_extensor
-        #    else:  # Inclinado hacia izquierda → fortalecer lado derecho
-        #        corrected[2] += correction_factor  # right_hip_flexor
-        #        corrected[3] += correction_factor  # right_hip_extensor
-        
         return np.clip(corrected, 0.0, 1.0)
     
     def decide_current_action(self):
@@ -154,8 +143,6 @@ class SingleLegActionSelector:
         # Si no hay suficiente historial, mantener acción actual
         if len(self.last_10_rewards) < 5:
             return
-        
-        
         
         recent_performance = np.mean(list(self.last_10_rewards)[-3:])
 
@@ -592,7 +579,7 @@ class SimpleProgressiveReward:
         euler = p.getEulerFromQuaternion(orn)
         
         if self.level == 1 and self.enable_curriculum:
-            reward = self._level_1_reward(pos)      # Solo supervivencia
+            reward = self._level_1_reward(pos,euler)      # Solo supervivencia
         elif self.level == 2 and self.enable_curriculum:
             reward = self._level_2_reward(pos, euler)      # + balance estable
         else:  # level == 3
@@ -605,22 +592,37 @@ class SimpleProgressiveReward:
         
         return max(-2.0, min(reward, max_reward))
     
-    def _level_1_reward(self,pos):
+    def _level_1_reward(self,pos,euler):
         """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
+        front_back_positions= self.env.init_pos[0]
+        self.dx = float(pos[0] - front_back_positions)
+        # Tolerancia sin penalización ±5 cm
+        tol = 0.05
+        # Penaliza deriva total fuera de tolerancia (suave; tope aprox -2.0)
+        drift_pen = - np.clip(abs(self.dx) - tol, 0.0, 0.25) * 8.0
+        # Penaliza adicionalmente cuando la deriva es hacia atrás (dx < -tol)
+        # tope aprox -1.6
+        back_only_pen = - np.clip(-self.dx - tol, 0.0, 0.20) * 8.0
+
         height = pos[2]
         
         # Recompensa simple por altura
         if height > 0.9:
-            return 1.5  # Buena altura
-        elif height > 0.7:
-            return 0.8  # Altura mínima
+            height_reward= 1.5  # Buena altura
+        elif height > 0.8:
+            height_reward= 0.8  # Altura mínima
         else:
-            return -1.0  # Caída
+            height_reward= -1.0  # Caída
+
+        pitch = euler[1]
+        back_pitch_pen = - np.clip(pitch - 0.05, 0.0, 0.30) * 6.0
+
+        return height_reward + drift_pen + back_only_pen +back_pitch_pen
     
     def _level_2_reward(self,pos,euler):
         """NIVEL 2: Balance estable (recompensas 0-5)"""
         
-        height_reward=self._level_1_reward(pos)
+        height_reward=self._level_1_reward(pos, euler)
         
         # + Recompensa por estabilidad (NUEVA)
         tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
@@ -716,7 +718,7 @@ class SimpleProgressiveReward:
         
         self.episode_count += 1
         self.recent_episodes.append(episode_reward)
-        has_fallen = (self.last_done_reason in ("fall", "tilt"))
+        has_fallen = (self.last_done_reason in ("fall", "tilt", "drift"))
         
         # Mantener solo últimos 5 episodios
         if len(self.recent_episodes) > 5:
@@ -754,7 +756,7 @@ class SimpleProgressiveReward:
             # MODO SIN CURRICULUM: solo logging básico
             both_print(f"🏁 Episode {self.episode_count}: "
                     f"reward={episode_reward:.1f} | success={success} | "
-                    f"fixed_level=1")
+                    f"fixed_level=3")
     
     def is_episode_done(self, step_count):
         """Criterios simples de terminación"""
@@ -763,11 +765,15 @@ class SimpleProgressiveReward:
         euler = p.getEulerFromQuaternion(orn)
         
         # Caída
-        if pos[2] < 0.5:
+        if pos[2] <= 0.5:
             self.last_done_reason = "fall"
             log_print("❌ Episode done: Robot fell")
             return True
         
+        if abs(self.dx) > 0.35:
+            self.last_done_reason = "drift"
+            log_print("❌ Episode done: Excessive longitudinal drift")
+            return True
         
         max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
         # Inclinación extrema
