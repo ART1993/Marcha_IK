@@ -118,17 +118,18 @@ class Simplified_Lift_Leg_Trainer:
         
         log_print(f"🏗️ Creating training environment: {config['description']}")
         
-        def make_env():
+        def make_env(rank=0):
             def _init():
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
                     action_space=self.action_space,
-                    enable_curriculum=True
+                    enable_curriculum=True,
+                    print_env="TRAIN"  # Para diferenciar en logs
                     
                 )
                 
-                env = Monitor(env, self.logs_dir)
+                env = Monitor(env, os.path.join(self.logs_dir, f"train_worker_{rank}"))
                 return env
             return _init
         
@@ -148,7 +149,8 @@ class Simplified_Lift_Leg_Trainer:
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
                                              action_space=self.action_space,
-                                             enable_curriculum=False  # Evaluación sin curriculum
+                                             enable_curriculum=False,  # Evaluación sin curriculum
+                                            print_env="EVAL"
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env
@@ -440,7 +442,7 @@ class Simplified_Lift_Leg_Trainer:
     def _create_parallel_env(self, make_env, config):
         """Creación de entornos paralelos optimizada"""
         if self.n_envs > 1:
-            base_env = SubprocVecEnv([make_env() for _ in range(self.n_envs)])
+            base_env = SubprocVecEnv([make_env(rank=i) for i in range(self.n_envs)])
             env = VecNormalize(base_env, 
                              norm_obs=True, 
                              norm_reward=True, 

@@ -33,8 +33,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 5
     """
     
-    def __init__(self, render_mode='human', use_knee_extensor_pams=False,
-                 action_space="pam", enable_curriculum=True):
+    def __init__(self, render_mode='human', use_knee_extensor_pams=True,
+                 action_space="pam", enable_curriculum=True, print_env="ENV"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -141,10 +141,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         self.enable_curriculum = enable_curriculum
         self.simple_reward_system = None
-        
+        self.print_env = print_env
         log_print(f"🤖 Simplified Lift legs Environment initialized")
         log_print(f"🤖 Environment initialized - Systems initiate in reset")
-        log_print(f"🤖 Using {self.num_active_pams=:} {use_knee_extensor_pams=:} {enable_curriculum=:}")
+        log_print(f"🤖 Using {self.num_active_pams=:} {use_knee_extensor_pams=:} "
+                  f"{enable_curriculum=:} [{self.print_env=:}]")
     
 # ========================================================================================================================================================================= #
 # ===================================================== Métodos de paso y control del entorno Enhanced_PAMIKBipedEnv ====================================================== #
@@ -354,7 +355,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         log_print(f"   Legs: μ=0.1 (moderate)")
         log_print(f"   Ground: μ=0.6 (standard)")
 
-    def contact_with_force(self, link_id, min_F=15.0):
+    def contact_with_force(self, link_id, min_F=18.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False
@@ -363,6 +364,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.step_count % (self.frequency_simulation) == 0:  # Cada segundos aprox
             log_print(f"Contact force on link {link_id}: {totalF:.2f} N")
         return totalF > min_F
+    
+    def contact_normal_force(self, link_id:int)->float:
+        cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)
+        return 0.0 if not cps else sum(cp[9] for cp in cps)
     
     def debug_contacts_once(self):
         for name, lid in [("L_foot", self.left_foot_link_id), ("R_foot", self.right_foot_link_id)]:
@@ -738,11 +743,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.KP = 80.0   # Ganancia proporcional
         self.KD = 12.0   # Ganancia derivativa
         
-        self.HIP_EXTENSOR_BASE_ARM = 0.0628    # 6.28cm - extensores más potentes (glúteos)
-        self.HIP_EXTENSOR_VARIATION = 0.0126   # ±1.26cm variación por ángulo
-        
-        self.KNEE_FLEXOR_BASE_ARM = 0.0566     # 5.66cm - basado en circunferencia pantorrilla
-        self.KNEE_FLEXOR_VARIATION = 0.0113    # ±1.13cm variación por ángulo
+        self.HIP_EXTENSOR_BASE_ARM = 0.0628    
+        self.HIP_EXTENSOR_VARIATION = 0.0126   
+
+        self.KNEE_FLEXOR_BASE_ARM = 0.0566     
+        self.KNEE_FLEXOR_VARIATION = 0.0113    
+
+        self.KNEE_EXTENSOR_BASE_ARM = 0.0640     
+        self.KNEE_EXTENSOR_VARIATION = 0.0120    
         
         # Parámetros de resortes pasivos (calculados desde momento gravitacional)
         self.PASSIVE_SPRING_STRENGTH = 180.5   # N⋅m 
@@ -791,7 +799,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle - np.pi/6)
-        return self.KNEE_FLEXOR_BASE_ARM + self.KNEE_FLEXOR_VARIATION * angle_factor
+        return self.KNEE_EXTENSOR_BASE_ARM + self.KNEE_EXTENSOR_VARIATION * angle_factor
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 

@@ -498,6 +498,7 @@ class SimpleProgressiveReward:
         self.switch_interval = env.switch_interval
         self.enable_curriculum = env.enable_curriculum
         self.robot_id = env.robot_id
+        self.single_support_ticks = 0
 
         if self.enable_curriculum==False:
             # MODO SIN CURRICULUM: sistema fijo y permisivo
@@ -653,6 +654,9 @@ class SimpleProgressiveReward:
 
         left_foot_id=self.env.left_foot_link_id
         right_foot_id=self.env.right_foot_link_id
+        F_L = self.env.contact_normal_force(left_foot_id)
+        F_R = self.env.contact_normal_force(right_foot_id)
+        F_sum = max(F_L + F_R, 1e-6)
         left_hip_id, left_knee_id, right_hip_id, right_knee_id = self.env.joint_indices
         
         # Cambiar pierna cada switch interval
@@ -661,17 +665,53 @@ class SimpleProgressiveReward:
             self.target_leg = 'left' if self.target_leg == 'right' else 'right'
             self.switch_timer = 0
             # DEBUG MEJORADO: Mostrar tiempo real además de steps
-            seconds_per_switch = self.switch_interval / self.frequency_simulation  # Asumiendo 400 Hz
+            seconds_per_switch = self.switch_interval / self.frequency_simulation  
+            # Asumiendo 400 Hz
             log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
-        # Detectar qué pies están en contacto
-        left_down = self.env.contact_with_force(left_foot_id,  min_F=15.0)
-        right_down = self.env.contact_with_force(right_foot_id,  min_F=15.0)
+        # Detectar qué pies están en contacto Ver si seleccionar min_F=22 0 27 0 30
+        left_down = self.env.contact_with_force(left_foot_id, min_F=30.0)
+        right_down = self.env.contact_with_force(right_foot_id, min_F=30.0)
 
         target_is_right   = (self.target_leg == 'right')
         target_foot_id    = right_foot_id if target_is_right else left_foot_id
         target_foot_down  = right_down if target_is_right else left_down
         support_foot_down = left_down if target_is_right else right_down
+
+        # if support_foot_down and not target_foot_down:
+        #     self.single_support_ticks += 1
+        #     single_support_step_reward = 0.05
+        #     terminal_single_support_bonus = 0.5 if self.single_support_ticks == 120 else 0.0
+        # else:
+        #     self.single_support_ticks = 0
+        #     single_support_step_reward = 0.0
+        #     terminal_single_support_bonus = 0.0
+
+        # ======== SHAPING POR CARGAS (romper toe-touch y cargar el soporte) ========
+        # Cargas del pie de SOPORTE (esperado) y del pie OBJETIVO (debe ir al aire)
+        F_sup = F_L if target_is_right else F_R   # si objetivo=right, soporte=left (F_L)
+        F_tar = F_R if target_is_right else F_L
+
+        # (1) Penaliza doble apoyo fuerte
+        both_down_pen = -1.0 if (F_L >= 30.0 and F_R >= 30.0) else 0.0
+
+        # (2) Penaliza toe-touch (1–30 N) del pie objetivo
+        toe_touch_pen = -0.6 if (0.0 < F_tar < 30.0) else 0.0
+
+        # (3) Recompensa reparto de carga sano: ≥80% en el pie de soporte
+        ratio = F_sup / F_sum
+        support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
+
+        # (4) Bonus por tiempo en apoyo simple sostenido (pie objetivo en aire “limpio”)
+        if (F_sup >= 30.0) and (F_tar < 1.0):
+            # acumula ticks (~400 Hz ⇒ 0.30 s ≈ 120 ticks)
+            self.single_support_ticks += 1
+            ss_step = 0.05
+            ss_terminal = 0.5 if self.single_support_ticks == int(0.30 * self.frequency_simulation) else 0.0
+        else:
+            self.single_support_ticks = 0
+            ss_step = 0.0
+            ss_terminal = 0.0
 
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
@@ -691,6 +731,12 @@ class SimpleProgressiveReward:
         hip_bonus = (1.0 - min(abs(abs(hip_ang) - 0.6), 1.0)) * 0.7
         hip_bonus = 0.0 if target_foot_down else hip_bonus
 
+        # Gating de bonos de forma: solo si has transferido suficiente carga al pie de soporte
+        if ratio < 0.70:
+            clearance_bonus = 0.0
+            knee_bonus = 0.0
+            hip_bonus = 0.0
+
         # Evaluar si está haciendo lo correcto
         if self.target_leg == 'right':
             # Quiero: pie izquierdo abajo, pie derecho arriba
@@ -709,8 +755,9 @@ class SimpleProgressiveReward:
             else:
                 contacto_reward = -0.5  # Incorrecto
 
-        # Suma a tu recompensa de contacto existente:
-        leg_reward = contacto_reward + clearance_bonus + knee_bonus + hip_bonus
+        # Suma total
+        shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
+        leg_reward = contacto_reward + clearance_bonus + knee_bonus + hip_bonus + shaping
         return leg_reward
     
     def update_after_episode(self, episode_reward, success=None):
