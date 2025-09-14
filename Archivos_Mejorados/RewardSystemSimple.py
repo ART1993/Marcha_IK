@@ -34,7 +34,7 @@ class SingleLegActionSelector:
         self.episode_count = 0
         
         # ===== PARÁMETROS DE CURRICULUM =====
-        if hasattr(env, 'use_simple_progressive') and not env.use_simple_progressive:
+        if hasattr(env, 'enable_curriculum') and not env.enable_curriculum:
             # MODO SIN CURRICULUM: RL puro
             self.expert_help_ratio = 0.0  # ⭐ CLAVE: Sin ayuda experta
             self.min_expert_help = 0.0
@@ -65,7 +65,7 @@ class SingleLegActionSelector:
         self.last_10_rewards = deque(maxlen=10)
         self.time_in_current_stance = 0
         self.target_switch_time = env.switch_interval
-        frequency = env.frecuency_simulation
+        frequency = env.frequency_simulation
         switch_time_seconds = self.target_switch_time / frequency
         print(f"🤖 Action Selector synchronized:")
         print(f"   Switch interval: {self.target_switch_time} steps ({switch_time_seconds:.1f}s)")
@@ -167,21 +167,6 @@ class SingleLegActionSelector:
             self.time_in_current_stance = 0
         
         # ===== LÓGICA DE CAMBIO DE PIERNA =====
-        
-        # Si el rendimiento es bueno y ha pasado suficiente tiempo, cambiar pierna
-        #if (recent_performance > 4.0 and 
-        #    self.time_in_current_stance > self.target_switch_time):
-            
-        #    if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
-        #        self.current_action = SingleLegActionType.TRANSITION_TO_RIGHT
-        #    elif self.current_action == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
-        #        self.current_action = SingleLegActionType.TRANSITION_TO_LEFT
-        #    elif self.current_action == SingleLegActionType.TRANSITION_TO_RIGHT:
-        #        self.current_action = SingleLegActionType.BALANCE_RIGHT_SUPPORT
-        #    elif self.current_action == SingleLegActionType.TRANSITION_TO_LEFT:
-        #        self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
-            
-        #    self.time_in_current_stance = 0
         
         # Si el rendimiento es malo, volver a posición estable
         elif recent_performance < 1.0:
@@ -520,23 +505,19 @@ class SimpleProgressiveReward:
     NIVEL 3: Levantar piernas (recompensas altas 0-8) (40+ episodios)
     """
     
-    def __init__(self, env, frequency_simulation, 
-                 switch_interval=2000, enable_curriculum=True):
-        # self.robot_id = robot_id
-        # self.plane_id = plane_id
+    def __init__(self, env):
         self.env=env
-        self.frequency_simulation = frequency_simulation
-        self.switch_interval = switch_interval
-        self.enable_curriculum = enable_curriculum
-        self.env
+        self.frequency_simulation = env.frequency_simulation
+        self.switch_interval = env.switch_interval
+        self.enable_curriculum = env.enable_curriculum
+        self.robot_id = env.robot_id
 
         if self.enable_curriculum==False:
             # MODO SIN CURRICULUM: sistema fijo y permisivo
-            self.level = 1  # Siempre nivel 1
+            self.level = 3  # Siempre nivel 3
             self.level_progression_disabled = True
             both_print(f"🎯 Progressive System: CURRICULUM DISABLED")
-            both_print(f"   Mode: Fixed basic balance (Level 1 only)")
-            both_print(f"   Max tilt: 45° (permisivo)")
+            both_print(f"   Mode: Fixed basic balance (Level max only)")
         else:
             # MODO CON CURRICULUM: comportamiento normal
             self.level = 1
@@ -585,15 +566,15 @@ class SimpleProgressiveReward:
             both_print(f"   Max tilt: 70° (permisivo)")
         else:
             self.max_tilt_by_level = {
-                1: 0.8,  # ~85 grados - muy permisivo para aprender básicos
-                2: 0.7,  # ~70 grados - moderadamente permisivo  
-                3: 0.5   # ~57 grados - estricto para habilidades avanzadas
+                1: 0.8,  #  - muy permisivo para aprender básicos
+                2: 0.7,  #  - moderadamente permisivo  
+                3: 0.5   #  - estricto para habilidades avanzadas
             }
         
         # Para alternancia de piernas (solo nivel 3)
         self.target_leg = 'left'
         self.switch_timer = 0
-        self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
+        # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
 
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
@@ -607,7 +588,7 @@ class SimpleProgressiveReward:
         Método principal: calcula reward según el nivel actual
         """
 
-        pos, orn = p.getBasePositionAndOrientation(self.env.robot_id)
+        pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         if self.level == 1 and self.enable_curriculum:
@@ -672,7 +653,7 @@ class SimpleProgressiveReward:
         right_foot_id=self.env.right_foot_link_id
         left_hip_id, left_knee_id, right_hip_id, right_knee_id = self.env.joint_indices
         
-        # Cambiar pierna objetivo cada 5 segundos (150 steps a 30 FPS)
+        # Cambiar pierna cada switch interval
         self.switch_timer += 1
         if self.switch_timer >= self.switch_interval:
             self.target_leg = 'left' if self.target_leg == 'right' else 'right'

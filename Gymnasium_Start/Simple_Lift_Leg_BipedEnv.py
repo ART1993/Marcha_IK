@@ -66,9 +66,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
         self.urdf_path = "2_legged_human_like_robot.urdf"
-        self.frecuency_simulation=400.0
+        self.frequency_simulation=400.0
         self.switch_interval=2000  # Intervalo para cambiar pierna objetivo en curriculum
-        self.time_step = 1.0 / self.frecuency_simulation
+        self.time_step = 1.0 / self.frequency_simulation
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
         
 
@@ -139,7 +139,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
 
-        self.use_simple_progressive = enable_curriculum
+        self.enable_curriculum = enable_curriculum
         self.simple_reward_system = None
         
         log_print(f"🤖 Simplified Lift legs Environment initialized")
@@ -160,9 +160,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         self.step_count += 1
         # ===== DECISIÓN: EXPERTO vs RL =====
-        log_print(f"\n--- Step {self.use_simple_progressive=:} ---")
         # En env.step (o donde construyas la acción final)
-        if self.use_simple_progressive:
+        if self.enable_curriculum:
             u_expert = self.action_selector.get_expert_action()            # [0,1]^6
             u_rl = np.clip(action, 0.0, 1.0)                     # [0,1]^6
 
@@ -259,7 +258,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
         
         # CONSERVAR tu debug existente 
-        if self.step_count % self.frecuency_simulation//2 == 0 or done:
+        if self.step_count % self.frequency_simulation//2 == 0 or done:
             log_print(f"🔍 Step {self.step_count} - Control Analysis:")
             log_print(f"   Height: {self.pos[2]:.2f}m")
             log_print(f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
@@ -276,9 +275,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
 
         # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
-        if self.step_count % self.frecuency_simulation == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
+        if self.step_count % self.frequency_simulation == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
             status = self.simple_reward_system.get_info()
-            elapsed_time = self.step_count / self.frecuency_simulation
+            elapsed_time = self.step_count / self.frequency_simulation
             #log_print(f" {action_source} action, reward={reward:.2f}")
             log_print(f"Step {done=:}, is_valid={is_valid}")
             log_print(f"🎮 Active system: {system_used} at step {self.step_count}")
@@ -359,7 +358,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             return False
         # campo normalForce = índice 9 en PyBullet
         totalF = sum(cp[9] for cp in cps)
-        if self.step_count % (self.frecuency_simulation) == 0:  # Cada segundos aprox
+        if self.step_count % (self.frequency_simulation) == 0:  # Cada segundos aprox
             log_print(f"Contact force on link {link_id}: {totalF:.2f} N")
         return totalF > min_F
     
@@ -629,14 +628,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
         if self.simple_reward_system is None:
-            self.simple_reward_system = SimpleProgressiveReward(self, 
-                                                                self.frecuency_simulation,
-                                                                switch_interval=self.switch_interval,
-                                                                enable_curriculum=self.use_simple_progressive)
+            self.simple_reward_system = SimpleProgressiveReward(self)
         else:
             # solo re-vincula IDs si cambiaron, sin perder contadores/racha
-            # self.simple_reward_system.robot_id = self.robot_id
-            # self.simple_reward_system.plane_id = self.plane_id
+            self.simple_reward_system.robot_id = self.robot_id
+            self.simple_reward_system.plane_id = self.plane_id
             self.simple_reward_system.env=self
                  
         # Nuevo selector de acciones
@@ -674,7 +670,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             robot_id=self.robot_id,
             left_foot_id=2,   # left_foot_link
             right_foot_id=5,  # right_foot_link
-            frecuency_simulation=self.frecuency_simulation,
+            frequency_simulation=self.frequency_simulation,
             robot_data=self.robot_data,
             ground_id=self.plane_id
         )
@@ -695,7 +691,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        for _ in range(int(self.frecuency_simulation//10)):
+        for _ in range(int(self.frequency_simulation//10)):
             p.stepSimulation()
         
         # Obtener observación inicial
@@ -804,7 +800,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
         
-        if self.step_count % self.frecuency_simulation == 0:  # Cada segundo aprox
+        if self.step_count % self.frequency_simulation == 0:  # Cada segundo aprox
             try:
                 joint_states = p.getJointStates(self.robot_id, [1, 4])  # rodillas
                 left_knee_angle = joint_states[0][0]
@@ -882,7 +878,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== LOGGING CONDICIONAL =====
         
-        if warnings and self.step_count % self.frecuency_simulation//2 == 0:  # Cada 0.5 segundos aprox
+        if warnings and self.step_count % self.frequency_simulation//2 == 0:  # Cada 0.5 segundos aprox
             log_print(f"🤖 Robot-specific validation (Step {self.step_count}):")
             for warning in warnings:
                 log_print(f"   ⚠️ {warning}")

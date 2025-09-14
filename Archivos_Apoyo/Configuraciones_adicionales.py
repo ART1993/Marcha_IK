@@ -142,14 +142,14 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
     joint_torques = np.zeros(4)
 
     # Cadera izquierda: flexión positiva por flexor, extensión por extensor
-    joint_torques[0]  = ( pam_forces[0] * abs(R_flex_L)) + (-pam_forces[1] * abs(R_ext_L))
+    joint_torques[0]  = ( pam_forces[0] * R_flex_L) + (-pam_forces[1] * R_ext_L)
 
     # Rodilla izquierda: flexor + resorte/damping pasivos
-    joint_torques[1]  = (pam_forces[4] * abs(R_knee_flex_L)) + (-pam_forces[5] * abs(R_knee_ext_L))
+    joint_torques[1]  = (pam_forces[4] * R_knee_flex_L) + (-pam_forces[5] * R_knee_ext_L)
     # Cadera derecha
-    joint_torques[2]  = ( pam_forces[2] * abs(R_flex_R)) + (-pam_forces[3] * abs(R_ext_R))
+    joint_torques[2]  = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
     # Rodilla derecha
-    joint_torques[3]  = (pam_forces[6] * abs(R_knee_flex_R)) + (-pam_forces[7] * abs(R_knee_ext_R)) 
+    joint_torques[3]  = (pam_forces[6] * R_knee_flex_R) + (-pam_forces[7] * R_knee_ext_R) 
 
     joint_torques[1] -= env.DAMPING_COEFFICIENT * joint_velocities[1]
     joint_torques[3] -= env.DAMPING_COEFFICIENT * joint_velocities[3]

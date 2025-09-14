@@ -20,7 +20,7 @@ class ZMPCalculator:
     
     def __init__(self, robot_id, left_foot_id, 
                  right_foot_id, 
-                 frecuency_simulation=1500,
+                 frequency_simulation=1500,
                  robot_data=None,
                  ground_id=None):
         
@@ -29,8 +29,8 @@ class ZMPCalculator:
         self.robot_id = robot_id
         self.left_foot_id = left_foot_id  
         self.right_foot_id = right_foot_id
-        self.frecuency_simulation=frecuency_simulation
-        self.dt=1.0/frecuency_simulation  # Paso de tiempo
+        self.frequency_simulation=frequency_simulation
+        self.dt=1.0/frequency_simulation  # Paso de tiempo
         #robot_id y floor_id
         self.robot_data = robot_data
         self.ground_id=ground_id
