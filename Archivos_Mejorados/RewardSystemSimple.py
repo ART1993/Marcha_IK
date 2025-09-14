@@ -101,7 +101,7 @@ class SingleLegActionSelector:
         corrected_pressures = self._add_stability_corrections(base_pressures)
         
         # PASO 5: Variación natural pequeña
-        noise = np.random.normal(0, 0.02, size=6)
+        noise = np.random.normal(0, 0.02, size=self.env.num_active_pams)
         final_pressures = corrected_pressures + noise
         
         return np.clip(final_pressures, 0.0, 1.0)
@@ -341,10 +341,93 @@ class AngleBasedExpertController:
         Returns:
             numpy.array: Presiones PAM normalizadas [0,1] para 6 PAMs
         """
+        
+        # # Salida
+        pam_pressures = np.zeros(self.env.num_active_pams)
+        
+        # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
+        if self.env.use_knee_extensor_pams:
+            pam_pressures = self.torques_to_pam_pressures_for_8_pam(desired_torques, pam_pressures)
+        else:
+            pam_pressures = self.torques_to_pam_pressures_for_6_pam(desired_torques, pam_pressures)
+
+   
+        # Asegurar rango [0, 1]
+        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
+        
+        return pam_pressures
+    
+    def eps_from(self, theta, R_abs, R_min, muscle_name):
+            return self.env.pam_muscles[muscle_name].epsilon_from_angle(theta, 0.0, max(abs(R_abs), R_min))
+    
+    def P_to_u(self, P, muscle_name):
+        return float(np.clip(self.env.pam_muscles[muscle_name].normalized_pressure_PAM(P), 0.0, 1.0))
+    
+    def par_presiones_flexor_extensor(self, env, muscle_flexor_name, muscle_extensor_name,
+                                      desired_torque_i, thetas_i, R_min_ligament, F_co, ma_flex, ma_ext):
+
+        R_flexor = ma_flex(thetas_i)
+        R_extensor = ma_ext(thetas_i)
+        eps_flex_L = self.eps_from(thetas_i, R_flexor, R_min_ligament, muscle_flexor_name)
+        eps_ext_L  = self.eps_from(thetas_i, R_extensor, R_min_ligament, muscle_extensor_name)
+        if desired_torque_i >= 0.0:  # flexión
+            F_main = desired_torque_i / max(R_flexor, R_min_ligament)
+            P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(F_co + F_main, eps_flex_L)
+            P_extensor = env.pam_muscles[muscle_extensor_name].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_ext_L)
+        else:              # extensión
+            F_main = (-desired_torque_i) / max(R_extensor, R_min_ligament)
+            P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_flex_L)
+            P_extensor = env.pam_muscles[muscle_extensor_name].pressure_from_force_and_contraction(F_co + F_main, eps_ext_L)
+        
+        # Pressure from flexor and extensor
+        return self.P_to_u(P_flexor,muscle_flexor_name), self.P_to_u(P_extensor, muscle_extensor_name)
+
+    
+    def torques_to_pam_pressures_for_8_pam(self,desired_torques, pam_pressures):
+        env = self.env
+        muscle_names=env.muscle_names
+        
+        # Obtener estados actuales para cálculos biomecánicos
+        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
+        thetas = [state[0] for state in joint_states] # [left_hip, left_knee, right_hip, right_knee]
+
+        R_min_base = 1e-3 # Para evitar división por cero
+        R_min_knee  = 1e-2    # ↑ mayor que base
+        F_co_hip = 30.0 #Genero rigidez y evito saturación
+        F_co_knee   = 50.0    # nueva rigidez basal de rodilla
+        
+        # ------ CADERA IZQUIERDA (antagónica: PAM0 flexor, PAM1 extensor) ------
+        pam_pressures[0], pam_pressures[1] = self.par_presiones_flexor_extensor(env, muscle_names[0], muscle_names[1],
+                                                                                desired_torques[0], thetas[0],
+                                                                                R_min_base, F_co_hip,
+                                                                                env.hip_flexor_moment_arm,env.hip_extensor_moment_arm)
+
+        
+        # ------ CADERA DERECHA (PAM2 flexor, PAM3 extensor) ------
+        pam_pressures[2], pam_pressures[3] = self.par_presiones_flexor_extensor(env, muscle_names[2], muscle_names[3],
+                                                                                desired_torques[2], thetas[2],
+                                                                                R_min_base, F_co_hip,
+                                                                                env.hip_flexor_moment_arm,env.hip_extensor_moment_arm)
+
+        # ------ RODILLA IZQUIERDA (antagónica: PAM4 flexor, PAM5 extensor) ------
+        pam_pressures[4], pam_pressures[5] = self.par_presiones_flexor_extensor(env, muscle_names[4], muscle_names[5],
+                                                                                desired_torques[1], thetas[1],
+                                                                                R_min_knee, F_co_knee,
+                                                                                env.knee_flexor_moment_arm,env.knee_extensor_moment_arm)
+
+        # ------ RODILLA Derecha (antagónica: PAM6 flexor, PAM7 extensor) ------
+        pam_pressures[6], pam_pressures[7] = self.par_presiones_flexor_extensor(env, muscle_names[6], muscle_names[7],
+                                                                                desired_torques[3], thetas[3],
+                                                                                R_min_knee, F_co_knee,
+                                                                                env.knee_flexor_moment_arm,env.knee_extensor_moment_arm)
+
+        return pam_pressures
+
+    
+    def torques_to_pam_pressures_for_6_pam(self,desired_torques, pam_pressures):
         env = self.env
         muscle_names=self.env.muscle_names
         pam_muscles = self.env.pam_muscles
-        # Obtener estados actuales para cálculos biomecánicos
         joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
         thetas = [state[0] for state in joint_states] # [left_hip, left_knee, right_hip, right_knee]
 
@@ -357,12 +440,6 @@ class AngleBasedExpertController:
             return pam_muscles[muscle_name].epsilon_from_angle(theta, 0.0, max(abs(R_abs), R_min))
         def P_to_u(P,muscle_name):
             return float(np.clip(pam_muscles[muscle_name].normalized_pressure_PAM(P), 0.0, 1.0))
-        
-        # # Salida
-        pam_pressures = np.zeros(6)
-        
-        # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
-        
         # ------ CADERA IZQUIERDA (antagónica: PAM0 flexor, PAM1 extensor) ------
         flexor_cadera_L, extensor_cadera_L=muscle_names[0], muscle_names[1]
         tau_LH = desired_torques[0]
@@ -427,10 +504,6 @@ class AngleBasedExpertController:
             P5 = pam_muscles[flexor_rodilla_R].pressure_from_force_and_contraction(max(F_co_knee - 0.5*Fk, 0.0), eps_kR)
         pam_pressures[5] = P_to_u(P5,flexor_rodilla_R)
 
-   
-        # Asegurar rango [0, 1]
-        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
-        
         return pam_pressures
     
 # =============================================================================
