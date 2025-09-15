@@ -48,7 +48,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.render_mode = render_mode
         self.use_knee_extensor_pams = use_knee_extensor_pams
         # self.action_space_type = action_space  # Solo "pam"
-        self.probe_expert_only = False
+        self.probe_expert_only = probe_expert_only
         if use_knee_extensor_pams:
             self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
                                 'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
@@ -358,7 +358,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         log_print(f"   Legs: μ=0.1 (moderate)")
         log_print(f"   Ground: μ=0.6 (standard)")
 
-    def contact_with_force(self, link_id, min_F=30.0):
+    def contact_with_force(self, link_id, min_F=18.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False

@@ -228,14 +228,14 @@ class AngleBasedExpertController:
             'level_3_left_support': {
                 'left_hip': 0.0,     # Pierna izq: soporte
                 'left_knee': 0.0,
-                'right_hip': -0.6,    # Pierna der: levantada 34°
-                'right_knee': 0.6,
+                'right_hip': -0.8,    # Pierna der: levantada 34°
+                'right_knee': 0.8,
                 'description': 'Pierna derecha levantada'
             },
             
             'level_3_right_support': {
-                'left_hip': -0.6,     # Pierna izq: levantada 34°
-                'left_knee': 0.6,
+                'left_hip': -0.8,     # Pierna izq: levantada 34°
+                'left_knee': 0.8,
                 'right_hip': 0.0,    # Pierna der: soporte
                 'right_knee': 0.0,
                 'description': 'Pierna izquierda levantada'
