@@ -37,7 +37,6 @@ class Simplified_Lift_Leg_Trainer:
         # ===== CONFIGURACIÓN BÁSICA =====
         
         self.env_type = "simplified_lift_legs"
-        self.action_space = "pam"
         self.total_timesteps = total_timesteps
         self.n_envs = n_envs
         self.learning_rate = learning_rate
@@ -123,7 +122,6 @@ class Simplified_Lift_Leg_Trainer:
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
-                    action_space=self.action_space,
                     enable_curriculum=True,
                     print_env="TRAIN"  # Para diferenciar en logs
                     
@@ -148,7 +146,6 @@ class Simplified_Lift_Leg_Trainer:
         def make_eval_env():
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
-                                             action_space=self.action_space,
                                              enable_curriculum=False,  # Evaluación sin curriculum
                                             print_env="EVAL"
                                             )  # Fase de evaluación es balance
@@ -366,7 +363,6 @@ class Simplified_Lift_Leg_Trainer:
         training_data = {
             'objective': 'lift_leg with 6 PAM muscles',
             'environment': self.env_type,
-            'action_space': self.action_space,
             'completed_timesteps': self.training_info['completed_timesteps'],
             'total_timesteps_target': self.total_timesteps,
             'training_start': self.training_info['training_start_time'],
@@ -483,7 +479,6 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(
                     render_mode='human' if trainer.n_envs == 1 else 'direct', 
-                    action_space=trainer.action_space,
                     enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
                 )
                 env = Monitor(env, trainer.logs_dir)
@@ -497,7 +492,6 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(
                     render_mode='direct', 
-                    action_space=trainer.action_space,
                     enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
                 )
                 env = Monitor(env, os.path.join(trainer.logs_dir, "eval"))

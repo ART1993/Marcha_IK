@@ -114,7 +114,6 @@ class TrainedModelTester:
         # Crear entorno base (igual que en entrenamiento)
         base_env = Simple_Lift_Leg_BipedEnv(
             render_mode='human',  # Modo visual para ver la simulación
-            action_space="pam",
             enable_curriculum=False  # Sin curriculum para testing
         )
         

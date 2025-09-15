@@ -208,10 +208,10 @@ class AngleBasedExpertController:
         self.target_angles = {
             # NIVEL 1: Solo balance básico
             'level_1_balance': {
-                'left_hip': 0.0,
-                'left_knee': 0.0,
-                'right_hip': 0.0,
-                'right_knee': 0.0,
+                'left_hip': -0.05,
+                'left_knee': 0.05,
+                'right_hip': -0.05,
+                'right_knee': 0.05,
                 'description': 'Posición erguida básica'
             },
             

@@ -34,7 +34,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
     
     def __init__(self, render_mode='human', use_knee_extensor_pams=True,
-                 action_space="pam", enable_curriculum=True, print_env="ENV"):
+                 enable_curriculum=True, print_env="ENV", probe_expert_only=False):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -47,7 +47,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.render_mode = render_mode
         self.use_knee_extensor_pams = use_knee_extensor_pams
-        self.action_space_type = action_space  # Solo "pam"
+        # self.action_space_type = action_space  # Solo "pam"
+        self.probe_expert_only = False
         if use_knee_extensor_pams:
             self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
                                 'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
@@ -167,19 +168,21 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.euler = p.getEulerFromQuaternion(orn)
         if self.enable_curriculum:
             u_expert = self.action_selector.get_expert_action()            # [0,1]^6
-            u_rl = np.clip(action, 0.0, 1.0)                     # [0,1]^6
-
-            assist = self.action_selector.expert_help_ratio                # 0.85→0.2
-            tilt_boost = 0.0
+            u_rl = np.clip(action, 0.0, 1.0) 
             
-            
-            current_tilt = abs(self.euler[0]) + abs(self.euler[1])
-            if current_tilt > 0.20: tilt_boost = 0.30
-            elif current_tilt > 0.15: tilt_boost = 0.15
-            assist = float(np.clip(assist + tilt_boost, 0.0, 0.95))
-            
-            u_final = assist * u_expert + (1.0 - assist) * u_rl
-            self.ep_expert_weight += float(np.clip(assist, 0.0, 1.0))
+            if self.probe_expert_only:                    # [0,1]^6
+                u_final = u_expert
+                self.ep_expert_weight += 1.0
+            else:
+                assist = self.action_selector.expert_help_ratio                # 0.85→0.0
+                tilt_boost = 0.0
+                current_tilt = abs(self.euler[0]) + abs(self.euler[1])
+                if current_tilt > 0.20: tilt_boost = 0.30
+                elif current_tilt > 0.15: tilt_boost = 0.15
+                assist = float(np.clip(assist + tilt_boost, 0.0, 0.95))
+                
+                u_final = assist * u_expert + (1.0 - assist) * u_rl
+                self.ep_expert_weight += float(np.clip(assist, 0.0, 1.0))
         else:
             u_final = np.clip(action, 0.0, 1.0)
 
@@ -355,7 +358,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         log_print(f"   Legs: μ=0.1 (moderate)")
         log_print(f"   Ground: μ=0.6 (standard)")
 
-    def contact_with_force(self, link_id, min_F=18.0):
+    def contact_with_force(self, link_id, min_F=30.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False
@@ -658,10 +661,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
-            0: 0.0,   # left_hip - ligera flexión
-            1: 0.0,   # left_knee - extendida (pierna de soporte)
-            3: 0.0,   # right_hip - más flexión
-            4: 0.0,   # right_knee - flexionada (pierna levantada)
+            0: -0.05,   # left_hip - ligera flexión
+            1: 0.05,   # left_knee - extendida (pierna de soporte)
+            3: -0.05,   # right_hip - más flexión
+            4: 0.05,   # right_knee - flexionada (pierna levantada)
         }
         
         for joint_id, pos in initial_positions.items():
