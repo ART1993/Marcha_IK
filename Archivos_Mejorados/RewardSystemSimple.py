@@ -7,6 +7,7 @@ from enum import Enum
 from collections import deque
 
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+from Archivos_Apoyo.Configuraciones_adicionales import split_cocontraction_torque_neutral
 
 class SingleLegActionType(Enum):
     """Acciones para equilibrio en una pierna"""
@@ -203,6 +204,7 @@ class AngleBasedExpertController:
         self.kp = self.env.KP   # Ganancia proporcional
         self.kd = self.env.KD   # Ganancia derivativa
         self.max_torque = self.env.MAX_REASONABLE_TORQUE  # Torque máximo por articulación
+        self.use_ik = False  # Usar IK para levantar pierna (más natural)
         
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
@@ -228,14 +230,14 @@ class AngleBasedExpertController:
             'level_3_left_support': {
                 'left_hip': -0.05,     # Pierna izq: soporte
                 'left_knee': 0.05,
-                'right_hip': -0.8,    # Pierna der: levantada 34°
-                'right_knee': 0.8,
+                'right_hip': -1.0,    # Pierna der: levantada 34°
+                'right_knee': 0.6,
                 'description': 'Pierna derecha levantada'
             },
             
             'level_3_right_support': {
-                'left_hip': -0.8,     # Pierna izq: levantada 34°
-                'left_knee': 0.8,
+                'left_hip': -1.0,     # Pierna izq: levantada 34°
+                'left_knee': 0.6,
                 'right_hip': -0.05,    # Pierna der: soporte
                 'right_knee': 0.05,
                 'description': 'Pierna izquierda levantada'
@@ -254,9 +256,11 @@ class AngleBasedExpertController:
         """
         
         if current_task == SingleLegActionType.BALANCE_LEFT_SUPPORT:
-            return self.target_angles['level_3_left_support']
+            base = self.target_angles['level_3_left_support'].copy()
+            lift_side = 'right' 
         elif current_task == SingleLegActionType.BALANCE_RIGHT_SUPPORT:
-            return self.target_angles['level_3_right_support']
+            base = self.target_angles['level_3_right_support'].copy()  # soporta DER, levanta IZQ
+            lift_side = 'left'
         elif current_task in (SingleLegActionType.TRANSITION,
                           SingleLegActionType.TRANSITION_TO_LEFT,
                           SingleLegActionType.TRANSITION_TO_RIGHT):
@@ -264,6 +268,44 @@ class AngleBasedExpertController:
             return self.target_angles['level_2_balance']
         else:  # Transiciones
             return self.target_angles['level_1_balance']
+        # return base
+        if self.use_ik:
+            return self.get_target_angles_via_ik(lift_side=('right' if current_task==SingleLegActionType.BALANCE_LEFT_SUPPORT else 'left'), dz=0.08)
+        
+        return self.medir_progreso_cadera_rodilla(base, lift_side)
+
+    def medir_progreso_cadera_rodilla(self, base, lift_side):
+        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
+        hip_now = joint_states[2][0] if lift_side=='right' else joint_states[0][0]
+        # progreso 0..1 entre 0.25 y 0.60 rad aprox
+        hip_prog = float(np.clip((abs(hip_now) - 0.25)/0.35, 0.0, 1.0))
+        # rodilla acompaña a cadera (mínimo suave para despegar)
+        knee_key = f"{lift_side}_knee"
+        hip_key  = f"{lift_side}_hip"
+        base[knee_key] = np.sign(base[knee_key]) * (0.20 + 0.60*hip_prog)   # ≤ ~0.8 rad solo si la cadera progresa
+        base[hip_key]  = np.sign(base[hip_key])  * max(0.45, 0.80*hip_prog) # empuja que la cadera lidere
+        
+        return base
+    
+    def get_target_angles_via_ik(self, lift_side='right', dz=0.08):
+        # Link del pie objetivo
+        foot_id = self.env.right_foot_link_id if lift_side=='right' else self.env.left_foot_link_id
+        # Posición actual del pie
+        foot_pos = p.getLinkState(self.robot_id, foot_id)[0]
+        tgt = (foot_pos[0], foot_pos[1], foot_pos[2] + dz)
+
+        # IK para todos los joints; luego cogemos hip/knee del lado correspondiente
+        joint_sol = p.calculateInverseKinematics(self.robot_id, foot_id, tgt)
+
+        # En tu robot, hip/knee indices son [0,1] (izq) y [3,4] (der)
+        if lift_side=='right':
+            return {'left_hip': -0.05, 'left_knee': 0.05,
+                    'right_hip': float(joint_sol[3]),
+                    'right_knee': float(joint_sol[4])}
+        else:
+            return {'left_hip': float(joint_sol[0]),
+                    'left_knee': float(joint_sol[1]),
+                    'right_hip': -0.05, 'right_knee': 0.05}
     
     def calculate_pd_torques(self, target_angles_dict):
         """
@@ -365,7 +407,8 @@ class AngleBasedExpertController:
 
         R_min_base = 1e-3 # Para evitar división por cero
         R_min_knee  = 1e-2    # ↑ mayor que base
-        F_co_hip = 30.0 #Genero rigidez y evito saturación
+        # Antes era el min de 30
+        F_co_hip = 18.0 #Genero rigidez y evito saturación
         F_co_knee   = 50.0    # nueva rigidez basal de rodilla
         
         # ------ CADERA IZQUIERDA (antagónica: PAM0 flexor, PAM1 extensor) ------
@@ -477,6 +520,8 @@ class AngleBasedExpertController:
         pam_pressures[5] = P_to_u(P5,flexor_rodilla_R)
 
         return pam_pressures
+    
+
     
 # =============================================================================
 # SISTEMA DE RECOMPENSAS PROGRESIVO SIMPLE

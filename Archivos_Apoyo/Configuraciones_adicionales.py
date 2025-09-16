@@ -59,6 +59,19 @@ def PAM_McKibben(include_knee_extensors: bool = False):
             'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.035, alpha0=np.pi/4),
         }
     
+        # ---------- helper: co-contracción torque-neutral para cadera ----------
+def split_cocontraction_torque_neutral(Fco: float, Rf: float, Re: float, R_min: float = 1e-3):
+    """
+    Reparte la co-fuerza basal Fco entre flexor/extensor de forma que
+    Fco_flex * Rf == Fco_ext * Re  (no genera par neto).
+    Mantiene Fco_flex + Fco_ext == Fco.
+    """
+    Rf = max(Rf, R_min); Re = max(Re, R_min)
+    s = Rf + Re
+    Fco_flex = Fco * (Re / s)
+    Fco_ext  = Fco * (Rf / s)
+    return Fco_flex, Fco_ext
+    
 
 # ========================================================================================================================================================================================= #
 # ===================================================== Calculo de las presiones y torques de modelo ====================================================================================== #
