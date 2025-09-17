@@ -813,16 +813,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
         
-        if self.step_count % self.frequency_simulation == 0:  # Cada segundo aprox
+        if self.step_count % self.frequency_simulation//10 == 0:  # Cada segundo aprox
             try:
-                joint_states = p.getJointStates(self.robot_id, [1, 4])  # rodillas
-                left_knee_angle = joint_states[0][0]
-                right_knee_angle = joint_states[1][0]
+                joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
+                left_hip_angle = joint_states[0][0]
+                right_hip_angle = joint_states[1][0]
+                left_knee_angle = joint_states[2][0]
+                right_knee_angle = joint_states[3][0]
 
-                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count}):")
+                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
+                log_print(f"   Left hip: {left_hip_angle:.3f} rad ({math.degrees(left_hip_angle):.1f}°)")
+                log_print(f"   Right hip: {right_hip_angle:.3f} rad ({math.degrees(right_hip_angle):.1f}°)")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
                 log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
                 if self.use_knee_extensor_pams:
+                    log_print(f"   L Hip flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
+                    log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
                     log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
                     log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
                 else:

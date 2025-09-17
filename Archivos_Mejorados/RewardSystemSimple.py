@@ -240,8 +240,8 @@ class AngleBasedExpertController:
             
             # NIVEL 3: Equilibrio en una pierna
             'level_3_left_support': {
-                'left_hip': -0.05,     # Pierna izq: soporte
-                'left_knee': 0.05,
+                'left_hip': -0.00,     # Pierna izq: soporte
+                'left_knee': 0.00,
                 'right_hip': -1.0,    # Pierna der: levantada 34°
                 'right_knee': 0.6,
                 'description': 'Pierna derecha levantada'
@@ -250,8 +250,8 @@ class AngleBasedExpertController:
             'level_3_right_support': {
                 'left_hip': -1.0,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
-                'right_hip': -0.05,    # Pierna der: soporte
-                'right_knee': 0.05,
+                'right_hip': -0.00,    # Pierna der: soporte
+                'right_knee': 0.00,
                 'description': 'Pierna izquierda levantada'
             }
         }
@@ -727,8 +727,8 @@ class SimpleProgressiveReward:
             log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
         # Detectar qué pies están en contacto Ver si seleccionar min_F=22 0 27 0 30
-        left_down = self.env.contact_with_force(left_foot_id, min_F=30.0)
-        right_down = self.env.contact_with_force(right_foot_id, min_F=30.0)
+        left_down = self.env.contact_with_force(left_foot_id, min_F=18.0)
+        right_down = self.env.contact_with_force(right_foot_id, min_F=18.0)
 
         target_is_right   = (self.target_leg == 'right')
         target_foot_id    = right_foot_id if target_is_right else left_foot_id
