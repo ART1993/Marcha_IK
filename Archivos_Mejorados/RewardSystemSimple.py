@@ -460,7 +460,7 @@ class AngleBasedExpertController:
 
         R_min_base = 1e-3 # Para evitar división por cero
         R_min_knee  = 1e-2    # ↑ mayor que base
-        F_co_hip = 30.0 #Genero rigidez y evito saturación
+        F_co_hip = 18.0 #Genero rigidez y evito saturación
         F_co_knee   = 50.0    # nueva rigidez basal de rodilla
 
         def eps_from(theta, R_abs, R_min, muscle_name):

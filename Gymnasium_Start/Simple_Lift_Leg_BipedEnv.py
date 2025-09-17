@@ -813,7 +813,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
         
-        if self.step_count % self.frequency_simulation//10 == 0:  # Cada segundo aprox
+        if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundo aprox
             try:
                 joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
                 left_hip_angle = joint_states[0][0]
