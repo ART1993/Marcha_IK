@@ -88,7 +88,19 @@ class SingleLegActionSelector:
         Returns:
             numpy.array: Presiones PAM normalizadas [0,1]
         """
-        
+        level = self.env.simple_reward_system.level
+        if level == 1:
+            target_angles = self.angle_controller.target_angles['level_1_balance']
+        elif level == 2:
+            target_angles = self.angle_controller.target_angles['level_2_balance']
+        else:
+            # 🔗 Sincroniza con la pierna objetivo del sistema de recompensas
+            if hasattr(self.env, "simple_reward_system"):
+                self.current_action = (SingleLegActionType.BALANCE_LEFT_SUPPORT
+                                    if self.env.simple_reward_system.target_leg == 'right'
+                                else SingleLegActionType.BALANCE_RIGHT_SUPPORT)
+            # PASO 1: Obtener ángulos objetivo
+            target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
         # PASO 1: Obtener ángulos objetivo
         target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
         
