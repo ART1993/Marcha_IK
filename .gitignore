@@ -6,3 +6,4 @@
 *.zip
 Creacion_CSV_Blender/CSV_creator.py
 *.png
+*\venv*
