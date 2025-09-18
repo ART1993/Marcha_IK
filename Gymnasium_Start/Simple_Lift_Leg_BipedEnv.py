@@ -353,10 +353,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             rollingFriction=0.005
         )
         
-        log_print(f"🔧 Contact friction configured:")
-        log_print(f"   Feet: μ=0.8 (high grip)")
-        log_print(f"   Legs: μ=0.1 (moderate)")
-        log_print(f"   Ground: μ=0.6 (standard)")
+        # log_print(f"🔧 Contact friction configured:")
+        # log_print(f"   Feet: μ=0.8 (high grip)")
+        # log_print(f"   Legs: μ=0.1 (moderate)")
+        # log_print(f"   Ground: μ=0.6 (standard)")
 
     def contact_with_force(self, link_id, min_F=18.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
@@ -815,10 +815,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundo aprox
             try:
+                # Joint indices [0,1,3,4]
                 joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
                 left_hip_angle = joint_states[0][0]
-                right_hip_angle = joint_states[1][0]
-                left_knee_angle = joint_states[2][0]
+                left_knee_angle = joint_states[1][0]
+                right_hip_angle = joint_states[2][0]
                 right_knee_angle = joint_states[3][0]
 
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
