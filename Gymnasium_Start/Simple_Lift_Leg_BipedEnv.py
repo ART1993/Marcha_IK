@@ -264,7 +264,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
         
         # CONSERVAR tu debug existente 
-        if self.step_count % self.frequency_simulation//2 == 0 or done:
+        if self.step_count % (self.frequency_simulation//10) == 0 or done:
             log_print(f"🔍 Step {self.step_count} - Control Analysis:")
             log_print(f"   Height: {self.pos[2]:.2f}m")
             log_print(f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
@@ -281,7 +281,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
 
         # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
-        if self.step_count % self.frequency_simulation == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
+        if self.step_count % (self.frequency_simulation//10) == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
             status = self.simple_reward_system.get_info()
             elapsed_time = self.step_count / self.frequency_simulation
             #log_print(f" {action_source} action, reward={reward:.2f}")
@@ -364,7 +364,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             return False
         # campo normalForce = índice 9 en PyBullet
         totalF = sum(cp[9] for cp in cps)
-        if self.step_count % (self.frequency_simulation) == 0:  # Cada segundos aprox
+        if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundos aprox
             log_print(f"Contact force on link {link_id}: {totalF:.2f} N")
         return totalF > min_F
     
@@ -468,7 +468,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
-        if self.step_count%100==0:
+        if self.step_count%(self.frequency_simulation//10)==0:
 
             log_print(f"Pierna de apoyo: {balance_info['support_leg']}")
             log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
@@ -577,7 +577,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def contacto_pies_log(self):
         left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
         right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
-        if self.step_count<=150 and self.step_count%10==0:
+        if self.step_count<=150 and self.step_count%(self.frequency_simulation//10)==0:
             log_print(f"Contactos pie izquierdo: {left_contact}")
             log_print(f"Contactos pie derecho: {right_contact}")
         return left_contact, right_contact
@@ -897,7 +897,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== LOGGING CONDICIONAL =====
         
-        if warnings and self.step_count % self.frequency_simulation//2 == 0:  # Cada 0.5 segundos aprox
+        if warnings and self.step_count % (self.frequency_simulation//10) == 0:  # Cada 0.5 segundos aprox
             log_print(f"🤖 Robot-specific validation (Step {self.step_count}):")
             for warning in warnings:
                 log_print(f"   ⚠️ {warning}")
