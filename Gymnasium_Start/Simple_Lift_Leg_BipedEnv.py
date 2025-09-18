@@ -33,7 +33,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 5
     """
     
-    def __init__(self, render_mode='human', use_knee_extensor_pams=True,
+    def __init__(self, render_mode='human', use_knee_extensor_pams=True, testeo_movimiento=False,
                  enable_curriculum=True, print_env="ENV", probe_expert_only=False):
         
         """
@@ -49,6 +49,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.use_knee_extensor_pams = use_knee_extensor_pams
         # self.action_space_type = action_space  # Solo "pam"
         self.probe_expert_only = probe_expert_only
+        self.testeo_movimiento=testeo_movimiento
         if use_knee_extensor_pams:
             self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
                                 'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
@@ -210,7 +211,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             (3, joint_torques[2]),  # right_hip_joint
             (4, joint_torques[3])   # right_knee_joint
         ]
-
+        #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
         for joint_id, torque in torque_mapping:
             p.setJointMotorControl2(
                 self.robot_id,
@@ -227,7 +228,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         #if self.simple_reward_system:
         reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
-        done = self.simple_reward_system.is_episode_done(self.step_count)
+        done = self.simple_reward_system.is_episode_done(self.step_count, self.testeo_movimiento)
         system_used = "PROGRESSIVE"
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
@@ -632,8 +633,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.robot_id = p.loadURDF(
             self.urdf_path,
             [0, 0, 1.21],  # Altura inicial ligeramente mayor
+            # useFixedBase=False,
             useFixedBase=False
         )
+        for j in self.joint_indices:
+            p.enableJointForceTorqueSensor(self.robot_id, jointIndex=j, enableSensor=True)
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
@@ -821,6 +825,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 left_knee_angle = joint_states[1][0]
                 right_hip_angle = joint_states[2][0]
                 right_knee_angle = joint_states[3][0]
+                for idx, state in zip(self.joint_indices, joint_states):
+                    pos, vel, reaction, applied = state
+                    Fx,Fy,Fz,Mx,My,Mz = reaction
+                    both_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
+                               f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
 
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
                 log_print(f"   Left hip: {left_hip_angle:.3f} rad ({math.degrees(left_hip_angle):.1f}°)")
@@ -904,7 +913,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
             # Info adicional útil
             log_print(f"   Total mass: 25kg, Height: 1.20m")
-            log_print(f"   Current torques: {[f'{t:.1f}' for t in joint_torques]} N⋅m")
+            log_print(f"   Current torques: τ_cmd={[f'{t:.1f}' for t in joint_torques]} N⋅m")
         
         return len(warnings) == 0
     

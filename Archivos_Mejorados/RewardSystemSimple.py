@@ -864,29 +864,30 @@ class SimpleProgressiveReward:
                     f"reward={episode_reward:.1f} | success={success} | "
                     f"fixed_level=3")
     
-    def is_episode_done(self, step_count):
+    def is_episode_done(self, step_count, testeo_movimiento):
         """Criterios simples de terminación"""
         
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         # Caída
-        if pos[2] <= 0.5:
-            self.last_done_reason = "fall"
-            log_print("❌ Episode done: Robot fell")
-            return True
-        
-        if abs(self.dx) > 0.35:
-            self.last_done_reason = "drift"
-            log_print("❌ Episode done: Excessive longitudinal drift")
-            return True
-        
-        max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
-        # Inclinación extrema
-        if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
-            self.last_done_reason = "tilt"
-            log_print("❌ Episode done: Robot tilted too much")
-            return True
+        if testeo_movimiento==False:
+            if pos[2] <= 0.5:
+                self.last_done_reason = "fall"
+                log_print("❌ Episode done: Robot fell")
+                return True
+            
+            if abs(self.dx) > 0.35:
+                self.last_done_reason = "drift"
+                log_print("❌ Episode done: Excessive longitudinal drift")
+                return True
+            
+            max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
+            # Inclinación extrema
+            if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
+                self.last_done_reason = "tilt"
+                log_print("❌ Episode done: Robot tilted too much")
+                return True
         
         # Tiempo máximo (crece con nivel)
         max_steps = (200 + ((self.level-1) * 200))*10 if self.enable_curriculum else 6000 # 2000, 4000, 6000 steps
