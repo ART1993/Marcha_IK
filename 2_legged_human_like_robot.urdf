@@ -30,7 +30,7 @@
     <child link="left_thigh_link"/>
     <origin xyz="0 0.25 -0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
-    <limit lower=" -1.2" upper="1.2" effort="50" velocity="2.0"/>
+    <limit lower=" -1.2" upper="0.5" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Left Thigh -->
@@ -127,9 +127,10 @@
   <joint name="right_hip_joint" type="revolute">
     <parent link="base_link"/>
     <child link="right_thigh_link"/>
-    <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>  
+    <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
-    <limit lower="-1.2" upper="1.2" effort="50" velocity="2.0"/>
+    <limit lower="-1.2" upper="0.5" effort="50" velocity="2.0"/>
   </joint>
 
   <!-- Link: Right Thigh -->

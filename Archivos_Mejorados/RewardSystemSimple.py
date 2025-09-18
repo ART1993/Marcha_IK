@@ -217,6 +217,16 @@ class AngleBasedExpertController:
         self.kd = self.env.KD   # Ganancia derivativa
         self.max_torque = self.env.MAX_REASONABLE_TORQUE  # Torque máximo por articulación
         self.use_ik = False  # Usar IK para levantar pierna (más natural)
+
+        self.support_side = None          # 'left' | 'right'
+        self._phase_lock_until = 0.0      # tiempo sim hasta el que no se puede cambiar
+        self._prep_until = 0.0            # ventana de pre-shift (COM) tras cambio
+        # Tuning rápido (ajusta si hace falta)
+        self.PREP_DURATION = 0.20         # s de extensión extra del nuevo soporte
+        self.PHASE_MIN_HOLD = 0.30        # s mínimos antes de poder cambiar
+        self.CONTACT_ENTER_N = 25.0       # N para "entrar" en apoyo
+        self.CONTACT_EXIT_N  = 17.0       # N para "salir" de apoyo
+
         
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
@@ -420,7 +430,7 @@ class AngleBasedExpertController:
         R_min_base = 1e-3 # Para evitar división por cero
         R_min_knee  = 1e-2    # ↑ mayor que base
         # Antes era el min de 30
-        F_co_hip = 18.0 #Genero rigidez y evito saturación
+        F_co_hip = 20.0 #Genero rigidez y evito saturación
         F_co_knee   = 50.0    # nueva rigidez basal de rodilla
         
         # ------ CADERA IZQUIERDA (antagónica: PAM0 flexor, PAM1 extensor) ------
@@ -460,7 +470,7 @@ class AngleBasedExpertController:
 
         R_min_base = 1e-3 # Para evitar división por cero
         R_min_knee  = 1e-2    # ↑ mayor que base
-        F_co_hip = 18.0 #Genero rigidez y evito saturación
+        F_co_hip = 20.0 #Genero rigidez y evito saturación
         F_co_knee   = 50.0    # nueva rigidez basal de rodilla
 
         def eps_from(theta, R_abs, R_min, muscle_name):
@@ -715,7 +725,7 @@ class SimpleProgressiveReward:
         F_R = self.env.contact_normal_force(right_foot_id)
         F_sum = max(F_L + F_R, 1e-6)
         left_hip_id, left_knee_id, right_hip_id, right_knee_id = self.env.joint_indices
-        
+        min_F=20
         # Cambiar pierna cada switch interval
         self.switch_timer += 1
         if self.switch_timer >= self.switch_interval:
@@ -726,23 +736,15 @@ class SimpleProgressiveReward:
             # Asumiendo 400 Hz
             log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
-        # Detectar qué pies están en contacto Ver si seleccionar min_F=22 0 27 0 30
-        left_down = self.env.contact_with_force(left_foot_id, min_F=18.0)
-        right_down = self.env.contact_with_force(right_foot_id, min_F=18.0)
+        # Detectar qué pies están en contacto Ver si seleccionar min_F=20 0 27 0 30
+        left_down = self.env.contact_with_force(left_foot_id, min_F=min_F)
+        right_down = self.env.contact_with_force(right_foot_id, min_F=min_F)
 
         target_is_right   = (self.target_leg == 'right')
         target_foot_id    = right_foot_id if target_is_right else left_foot_id
         target_foot_down  = right_down if target_is_right else left_down
         support_foot_down = left_down if target_is_right else right_down
 
-        # if support_foot_down and not target_foot_down:
-        #     self.single_support_ticks += 1
-        #     single_support_step_reward = 0.05
-        #     terminal_single_support_bonus = 0.5 if self.single_support_ticks == 120 else 0.0
-        # else:
-        #     self.single_support_ticks = 0
-        #     single_support_step_reward = 0.0
-        #     terminal_single_support_bonus = 0.0
 
         # ======== SHAPING POR CARGAS (romper toe-touch y cargar el soporte) ========
         # Cargas del pie de SOPORTE (esperado) y del pie OBJETIVO (debe ir al aire)
@@ -750,17 +752,17 @@ class SimpleProgressiveReward:
         F_tar = F_R if target_is_right else F_L
 
         # (1) Penaliza doble apoyo fuerte
-        both_down_pen = -1.0 if (F_L >= 30.0 and F_R >= 30.0) else 0.0
+        both_down_pen = -1.0 if (F_L >= min_F and F_R >= min_F) else 0.0
 
         # (2) Penaliza toe-touch (1–30 N) del pie objetivo
-        toe_touch_pen = -0.6 if (0.0 < F_tar < 30.0) else 0.0
+        toe_touch_pen = -0.6 if (0.0 < F_tar < min_F) else 0.0
 
         # (3) Recompensa reparto de carga sano: ≥80% en el pie de soporte
         ratio = F_sup / F_sum
         support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
 
         # (4) Bonus por tiempo en apoyo simple sostenido (pie objetivo en aire “limpio”)
-        if (F_sup >= 30.0) and (F_tar < 1.0):
+        if (F_sup >= min_F) and (F_tar < 1.0):
             # acumula ticks (~400 Hz ⇒ 0.30 s ≈ 120 ticks)
             self.single_support_ticks += 1
             ss_step = 0.05
