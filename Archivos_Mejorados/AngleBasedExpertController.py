@@ -215,14 +215,15 @@ class AngleBasedExpertController:
         R_extensor = ma_ext(thetas_i)
         eps_flex_L = self.eps_from(thetas_i, R_flexor, R_min_ligament, muscle_flexor_name)
         eps_ext_L  = self.eps_from(thetas_i, R_extensor, R_min_ligament, muscle_extensor_name)
+        Fco_flex, Fco_ext = split_cocontraction_torque_neutral(F_co, R_flexor, R_extensor, 1e-3)
         if desired_torque_i >= 0.0:  # flexión
             F_main = desired_torque_i / max(R_flexor, R_min_ligament)
-            P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(F_co + F_main, eps_flex_L)
-            P_extensor = env.pam_muscles[muscle_extensor_name].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_ext_L)
+            P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(Fco_flex + F_main, eps_flex_L)
+            P_extensor = env.pam_muscles[muscle_extensor_name].pressure_from_force_and_contraction(max(Fco_ext - 0.5*F_main, 0.0), eps_ext_L)
         else:              # extensión
             F_main = (-desired_torque_i) / max(R_extensor, R_min_ligament)
-            P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(max(F_co - 0.5*F_main, 0.0), eps_flex_L)
-            P_extensor = env.pam_muscles[muscle_extensor_name].pressure_from_force_and_contraction(F_co + F_main, eps_ext_L)
+            P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(max(Fco_flex - 0.5*F_main, 0.0), eps_flex_L)
+            P_extensor = env.pam_muscles[muscle_extensor_name].pressure_from_force_and_contraction(Fco_ext + F_main, eps_ext_L)
         
         # Pressure from flexor and extensor
         return self.P_to_u(P_flexor,muscle_flexor_name), self.P_to_u(P_extensor, muscle_extensor_name)
