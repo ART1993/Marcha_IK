@@ -54,7 +54,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
                             'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
-                            'right_knee_flexor','right_knee_extensor']
+                            'right_knee_flexor','right_knee_extensor', 'left_anckle_flexor',
+                            'left_anckle_extensor', 'right_anckle_flexor', 'right_anckle_extensor']
         
         self.num_active_pams = len(self.muscle_names)
 
@@ -98,7 +99,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(16,),
+            shape=(18,), # Ver si es 18 o 16
             dtype=np.float32
         )
         
@@ -128,8 +129,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
-        self.joint_names = ['left_hip', 'left_knee', 'right_hip', 'right_knee']
+        self.joint_indices =  list(range(6))#[0, 1, 2, 3, 4, 5]  # left_hip, left_knee, right_hip, right_knee
+        self.joint_names = ['left_hip', 'left_knee', 'left_anckle', 'right_hip', 'right_knee', 'right_anckle']
+        self.dict_joints= {joint_name:joint_id for joint_name, joint_id in zip(self.joint_names, self.joint_indices)}
         self.left_foot_link_id = 2
         self.right_foot_link_id = 5
 
@@ -205,11 +207,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         # Aplicar torques
         torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
-        #     (0, joint_torques[0]),  # left_hip_joint
-        #     (1, joint_torques[1]),  # left_knee_joint  
-        #     (3, joint_torques[2]),  # right_hip_joint
-        #     (4, joint_torques[3])   # right_knee_joint
-        # ]
+        
         #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
         for joint_id, torque in torque_mapping:
             p.setJointMotorControl2(
@@ -316,20 +314,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 contactStiffness=15000,      # Aumentado de 10000 a 15000 (más rigidez)
                 frictionAnchor=1
             )
-        
-        # Pie derecho - mismas propiedades
-        # p.changeDynamics(
-        #     self.robot_id,
-        #     self.right_foot_link_id, 
-        #     lateralFriction=0.8,
-        #     spinningFriction=0.15,
-        #     rollingFriction=0.01,
-        #     restitution=0.01,
-        #     contactDamping=100,
-        #     contactStiffness=15000,
-        #     frictionAnchor=1
-        # )
-        
+
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
@@ -354,11 +339,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             rollingFriction=0.005
         )
         
-        # log_print(f"🔧 Contact friction configured:")
-        # log_print(f"   Feet: μ=0.8 (high grip)")
-        # log_print(f"   Legs: μ=0.1 (moderate)")
-        # log_print(f"   Ground: μ=0.6 (standard)")
-
     def contact_with_force(self, link_id, min_F=20.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 

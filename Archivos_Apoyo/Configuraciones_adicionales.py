@@ -84,7 +84,7 @@ def obtener_pam_forces_flexor_extensor(env, angulo_rad_articulacion, P, indice_f
     return pam_forces_flexor, pam_forces_extensor, R_flexion_articulacion, R_extension_articulacion
 
 
-def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
+def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     
     """
         Calcular torques básicos de articulaciones desde presiones PAM.
@@ -94,6 +94,7 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
     """
     
     # Obtener estados articulares (solo joints activos: caderas y rodillas)
+    # devuelve nº de articulaciones = DOF existentes, entonces, si esta fixed, no se cuenta
     joint_states = p.getJointStates(env.robot_id, env.joint_indices)  
     joint_positions = [state[0] for state in joint_states]
     joint_velocities = [s[1] for s in joint_states]
@@ -110,7 +111,7 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
                                                                                      env.hip_extensor_moment_arm)
 
     # Cadera derecha j2
-    pam_forces[2], pam_forces[3], R_flex_R, R_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 2, 3,
+    pam_forces[2], pam_forces[3], R_flex_R, R_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[3], P, 2, 3,
                                                                                      env.hip_flexor_moment_arm,
                                                                                      env.hip_extensor_moment_arm)
 
@@ -120,9 +121,18 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
                                                                                      env.knee_extensor_moment_arm)
 
     # flexor_rodilla_R, extensor_rodilla_R=env.muscle_names[6], env.muscle_names[7]
-    pam_forces[6], pam_forces[7], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[3], P, 6, 7,
+    pam_forces[6], pam_forces[7], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[4], P, 6, 7,
                                                                                                  env.knee_flexor_moment_arm,
                                                                                                  env.knee_extensor_moment_arm)
+    # Tobillo izquierdo
+    pam_forces[8], pam_forces[9], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 8, 9,
+                                                                                                 env.knee_flexor_moment_arm,
+                                                                                                 env.knee_extensor_moment_arm)
+    
+    # Tobillo derecho
+    pam_forces[10], pam_forces[11], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[5], P, 10, 11,
+                                                                                                 env.knee_flexor_moment_arm,#tratar de cambiar por anckle_flexor_arm
+                                                                                                 env.knee_extensor_moment_arm)#tratar de cambiar por anckle_extensor_arm
 
     # Aplicar a las caderas y rodillas (tienen músculos antagónicos)
     pam_forces[0], pam_forces[1] = apply_reciprocal_inhibition(pam_forces[0], 
@@ -137,9 +147,15 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
     pam_forces[6], pam_forces[7] = apply_reciprocal_inhibition(pam_forces[6],
                                                                 pam_forces[7],
                                                                 env.INHIBITION_FACTOR)  # rodilla der
+    pam_forces[8], pam_forces[9] = apply_reciprocal_inhibition(pam_forces[8],
+                                                                pam_forces[9],
+                                                                env.INHIBITION_FACTOR)  # rodilla der
+    pam_forces[10], pam_forces[11] = apply_reciprocal_inhibition(pam_forces[10],
+                                                                pam_forces[11],
+                                                                env.INHIBITION_FACTOR)  # rodilla der
 
     # Convertir a torques articulares
-    joint_torques = np.zeros(4)
+    joint_torques = np.zeros(6)
 
     # Cadera izquierda: flexión positiva por flexor, extensión por extensor
     joint_torques[0] = ( pam_forces[0] * R_flex_L) + (-pam_forces[1] * R_ext_L)
