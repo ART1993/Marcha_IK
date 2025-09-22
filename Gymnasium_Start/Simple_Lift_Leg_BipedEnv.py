@@ -205,12 +205,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
-        torque_mapping = [
-            (0, joint_torques[0]),  # left_hip_joint
-            (1, joint_torques[1]),  # left_knee_joint  
-            (3, joint_torques[2]),  # right_hip_joint
-            (4, joint_torques[3])   # right_knee_joint
-        ]
+        torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
+        #     (0, joint_torques[0]),  # left_hip_joint
+        #     (1, joint_torques[1]),  # left_knee_joint  
+        #     (3, joint_torques[2]),  # right_hip_joint
+        #     (4, joint_torques[3])   # right_knee_joint
+        # ]
         #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
         for joint_id, torque in torque_mapping:
             p.setJointMotorControl2(
@@ -305,30 +305,31 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== FRICCIÓN ESPECÍFICA PARA PIES =====
         
         # Pie izquierdo - alta fricción para agarre
-        p.changeDynamics(
-            self.robot_id, 
-            self.left_foot_link_id,
-            lateralFriction=0.8,        # Reducido de 1.2 a 0.8
-            spinningFriction=0.15,       # Reducido de 0.8 a 0.15
-            rollingFriction=0.01,       # Reducido de 0.1 a 0.01
-            restitution=0.01,           # Reducido de 0.05 a 0.01 (menos rebote)
-            contactDamping=100,         # Aumentado de 50 a 100 (más amortiguación)
-            contactStiffness=15000,      # Aumentado de 10000 a 15000 (más rigidez)
-            frictionAnchor=1
-        )
+        for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
+            p.changeDynamics(
+                self.robot_id, 
+                foot_id,
+                lateralFriction=0.8,        # Reducido de 1.2 a 0.8
+                spinningFriction=0.15,       # Reducido de 0.8 a 0.15
+                rollingFriction=0.01,       # Reducido de 0.1 a 0.01
+                restitution=0.01,           # Reducido de 0.05 a 0.01 (menos rebote)
+                contactDamping=100,         # Aumentado de 50 a 100 (más amortiguación)
+                contactStiffness=15000,      # Aumentado de 10000 a 15000 (más rigidez)
+                frictionAnchor=1
+            )
         
         # Pie derecho - mismas propiedades
-        p.changeDynamics(
-            self.robot_id,
-            self.right_foot_link_id, 
-            lateralFriction=0.8,
-            spinningFriction=0.15,
-            rollingFriction=0.01,
-            restitution=0.01,
-            contactDamping=100,
-            contactStiffness=15000,
-            frictionAnchor=1
-        )
+        # p.changeDynamics(
+        #     self.robot_id,
+        #     self.right_foot_link_id, 
+        #     lateralFriction=0.8,
+        #     spinningFriction=0.15,
+        #     rollingFriction=0.01,
+        #     restitution=0.01,
+        #     contactDamping=100,
+        #     contactStiffness=15000,
+        #     frictionAnchor=1
+        # )
         
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
