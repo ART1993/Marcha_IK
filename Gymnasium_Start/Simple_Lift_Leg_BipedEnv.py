@@ -15,8 +15,9 @@ from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
-from Archivos_Mejorados.RewardSystemSimple import AngleBasedExpertController, \
-                                                    SingleLegActionSelector, SimpleProgressiveReward           
+from Archivos_Mejorados.RewardSystemSimple import SimpleProgressiveReward
+from Archivos_Mejorados.SingleLegActionSelector import SingleLegActionSelector
+from Archivos_Mejorados.AngleBasedExpertController import AngleBasedExpertController           
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
