@@ -93,13 +93,13 @@ class SingleLegActionSelector:
             # PASO 1: Obtener ángulos objetivo
             target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
         # PASO 1: Obtener ángulos objetivo
-        target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
+        #target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
         
         # PASO 2: Calcular torques PD
         pd_torques = self.angle_controller.calculate_pd_torques(target_angles)
         
         # PASO 3: Convertir a presiones PAM
-        base_pressures = self.angle_controller.torques_to_pam_pressures(pd_torques)
+        base_pressures = self.angle_controller.torques_to_pam_pressures(pd_torques, target_angles)
         
         # PASO 4: Añadir correcciones por estabilidad (opcional)
         corrected_pressures = self._add_stability_corrections(base_pressures)

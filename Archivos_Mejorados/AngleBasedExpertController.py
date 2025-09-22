@@ -53,7 +53,7 @@ class AngleBasedExpertController:
             
             # NIVEL 3: Equilibrio en una pierna
             'level_3_left_support': {
-                'left_hip': -0.00,     # Pierna izq: soporte
+                'left_hip': -0.0,     # Pierna izq: soporte
                 'left_knee': 0.00,
                 'right_hip': 1.0,    # Pierna der: levantada 34°
                 'right_knee': 0.6,
@@ -61,9 +61,9 @@ class AngleBasedExpertController:
             },
             
             'level_3_right_support': {
-                'left_hip': 1.0,     # Pierna izq: levantada 34°
+                'left_hip': -1.0,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
-                'right_hip': -0.00,    # Pierna der: soporte
+                'right_hip': -0.0,    # Pierna der: soporte
                 'right_knee': 0.00,
                 'description': 'Pierna izquierda levantada'
             }
@@ -174,7 +174,7 @@ class AngleBasedExpertController:
         
         return pd_torques
     
-    def torques_to_pam_pressures(self, desired_torques):
+    def torques_to_pam_pressures(self, desired_torques, target_angles):
         """
         Convertir torques deseados en presiones PAM equivalentes
         
@@ -191,45 +191,16 @@ class AngleBasedExpertController:
         pam_pressures = np.zeros(self.env.num_active_pams)
         
         # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
-        pam_pressures = self.torques_to_pam_pressures_for_8_pam(desired_torques, pam_pressures)
-        #pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
-
-        # --- limite inferior de co-contracción torque-neutral por cadera ---
-        def co_contraction_floor(i_flex, i_ext, theta, Rf, Re, error_abs):
-            # Si error grande y ambas presiones ~0, sube Fco mínimo
-            if error_abs < 0.08: 
-                return
-            if (pam_pressures[i_flex] + pam_pressures[i_ext]) < 0.05:
-                # fuerza basal en N, mapeada con tu modelo inverso
-                Fco = 30.0
-                Fco_flex, Fco_ext = split_cocontraction_torque_neutral(Fco, Rf, Re, 1e-3)
-                eps_flex = self.eps_from(theta, Rf, 1e-3, self.env.muscle_names[i_flex])
-                eps_ext  = self.eps_from(theta, Re, 1e-3, self.env.muscle_names[i_ext])
-                Pflex = self.env.pam_muscles[self.env.muscle_names[i_flex]].pressure_from_force_and_contraction(Fco_flex, eps_flex)
-                Pext  = self.env.pam_muscles[self.env.muscle_names[i_ext ]].pressure_from_force_and_contraction(Fco_ext , eps_ext )
-                pam_pressures[i_flex] = max(pam_pressures[i_flex], self.P_to_u(Pflex, self.env.muscle_names[i_flex]))
-                pam_pressures[i_ext ] = max(pam_pressures[i_ext ], self.P_to_u(Pext , self.env.muscle_names[i_ext ]))
-
-        # Lectura rápida del estado actual para brazos de momento
-        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
-        thetas = [s[0] for s in joint_states]
-
-        # Cadera izquierda (índices PAM 0/1 ↔ joint 0)
-        # Rf_L = self.env.hip_flexor_moment_arm(thetas[0]); Re_L = self.env.hip_extensor_moment_arm(thetas[0])
-        # # PAM flexor/extensor_id=0,1
-        # co_contraction_floor(0, 1, thetas[0], Rf_L, Re_L, error_abs=abs(desired_torques[0])/max(self.max_torque,1e-9))
-
-        # # Cadera derecha (índices PAM 2/3 ↔ joint 2)
-        # Rf_R = self.env.hip_flexor_moment_arm(thetas[2]); Re_R = self.env.hip_extensor_moment_arm(thetas[2])
-        # # PAM flexor/extensor_id=2,3
-        # co_contraction_floor(2, 3, thetas[2], Rf_R, Re_R, error_abs=abs(desired_torques[2])/max(self.max_torque,1e-9))
-        # ¿Y que sucede para 0,3 y 1,2?
+        pam = self.torques_to_pam_pressures_for_8_pam(desired_torques, pam_pressures)
+        #pam = self._hip_complementary_routing(pam, desired_torques)       # si ya lo tienes
+        #pam = self._ensure_opposition(pam, desired_torques, target_angles) # ⬅️ NUEVO
+        
 
         
         # Asegurar rango [0, 1]
-        pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
+        pam = np.clip(pam, 0.0, 1.0)
         
-        return pam_pressures
+        return pam
     
     def eps_from(self, theta, R_abs, R_min, muscle_name):
             return self.env.pam_muscles[muscle_name].epsilon_from_angle(theta, 0.0, max(abs(R_abs), R_min))
@@ -303,6 +274,40 @@ class AngleBasedExpertController:
     # ============================================================================================================= CROSS CORRECTION ========================================================================================================================== #
     # ========================================================================================================================================================================================================================================================= #
 
+    def limite_interior_co_contraction(self):
+        pass
+        # --- limite inferior de co-contracción torque-neutral por cadera ---
+        # def co_contraction_floor(i_flex, i_ext, theta, Rf, Re, error_abs):
+        #     # Si error grande y ambas presiones ~0, sube Fco mínimo
+        #     if error_abs < 0.08: 
+        #         return
+        #     if (pam_pressures[i_flex] + pam_pressures[i_ext]) < 0.05:
+        #         # fuerza basal en N, mapeada con tu modelo inverso
+        #         Fco = 30.0
+        #         Fco_flex, Fco_ext = split_cocontraction_torque_neutral(Fco, Rf, Re, 1e-3)
+        #         eps_flex = self.eps_from(theta, Rf, 1e-3, self.env.muscle_names[i_flex])
+        #         eps_ext  = self.eps_from(theta, Re, 1e-3, self.env.muscle_names[i_ext])
+        #         Pflex = self.env.pam_muscles[self.env.muscle_names[i_flex]].pressure_from_force_and_contraction(Fco_flex, eps_flex)
+        #         Pext  = self.env.pam_muscles[self.env.muscle_names[i_ext ]].pressure_from_force_and_contraction(Fco_ext , eps_ext )
+        #         pam_pressures[i_flex] = max(pam_pressures[i_flex], self.P_to_u(Pflex, self.env.muscle_names[i_flex]))
+        #         pam_pressures[i_ext ] = max(pam_pressures[i_ext ], self.P_to_u(Pext , self.env.muscle_names[i_ext ]))
+
+        # # Lectura rápida del estado actual para brazos de momento
+        # joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
+        # thetas = [s[0] for s in joint_states]
+
+        # Cadera izquierda (índices PAM 0/1 ↔ joint 0)
+        # Rf_L = self.env.hip_flexor_moment_arm(thetas[0]); Re_L = self.env.hip_extensor_moment_arm(thetas[0])
+        # # PAM flexor/extensor_id=0,1
+        # co_contraction_floor(0, 1, thetas[0], Rf_L, Re_L, error_abs=abs(desired_torques[0])/max(self.max_torque,1e-9))
+
+        # # Cadera derecha (índices PAM 2/3 ↔ joint 2)
+        # Rf_R = self.env.hip_flexor_moment_arm(thetas[2]); Re_R = self.env.hip_extensor_moment_arm(thetas[2])
+        # # PAM flexor/extensor_id=2,3
+        # co_contraction_floor(2, 3, thetas[2], Rf_R, Re_R, error_abs=abs(desired_torques[2])/max(self.max_torque,1e-9))
+        # ¿Y que sucede para 0,3 y 1,2?
+
+
     def _error_and_trend(self, target, q, qdot):
         e = float(target - q)
         de = float(-qdot)  # queremos qdot→0; signo consistente con PD
@@ -338,3 +343,117 @@ class AngleBasedExpertController:
             if abs(e) > BIG_E and abs(pd_torques[i]) < LOW_TAU:
                 pd_torques[i] += np.clip(KP_BOOST * e - 0.05 * qdot[i], -3.0, 3.0)
         return pd_torques
+    
+    def _hip_complementary_routing(self, pam, desired_torques):
+        """
+            Fuerza un patrón complementario explícito de presiones por cadera:
+            - Si τ_L > 0 (flexión), L_flex = P_req(τ_L), L_ext = piso
+            - Si τ_L < 0 (extensión), L_ext = P_req(|τ_L|), L_flex = piso
+            - Si τ_R > 0 (flexión), R_flex = P_req(τ_R), R_ext = piso
+            - Si τ_R < 0 (extensión), R_ext = P_req(|τ_R|), R_flex = piso
+
+            'piso' es co-contracción mínima (si la quieres). El cálculo de P_req es físico:
+            usa torque → fuerza (R) → presión con tu modelo PAM.
+        """
+        # Índices PAM: [0 L_flex, 1 L_ext, 2 R_flex, 3 R_ext, ...]
+        # Estados actuales para calcular ε a partir de R(θ):
+        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
+        theta_L = joint_states[0][0]; theta_R = joint_states[2][0]
+
+        # Brazos de momento actuales
+        Rf_L = self.env.hip_flexor_moment_arm(theta_L); Re_L = self.env.hip_extensor_moment_arm(theta_L)
+        Rf_R = self.env.hip_flexor_moment_arm(theta_R); Re_R = self.env.hip_extensor_moment_arm(theta_R)
+
+        # Contracciones (ε) para los 4 PAM de cadera
+        eps_Lf = self.eps_from(theta_L, Rf_L, 1e-3, self.env.muscle_names[0])
+        eps_Le = self.eps_from(theta_L, Re_L, 1e-3, self.env.muscle_names[1])
+        eps_Rf = self.eps_from(theta_R, Rf_R, 1e-3, self.env.muscle_names[2])
+        eps_Re = self.eps_from(theta_R, Re_R, 1e-3, self.env.muscle_names[3])
+
+        # Piso de co-contracción (muy pequeño; sube si quieres más rigidez)
+        piso = 0.00
+
+        # Utilidad para convertir τ → presión normalizada en el PAM correcto
+        def P_req_norm(tau, R, eps, muscle_idx):
+            if abs(R) < 1e-6 or abs(tau) < 1e-6:
+                return 0.0
+            F = abs(tau) / max(abs(R), 1e-9)
+            return float(self.env.pam_muscles[self.env.muscle_names[muscle_idx]].pressure_normalized_from_force_and_contraction(F, eps))
+
+        # Izquierda
+        tau_L = float(desired_torques[0])
+        if tau_L >= 0.0:  # flexión
+            pam[0] = max(pam[0], P_req_norm(tau_L, Rf_L, eps_Lf, 0));  pam[1] = max(piso, 0.0)
+        else:             # extensión
+            pam[1] = max(pam[1], P_req_norm(tau_L, Re_L, eps_Le, 1));  pam[0] = max(piso, 0.0)
+
+        # Derecha
+        tau_R = float(desired_torques[2])
+        if tau_R >= 0.0:  # flexión
+            pam[2] = max(pam[2], P_req_norm(tau_R, Rf_R, eps_Rf, 2));  pam[3] = max(piso, 0.0)
+        else:             # extensión
+            pam[3] = max(pam[3], P_req_norm(tau_R, Re_R, eps_Re, 3));  pam[2] = max(piso, 0.0)
+
+        return np.clip(pam, 0.0, 1.0)
+    
+    def _ensure_opposition(self, pam, desired_torques, target_angles):
+        """
+        Si una cadera tiene objetivo ~0 rad (soporte) y la otra está lejos (swing),
+        forzar activación opuesta mínima en la de soporte para sostener 0 rad
+        y en la de swing para empujar al objetivo, usando el inverso PAM.
+        """
+        # Índices y nombres
+        Lf, Le, Rf, Re = 0, 1, 2, 3
+
+        # Estados actuales
+        js = p.getJointStates(self.robot_id, self.env.joint_indices)
+        qL, qR = js[0][0], js[2][0]
+
+        # Momento y contracción en tiempo real
+        RfL = self.env.hip_flexor_moment_arm(qL); ReL = self.env.hip_extensor_moment_arm(qL)
+        RfR = self.env.hip_flexor_moment_arm(qR); ReR = self.env.hip_extensor_moment_arm(qR)
+        epsLf = self.env.pam_muscles[self.env.muscle_names[Lf]].epsilon_from_angle(qL, 0.0, max(abs(RfL),1e-9))
+        epsLe = self.env.pam_muscles[self.env.muscle_names[Le]].epsilon_from_angle(qL, 0.0, max(abs(ReL),1e-9))
+        epsRf = self.env.pam_muscles[self.env.muscle_names[Rf]].epsilon_from_angle(qR, 0.0, max(abs(RfR),1e-9))
+        epsRe = self.env.pam_muscles[self.env.muscle_names[Re]].epsilon_from_angle(qR, 0.0, max(abs(ReR),1e-9))
+
+        # Utilidad inversa normalizada ya presente en tu modelo PAM ✅
+        def Pnorm_req(F, eps, muscle_name):
+            return float(self.env.pam_muscles[muscle_name].pressure_normalized_from_force_and_contraction(F, eps))
+
+        # Torques PD que ya calculaste para hip L/R
+        tauL = float(desired_torques[0])
+        tauR = float(desired_torques[2])
+
+        # Objetivos vigentes (nivel 3): una ~0 y la otra lejos
+        tgtL = float(target_angles['left_hip'])
+        tgtR = float(target_angles['right_hip'])
+        near0 = lambda x: abs(x) < 0.08  # 0.08 rad ~ 4.6°, margen
+
+        # Magnitudes de par requeridas para sostener o empujar (usa el mismo PD, no constantes)
+        # Convertimos τ → F = |τ|/|R| → Pnorm con el PAM correspondiente
+        def inject_ext(side, tau, R, eps, flex_idx, ext_idx):
+            if abs(R) < 1e-6 or abs(tau) < 1e-6: return
+            F = abs(tau)/max(abs(R),1e-9)
+            if tau >= 0:  # flexión
+                pam[flex_idx] = max(pam[flex_idx], Pnorm_req(F, eps['flex'], self.env.muscle_names[flex_idx]))
+                pam[ext_idx]  = max(pam[ext_idx],  0.0)
+            else:         # extensión
+                pam[ext_idx]  = max(pam[ext_idx],  Pnorm_req(F, eps['ext'],  self.env.muscle_names[ext_idx]))
+                pam[flex_idx] = max(pam[flex_idx], 0.0)
+
+        # Lógica de oposición: si L es swing (|tgtL|≫|tgtR|) y R soporte (~0), impone:
+        #   L: seguir su τ_L (signo→músculo correcto); R: seguir su τ_R para sostener 0
+        if (abs(tgtL) > 0.25 and near0(tgtR)) or (abs(tgtR) > 0.25 and near0(tgtL)):
+            # Emparejar ambos lados (no dejar uno en ~0 si el otro es alto)
+            # Lado izquierdo
+            inject_ext('L', tauL, (RfL if tauL>=0 else ReL),
+                    {'flex': epsLf, 'ext': epsLe}, Lf, Le)
+            # Lado derecho
+            inject_ext('R', tauR, (RfR if tauR>=0 else ReR),
+                    {'flex': epsRf, 'ext': epsRe}, Rf, Re)
+
+            # (Opcional) Piso de co-contracción torque-neutral para amortiguar sin par
+            # Fco = k * (|tauL|+|tauR|)  -> reparte con split_cocontraction_torque_neutral(...)
+            # y conviértelo a presiones invertidas en ambos PAMs de cada cadera.
+        return np.clip(pam, 0.0, 1.0)
