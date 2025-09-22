@@ -101,6 +101,7 @@ class SimpleProgressiveReward:
             }
         
         # Para alternancia de piernas (solo nivel 3)
+        # Pierna que se quiere levantar
         self.target_leg = 'left'
         self.switch_timer = 0
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
