@@ -826,6 +826,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
                 log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
                 log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
+                #log_print(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")

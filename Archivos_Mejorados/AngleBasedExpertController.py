@@ -3,6 +3,7 @@ import numpy as np
 
 
 from Archivos_Mejorados.RewardSystemSimple import SingleLegActionType
+from Archivos_Apoyo.Configuraciones_adicionales import split_cocontraction_torque_neutral
 
 class AngleBasedExpertController:
     """
@@ -54,13 +55,13 @@ class AngleBasedExpertController:
             'level_3_left_support': {
                 'left_hip': -0.00,     # Pierna izq: soporte
                 'left_knee': 0.00,
-                'right_hip': -1.0,    # Pierna der: levantada 34°
+                'right_hip': 1.0,    # Pierna der: levantada 34°
                 'right_knee': 0.6,
                 'description': 'Pierna derecha levantada'
             },
             
             'level_3_right_support': {
-                'left_hip': -1.0,     # Pierna izq: levantada 34°
+                'left_hip': 1.0,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
                 'right_hip': -0.00,    # Pierna der: soporte
                 'right_knee': 0.00,
@@ -144,26 +145,32 @@ class AngleBasedExpertController:
         
         # Obtener estados actuales de articulaciones
         joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
-        current_angles = [state[0] for state in joint_states]
-        current_velocities = [state[1] for state in joint_states]
+        current_angles = [state[0] for state in joint_states] # q en DK o PD
+        current_velocities = [state[1] for state in joint_states]# qDot
         
         # Ángulos objetivo en orden correcto
-        target_angles = [
+        target_angles_array = np.array([
             target_angles_dict['left_hip'],
             target_angles_dict['left_knee'], 
             target_angles_dict['right_hip'],
             target_angles_dict['right_knee']
-        ]
+        ], dtype=float)
         
         # Calcular errores
-        angle_errors = np.array(target_angles) - np.array(current_angles)
+        angle_errors = np.array(target_angles_array) - np.array(current_angles)
         velocity_errors = -np.array(current_velocities)  # Queremos velocidad 0
         
         # Control PD
         pd_torques = self.kp * angle_errors + self.kd * velocity_errors
-        
+        # Limitar torques
+        # pd_torques = np.clip(pd_torques, -self.max_torque, self.max_torque)
+
+        # Antibloqueo + rescate cruzado de caderas
+        # pd_torques = self._anti_stall_pd(pd_torques, target_angles_array, current_angles, current_velocities)
+        # pd_torques = self._cross_hip_rescue(pd_torques, target_angles_array, current_angles, current_velocities)
         # Limitar torques
         pd_torques = np.clip(pd_torques, -self.max_torque, self.max_torque)
+
         
         return pd_torques
     
@@ -185,8 +192,40 @@ class AngleBasedExpertController:
         
         # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
         pam_pressures = self.torques_to_pam_pressures_for_8_pam(desired_torques, pam_pressures)
+        #pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
 
-   
+        # --- limite inferior de co-contracción torque-neutral por cadera ---
+        def co_contraction_floor(i_flex, i_ext, theta, Rf, Re, error_abs):
+            # Si error grande y ambas presiones ~0, sube Fco mínimo
+            if error_abs < 0.08: 
+                return
+            if (pam_pressures[i_flex] + pam_pressures[i_ext]) < 0.05:
+                # fuerza basal en N, mapeada con tu modelo inverso
+                Fco = 30.0
+                Fco_flex, Fco_ext = split_cocontraction_torque_neutral(Fco, Rf, Re, 1e-3)
+                eps_flex = self.eps_from(theta, Rf, 1e-3, self.env.muscle_names[i_flex])
+                eps_ext  = self.eps_from(theta, Re, 1e-3, self.env.muscle_names[i_ext])
+                Pflex = self.env.pam_muscles[self.env.muscle_names[i_flex]].pressure_from_force_and_contraction(Fco_flex, eps_flex)
+                Pext  = self.env.pam_muscles[self.env.muscle_names[i_ext ]].pressure_from_force_and_contraction(Fco_ext , eps_ext )
+                pam_pressures[i_flex] = max(pam_pressures[i_flex], self.P_to_u(Pflex, self.env.muscle_names[i_flex]))
+                pam_pressures[i_ext ] = max(pam_pressures[i_ext ], self.P_to_u(Pext , self.env.muscle_names[i_ext ]))
+
+        # Lectura rápida del estado actual para brazos de momento
+        joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
+        thetas = [s[0] for s in joint_states]
+
+        # Cadera izquierda (índices PAM 0/1 ↔ joint 0)
+        # Rf_L = self.env.hip_flexor_moment_arm(thetas[0]); Re_L = self.env.hip_extensor_moment_arm(thetas[0])
+        # # PAM flexor/extensor_id=0,1
+        # co_contraction_floor(0, 1, thetas[0], Rf_L, Re_L, error_abs=abs(desired_torques[0])/max(self.max_torque,1e-9))
+
+        # # Cadera derecha (índices PAM 2/3 ↔ joint 2)
+        # Rf_R = self.env.hip_flexor_moment_arm(thetas[2]); Re_R = self.env.hip_extensor_moment_arm(thetas[2])
+        # # PAM flexor/extensor_id=2,3
+        # co_contraction_floor(2, 3, thetas[2], Rf_R, Re_R, error_abs=abs(desired_torques[2])/max(self.max_torque,1e-9))
+        # ¿Y que sucede para 0,3 y 1,2?
+
+        
         # Asegurar rango [0, 1]
         pam_pressures = np.clip(pam_pressures, 0.0, 1.0)
         
@@ -258,3 +297,44 @@ class AngleBasedExpertController:
                                                                                 env.knee_flexor_moment_arm,env.knee_extensor_moment_arm)
 
         return pam_pressures
+
+
+    # ========================================================================================================================================================================================================================================================= #
+    # ============================================================================================================= CROSS CORRECTION ========================================================================================================================== #
+    # ========================================================================================================================================================================================================================================================= #
+
+    def _error_and_trend(self, target, q, qdot):
+        e = float(target - q)
+        de = float(-qdot)  # queremos qdot→0; signo consistente con PD
+        # "acercándose" si e*de > 0 (error y su corrección van a favor)
+        approaching = (e * de) > 0.0
+        return e, de, approaching
+    
+    # 2) NUEVO: acoplamiento cruzado de caderas (rescate)
+    def _cross_hip_rescue(self, pd_torques, targets, q, qdot):
+        # Orden: [L_hip, L_knee, R_hip, R_knee]
+        eL, deL, appL = self._error_and_trend(targets[0], q[0], qdot[0])
+        eR, deR, appR = self._error_and_trend(targets[2], q[2], qdot[2])
+
+        # Condición: una se acerca y la otra se aleja; error notable en la que se aleja
+        E_MIN = 0.06   # ~3.5°
+        BOOST = 0.35   # ganancia de rescate (ajusta si hace falta)
+        TAU_MAX = self.max_torque
+
+        if appR and (not appL) and abs(eL) > E_MIN:
+            pd_torques[0] += np.clip(BOOST * eL + 0.05 * deL, -0.5*TAU_MAX, 0.5*TAU_MAX)
+        elif appL and (not appR) and abs(eR) > E_MIN:
+            pd_torques[2] += np.clip(BOOST * eR + 0.05 * deR, -0.5*TAU_MAX, 0.5*TAU_MAX)
+
+        return pd_torques
+    
+    # 3) NUEVO: antibloqueo si hay error grande pero |tau_PD| pequeño
+    def _anti_stall_pd(self, pd_torques, targets, q, qdot):
+        BIG_E   = 0.10   # ~5.7°
+        LOW_TAU = 1.0    # Nm
+        KP_BOOST = 0.6
+        for i in (0, 2):  # solo caderas
+            e = float(targets[i] - q[i])
+            if abs(e) > BIG_E and abs(pd_torques[i]) < LOW_TAU:
+                pd_torques[i] += np.clip(KP_BOOST * e - 0.05 * qdot[i], -3.0, 3.0)
+        return pd_torques
