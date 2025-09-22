@@ -9,7 +9,7 @@ import numpy as np
 import math
 from collections import deque
 
-from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, calculate_robot_specific_joint_torques_6_pam, \
+from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
                                                     calculate_robot_specific_joint_torques_8_pam
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
@@ -33,7 +33,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 5
     """
     
-    def __init__(self, render_mode='human', use_knee_extensor_pams=True, testeo_movimiento=False,
+    def __init__(self, render_mode='human', testeo_movimiento=False,
                  enable_curriculum=True, print_env="ENV", probe_expert_only=False):
         
         """
@@ -46,17 +46,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN BÁSICA =====
         
         self.render_mode = render_mode
-        self.use_knee_extensor_pams = use_knee_extensor_pams
+        
         # self.action_space_type = action_space  # Solo "pam"
         self.probe_expert_only = probe_expert_only
         self.testeo_movimiento=testeo_movimiento
-        if use_knee_extensor_pams:
-            self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
-                                'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
-                                'right_knee_flexor','right_knee_extensor']
-        else:
-            self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
-                        'right_hip_extensor', 'left_knee_flexor', 'right_knee_flexor']
+
+        self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
+                            'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
+                            'right_knee_flexor','right_knee_extensor']
+        
         self.num_active_pams = len(self.muscle_names)
 
         self.pam_control_active = False
@@ -73,7 +71,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
         
 
-        self.pam_muscles = PAM_McKibben(include_knee_extensors=use_knee_extensor_pams)
+        self.pam_muscles = PAM_McKibben()
         
         # Estados PAM básicos
         self.pam_states = {
@@ -146,7 +144,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.print_env = print_env
         log_print(f"🤖 Simplified Lift legs Environment initialized")
         log_print(f"🤖 Environment initialized - Systems initiate in reset")
-        log_print(f"🤖 Using {self.num_active_pams=:} {use_knee_extensor_pams=:} "
+        log_print(f"🤖 Using {self.num_active_pams=:} "
                   f"{enable_curriculum=:} [{self.print_env=:}]")
     
 # ========================================================================================================================================================================= #
@@ -462,12 +460,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
-        if self.use_knee_extensor_pams:
-            joint_torques = calculate_robot_specific_joint_torques_8_pam(self, pam_pressures)
-        else:
-            joint_torques = calculate_robot_specific_joint_torques_6_pam(self, pam_pressures)
-            # Aplicar control automático de altura de rodilla
-            joint_torques = self._apply_automatic_knee_control(joint_torques)
+        joint_torques = calculate_robot_specific_joint_torques_8_pam(self, pam_pressures)
+        
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
@@ -476,16 +470,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
 
         return joint_torques
-    
-    def seleccion_joint(self, i, joint_positions, joint_velocities):
-        if i in [0, 1]:  # Cadera izquierda
-            return joint_positions[0], joint_velocities[0]
-        elif i in [2, 3]:  # Cadera derecha
-            return joint_positions[2], joint_velocities[2]
-        elif i == 4:  # Rodilla izquierda
-            return joint_positions[1], joint_velocities[1]
-        elif i == 5:  # Rodilla derecha
-            return joint_positions[3], joint_velocities[3]
     
     def _get_single_leg_observation(self):
         """
@@ -837,14 +821,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"   Right hip: {right_hip_angle:.3f} rad ({math.degrees(right_hip_angle):.1f}°)")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
                 log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
-                if self.use_knee_extensor_pams:
-                    log_print(f"   L Hip flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
-                    log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
-                    log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
-                    log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
-                else:
-                    log_print(f"   L knee flexor: {pam_pressures[4]:.3f}")
-                    log_print(f"   R knee flexor: {pam_pressures[5]:.3f}")
+                log_print(f"   L Hip flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
+                log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
+                log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
+                log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
@@ -868,13 +848,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             cocontraction_level = (pam_pressures[2] + pam_pressures[3]) / 2
             warnings.append(f"Right hip co-contraction: {cocontraction_level:.1%}")
             # Rodillas: 
-        if self.use_knee_extensor_pams:
-            if pam_pressures[4] > 0.7 and pam_pressures[5] > 0.7:
-                cocontraction_level = (pam_pressures[4] + pam_pressures[5]) / 2
-                warnings.append(f"Left Knee co-contraction: {cocontraction_level:.1%}")
-            if pam_pressures[6] > 0.7 and pam_pressures[7] > 0.7:
-                cocontraction_level = (pam_pressures[6] + pam_pressures[7]) / 2
-                warnings.append(f"Right Knee co-contraction: {cocontraction_level:.1%}")
+        if pam_pressures[4] > 0.7 and pam_pressures[5] > 0.7:
+            cocontraction_level = (pam_pressures[4] + pam_pressures[5]) / 2
+            warnings.append(f"Left Knee co-contraction: {cocontraction_level:.1%}")
+        if pam_pressures[6] > 0.7 and pam_pressures[7] > 0.7:
+            cocontraction_level = (pam_pressures[6] + pam_pressures[7]) / 2
+            warnings.append(f"Right Knee co-contraction: {cocontraction_level:.1%}")
         
         
         # ===== VALIDAR TORQUES DENTRO DE CAPACIDAD FÍSICA =====
@@ -897,9 +876,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Para equilibrio en una pierna, verificar asimetría apropiada
         left_activation = np.sum(pam_pressures[0:2]) + pam_pressures[4] + \
-        (pam_pressures[self.muscle_names.index('left_knee_extensor')] if self.use_knee_extensor_pams else 0.0)  # Cadera izq + rodilla izq
+        (pam_pressures[self.muscle_names.index('left_knee_extensor')])  # Cadera izq + rodilla izq
         right_activation = np.sum(pam_pressures[2:4]) + pam_pressures[5] + \
-        (pam_pressures[self.muscle_names.index('right_knee_extensor')] if self.use_knee_extensor_pams else 0.0)  # Cadera der + rodilla der
+        (pam_pressures[self.muscle_names.index('right_knee_extensor')])  # Cadera der + rodilla der
         
         asymmetry = abs(left_activation - right_activation)
         if asymmetry < 0.5:  # Muy simétrico para equilibrio en una pierna
@@ -932,7 +911,7 @@ def configure_robot_specific_pam_system(env):
     log_print(f"   Expected mass: {expected_mass}kg")
     log_print(f"   Expected height: {expected_height}m")
     log_print(f"   PAM configuration: {env.num_active_pams} muscles "
-              f"(hips antagonistic + knees {'flex+ext' if env.use_knee_extensor_pams else 'flex-only'})")
+              f"(hips antagonistic + knees {'flex+ext'})")
     log_print(f"   Moment arms: Hip 5.0-6.3cm, Knee 5.7cm")
     log_print(f"   Passive springs: {env.PASSIVE_SPRING_STRENGTH} N⋅m (gravity-compensated)")
     
