@@ -84,27 +84,3 @@ def train_balance_pure_rl(total_timesteps=1000000, n_envs=4, resume=True):
         print("🤖 El modelo aprendió sin ayuda experta")
     
     return trainer, model
-
-def probe_level3_expert_rollout(env, seconds=3.0, target='right'):
-    
-    obs, info = env.reset()
-    env.enable_curriculum = True
-    env.simple_reward_system.level = 3
-    env.probe_expert_only = True
-    if hasattr(env, "action_selector"):
-        env.action_selector.expert_help_ratio = 1.0
-
-    # fija pierna objetivo para que sea reproducible
-    if hasattr(env.simple_reward_system, "target_leg"):
-        env.simple_reward_system.target_leg = target
-
-    steps = int(seconds * env.frequency_simulation)
-    total_r = 0.0
-    for _ in range(steps):
-        # acción dummy; será ignorada
-        a = np.zeros(env.num_active_pams, dtype=np.float32)
-        obs, r, done, _, info = env.step(a)
-        total_r += r
-        if done:
-            break
-    print(f"[PROBE] level=3, leg={target}, steps={info.get('step_count', 0)}, reward={total_r:.2f}")

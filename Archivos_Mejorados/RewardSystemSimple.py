@@ -85,6 +85,13 @@ class SimpleProgressiveReward:
             }
         }
 
+        # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
+        self.target_angles = {
+            # NIVEL 1: Solo balance básico
+            "level_3_left_support":  {"left_hip":  0.0, "left_knee": 0.0, "right_hip":  0.6, "right_knee": 0.6},
+            "level_3_right_support": {"left_hip": 0.6, "left_knee": 0.6, "right_hip": 0.0, "right_knee": 0.0},
+        }
+
         # Inclinación crítica - MÁS PERMISIVO según nivel
         if self.enable_curriculum==False:
             self.max_tilt_by_level = {
@@ -249,7 +256,7 @@ class SimpleProgressiveReward:
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
         foot_z = p.getLinkState(self.robot_id, target_foot_id)[0][2]
-        clearance_target = 0.08  # 8 cm
+        clearance_target = 0.09  # 9 cm
         clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 1.5
 
         # Rodilla (≈0.6 rad)

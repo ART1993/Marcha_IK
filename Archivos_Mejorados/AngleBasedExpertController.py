@@ -53,9 +53,9 @@ class AngleBasedExpertController:
             
             # NIVEL 3: Equilibrio en una pierna
             'level_3_left_support': {
-                'left_hip': -0.0,     # Pierna izq: soporte
-                'left_knee': 0.00,
-                'right_hip': 1.0,    # Pierna der: levantada 34°
+                'left_hip': 0.1,     # Pierna izq: soporte
+                'left_knee': 0.1,
+                'right_hip': -1.0,    # Pierna der: levantada 34°
                 'right_knee': 0.6,
                 'description': 'Pierna derecha levantada'
             },
@@ -63,8 +63,8 @@ class AngleBasedExpertController:
             'level_3_right_support': {
                 'left_hip': -1.0,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
-                'right_hip': -0.0,    # Pierna der: soporte
-                'right_knee': 0.00,
+                'right_hip': 0.1,    # Pierna der: soporte
+                'right_knee': 0.1,
                 'description': 'Pierna izquierda levantada'
             }
         }

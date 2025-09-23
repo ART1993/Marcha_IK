@@ -16,8 +16,7 @@ from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 from Archivos_Mejorados.RewardSystemSimple import SimpleProgressiveReward
-from Archivos_Mejorados.SingleLegActionSelector import SingleLegActionSelector
-from Archivos_Mejorados.AngleBasedExpertController import AngleBasedExpertController           
+           
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
@@ -123,7 +122,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.reward_system = None
         self.action_selector = None
-
+        self.angle_expert_controller= None
         self.step_count = 0
         self.total_reward = 0
         self.robot_id = None
@@ -140,7 +139,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
 
-        self.enable_curriculum = enable_curriculum
+        self.enable_curriculum = False # Por si las moscas
         self.simple_reward_system = None
         self.print_env = print_env
         log_print(f"🤖 Simplified Lift legs Environment initialized")
@@ -166,25 +165,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # En env.step (o donde construyas la acción final)
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         self.euler = p.getEulerFromQuaternion(orn)
-        if self.enable_curriculum:
-            u_expert = self.action_selector.get_expert_action()            # [0,1]^6
-            u_rl = np.clip(action, 0.0, 1.0) 
-            
-            if self.probe_expert_only:                    # [0,1]^6
-                u_final = u_expert
-                self.ep_expert_weight += 1.0
-            else:
-                assist = self.action_selector.expert_help_ratio                # 0.85→0.0
-                tilt_boost = 0.0
-                current_tilt = abs(self.euler[0]) + abs(self.euler[1])
-                if current_tilt > 0.20: tilt_boost = 0.30
-                elif current_tilt > 0.15: tilt_boost = 0.15
-                assist = float(np.clip(assist + tilt_boost, 0.0, 0.95))
-                
-                u_final = assist * u_expert + (1.0 - assist) * u_rl
-                self.ep_expert_weight += float(np.clip(assist, 0.0, 1.0))
-        else:
-            u_final = np.clip(action, 0.0, 1.0)
+       
+        u_final = np.clip(action, 0.0, 1.0)
 
         #delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
         #u_final = self.prev_action + delta
@@ -237,8 +219,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         observation = self._get_simple_observation()
 
-        # ===== APLICAR ACCIÓN PAM =====
-        self.action_selector.update_after_step(reward)
         
         # Info simplificado
         info = {
@@ -255,10 +235,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['current_level'] = curriculum_info.get('level', 1)
             # Debug simple
             if done:
-                expert_pct = 100.0 * self.ep_expert_weight  / max(1, self.ep_total_actions)
-                log_print(f"🎯 Expert usage this episode: {expert_pct:.1f}% "
-                        f"({self.ep_expert_weight }/{self.ep_total_actions})")
-                info['expert_usage_pct'] = expert_pct
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.simple_reward_system.update_after_episode(episode_total)
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
@@ -272,7 +248,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
             if self.simple_reward_system:
                 curriculum_info = self.simple_reward_system.get_info()
-                log_print(f"   Level: {info['curriculum'].get('level')}, Target: {self.action_selector.current_action}")
+                log_print(f"   Level: {info['curriculum'].get('level')}")
     
             # Verificar si está cerca de límites
             max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
@@ -317,19 +293,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 frictionAnchor=1
             )
         
-        # Pie derecho - mismas propiedades
-        # p.changeDynamics(
-        #     self.robot_id,
-        #     self.right_foot_link_id, 
-        #     lateralFriction=0.8,
-        #     spinningFriction=0.15,
-        #     rollingFriction=0.01,
-        #     restitution=0.01,
-        #     contactDamping=100,
-        #     contactStiffness=15000,
-        #     frictionAnchor=1
-        # )
-        
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
@@ -354,10 +317,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             rollingFriction=0.005
         )
         
-        # log_print(f"🔧 Contact friction configured:")
-        # log_print(f"   Feet: μ=0.8 (high grip)")
-        # log_print(f"   Legs: μ=0.1 (moderate)")
-        # log_print(f"   Ground: μ=0.6 (standard)")
 
     def contact_with_force(self, link_id, min_F=20.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
@@ -398,11 +357,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if left_contact and not right_contact:
             # Pierna derecha levantada - controlar rodilla derecha (índice 3)
             controlled_knee_idx = 3  # right_knee en joint_torques
-            knee_joint_id = 4        # right_knee_joint en PyBullet
+            knee_joint_id = 4 #self.joint_indices[controlled_knee_idx]        # right_knee_joint en PyBullet
         elif right_contact and not left_contact:
             # Pierna izquierda levantada - controlar rodilla izquierda (índice 1)
             controlled_knee_idx = 1  # left_knee en joint_torques  
-            knee_joint_id = 1        # left_knee_joint en PyBullet
+            knee_joint_id = 1 #self.joint_indices[controlled_knee_idx]        # left_knee_joint en PyBullet
         else:
             # Ambas o ninguna - no aplicar control automático
             return base_torques
@@ -553,21 +512,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             obs.extend([0.0, 0.0])
         
         # ===== CONTACTOS DE PIES (2 elementos) =====
-        left_contact, right_contact=self.contacto_pies_log   
+        left_contact, right_contact=self.contacto_pies   
 
         #print ("contacto pies", left_contact, right_contact)
         obs.extend([float(left_contact), float(right_contact)])
         
         return np.array(obs, dtype=np.float32)
-    
-    @property
-    def contacto_pies_log(self):
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
-        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
-        if self.step_count<=150 and self.step_count%(self.frequency_simulation//10)==0:
-            log_print(f"Contactos pie izquierdo: {left_contact}")
-            log_print(f"Contactos pie derecho: {right_contact}")
-        return left_contact, right_contact
     
     @property
     def contacto_pies(self):
@@ -586,10 +536,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.prev_action = np.zeros(self.num_active_pams)
         self.ep_total_actions = 0
         self.ep_expert_weight = 0.0
-        
-        # Actualizar reward system y action selector del episodio anterior si existen
-        if self.action_selector is not None and hasattr(self, 'episode_reward'):
-            self.action_selector.on_episode_end(self.episode_reward)
 
         
         # ===== RESET FÍSICO =====
@@ -634,19 +580,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system.robot_id = self.robot_id
             self.simple_reward_system.plane_id = self.plane_id
             self.simple_reward_system.env=self
-                 
-        # Nuevo selector de acciones
-        if self.action_selector is None:
-            log_print("🎯 Initializing action_selector for single leg balance")
-            self.action_selector = SingleLegActionSelector(self)
-            self.angle_expert_controller = self.action_selector.angle_controller
-        else:
-            # Actualiza el env dentro del selector (por si cambian intervalos/refs)
-            self.action_selector.env = self
-            self.action_selector.target_switch_time = self.switch_interval
-            self.action_selector.angle_controller = AngleBasedExpertController(self)
-        self.angle_expert_controller = self.action_selector.angle_controller
-        
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
@@ -816,7 +749,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     Fx,Fy,Fz,Mx,My,Mz = reaction
                     both_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
-
+                left_contact, right_contact = self.contacto_pies
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
                 log_print(f"   Left hip: {left_hip_angle:.3f} rad ({math.degrees(left_hip_angle):.1f}°)")
                 log_print(f"   Right hip: {right_hip_angle:.3f} rad ({math.degrees(right_hip_angle):.1f}°)")
@@ -826,6 +759,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
                 log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
                 log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
+                log_print(f"Contactos pie izquierdo: {left_contact}")
+                log_print(f"Contactos pie derecho: {right_contact}")
                 #log_print(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
             
             except Exception as e:
