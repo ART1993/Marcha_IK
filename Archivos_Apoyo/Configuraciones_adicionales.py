@@ -44,6 +44,12 @@ def PAM_McKibben():
         'left_knee_extensor': PAMMcKibben(L0=0.5, r0=0.04, alpha0=np.pi/4),
         'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.03, alpha0=np.pi/4),
         'right_knee_extensor': PAMMcKibben(L0=0.5, r0=0.04, alpha0=np.pi/4),
+
+        # Tobillos - Control antagónico completo
+        'left_anckle_flexor': PAMMcKibben(L0=0.3, r0=0.03, alpha0=np.pi/4),
+        'left_anckle_extensor': PAMMcKibben(L0=0.3, r0=0.04, alpha0=np.pi/4),
+        'right_anckle_flexor': PAMMcKibben(L0=0.3, r0=0.03, alpha0=np.pi/4),
+        'right_anckle_extensor': PAMMcKibben(L0=0.3, r0=0.04, alpha0=np.pi/4),
     }
     
         # ---------- helper: co-contracción torque-neutral para cadera ----------
@@ -125,14 +131,14 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
                                                                                                  env.knee_flexor_moment_arm,
                                                                                                  env.knee_extensor_moment_arm)
     # Tobillo izquierdo
-    pam_forces[8], pam_forces[9], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 8, 9,
-                                                                                                 env.knee_flexor_moment_arm,
-                                                                                                 env.knee_extensor_moment_arm)
+    pam_forces[8], pam_forces[9], R_anckle_flex_L, R_anckle_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 8, 9,
+                                                                                                 env.anckle_flexor_moment_arm,
+                                                                                                 env.anckle_extensor_moment_arm)
     
     # Tobillo derecho
-    pam_forces[10], pam_forces[11], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[5], P, 10, 11,
-                                                                                                 env.knee_flexor_moment_arm,#tratar de cambiar por anckle_flexor_arm
-                                                                                                 env.knee_extensor_moment_arm)#tratar de cambiar por anckle_extensor_arm
+    pam_forces[10], pam_forces[11], R_anckle_flex_R, R_anckle_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[5], P, 10, 11,
+                                                                                                 env.anckle_flexor_moment_arm,#tratar de cambiar por anckle_flexor_arm
+                                                                                                 env.anckle_extensor_moment_arm)#tratar de cambiar por anckle_extensor_arm
 
     # Aplicar a las caderas y rodillas (tienen músculos antagónicos)
     pam_forces[0], pam_forces[1] = apply_reciprocal_inhibition(pam_forces[0], 
@@ -162,10 +168,14 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
 
     # Rodilla izquierda: flexor + resorte/damping pasivos
     joint_torques[1] = (pam_forces[4] * R_knee_flex_L) + (-pam_forces[5] * R_knee_ext_L)
+    # tobillo izquierdo
+    joint_torques[2] = ( pam_forces[8] * R_anckle_flex_L) + (-pam_forces[9] * R_anckle_ext_L)
     # Cadera derecha
-    joint_torques[2] = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
+    joint_torques[3] = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
     # Rodilla derecha
-    joint_torques[3] = (pam_forces[6] * R_knee_flex_R) + (-pam_forces[7] * R_knee_ext_R) 
+    joint_torques[4] = (pam_forces[6] * R_knee_flex_R) + (-pam_forces[7] * R_knee_ext_R)
+    # tobillo derecho
+    joint_torques[5] = (pam_forces[10] * R_anckle_flex_R) + (-pam_forces[11] * R_anckle_flex_R) 
 
     joint_torques[1] -= env.DAMPING_COEFFICIENT * joint_velocities[1]
     joint_torques[3] -= env.DAMPING_COEFFICIENT * joint_velocities[3]
@@ -186,7 +196,11 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
             'left_knee_flexor': R_knee_flex_L,
             'left_knee_extensor': R_knee_ext_L,
             'right_knee_flexor': R_knee_flex_R,
-            'right_knee_extensor': R_knee_ext_R
+            'right_knee_extensor': R_knee_ext_R,
+            'left_anckle_flexor': R_anckle_flex_L,
+            'left_anckle_extensor': R_anckle_ext_L,
+            'right_anckle_flexor': R_anckle_flex_R,
+            'right_anckle_extensor': R_anckle_ext_R
         },
         'inhibition_applied': True,
         'robot_specific_params': True

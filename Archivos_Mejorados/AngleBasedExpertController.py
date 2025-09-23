@@ -226,6 +226,7 @@ class AngleBasedExpertController:
         eps_flex_L = self.eps_from(thetas_i, R_flexor, R_min_ligament, muscle_flexor_name)
         eps_ext_L  = self.eps_from(thetas_i, R_extensor, R_min_ligament, muscle_extensor_name)
         Fco_flex, Fco_ext = split_cocontraction_torque_neutral(F_co, R_flexor, R_extensor, 1e-3)
+        # Ver si es que en las caderas el torque deseado en flexor/extensor está invertido o no
         if desired_torque_i >= 0.0:  # flexión
             F_main = desired_torque_i / max(R_flexor, R_min_ligament)
             P_flexor = env.pam_muscles[muscle_flexor_name].pressure_from_force_and_contraction(Fco_flex + F_main, eps_flex_L)

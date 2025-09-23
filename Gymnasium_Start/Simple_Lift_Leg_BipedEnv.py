@@ -10,7 +10,7 @@ import math
 from collections import deque
 
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
-                                                    calculate_robot_specific_joint_torques_8_pam
+                                                    calculate_robot_specific_joint_torques_12_pam
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
@@ -441,7 +441,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
-        joint_torques = calculate_robot_specific_joint_torques_8_pam(self, pam_pressures)
+        joint_torques = calculate_robot_specific_joint_torques_12_pam(self, pam_pressures)
         
 
         balance_info = self.current_balance_status
@@ -925,7 +925,7 @@ def configure_robot_specific_pam_system(env):
     env.expected_robot_height = expected_height
     
     # Reemplazar el método de cálculo de torques
-    env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques_8_pam
+    env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques_12_pam
     
     log_print("✅ Robot-specific PAM system configured!")
     

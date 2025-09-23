@@ -98,7 +98,7 @@ class SingleLegActionSelector:
         # PASO 2: Calcular torques PD
         pd_torques = self.angle_controller.calculate_pd_torques(target_angles)
         
-        # PASO 3: Convertir a presiones PAM
+        # PASO 3: Convertir a presiones PAM (Tendría que ver si los cambios se realizan bien)
         base_pressures = self.angle_controller.torques_to_pam_pressures(pd_torques, target_angles)
         
         # PASO 4: Añadir correcciones por estabilidad (opcional)
