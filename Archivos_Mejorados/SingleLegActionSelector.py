@@ -24,6 +24,12 @@ class SingleLegActionSelector:
     def __init__(self, env):
         self.env = env
         self.episode_count = 0
+        self.phase = 'prep'         # 'prep' → 'knee_first' → 'hip_lift' → 'hold'
+        self.phase_timer = 0
+        self.PHASE_MIN_STEPS = int(0.15 * self.env.frequency_simulation)  # 150ms por fase
+        self.KNEE_TARGET = 0.60     # rad
+        self.HIP_TARGET  = 0.60     # rad
+        self.CLEARANCE_Z = 0.08     # 8 cm
         
         # ===== PARÁMETROS DE CURRICULUM =====
         if hasattr(env, 'enable_curriculum') and not env.enable_curriculum:
@@ -86,28 +92,84 @@ class SingleLegActionSelector:
             target_angles = self.angle_controller.target_angles['level_2_balance']
         else:
             # 🔗 Sincroniza con la pierna objetivo del sistema de recompensas
+            target_leg = getattr(self.env.simple_reward_system, 'target_leg', 'left')
+            support = 'left' if target_leg == 'right' else 'right'
+            swing   = target_leg
+            keys_sup  = self._side_keys(support)
+            keys_sw   = self._side_keys(swing)
+            # PASO 1: Obtener ángulos objetivo
             if hasattr(self.env, "simple_reward_system"):
                 self.current_action = (SingleLegActionType.BALANCE_LEFT_SUPPORT
                                     if self.env.simple_reward_system.target_leg == 'right'
                                 else SingleLegActionType.BALANCE_RIGHT_SUPPORT)
-            # PASO 1: Obtener ángulos objetivo
-            target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
-        
-        if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
-            # swing = derecha
-            self.angle_controller.set_free_joint('right_anckle', True)
-            self.angle_controller.set_angle_tolerance('right_hip', 0.10)
-            self.angle_controller.set_angle_tolerance('right_knee', 0.10)
-            self.angle_controller.set_angle_tolerance('right_anckle', 0.12)
-            # aseguramos que el soporte no sea libre
-            self.angle_controller.set_free_joint('left_anckle', False)
-        else:
-            # swing = izquierda
-            self.angle_controller.set_free_joint('left_anckle', True)
-            self.angle_controller.set_angle_tolerance('left_hip', 0.10)
-            self.angle_controller.set_angle_tolerance('left_knee', 0.10)
-            self.angle_controller.set_angle_tolerance('left_anckle', 0.12)
-            self.angle_controller.set_free_joint('right_anckle', False)
+            base = self.angle_controller.get_target_angles_for_task(self.current_action)
+            # Lecturas actuales
+            joint_state = p.getJointStates(self.env.robot_id, self.env.joint_indices)
+            joint_angle = np.array([s[0] for s in joint_state], dtype=float)
+            idx=self.env.dict_joints
+            knee_now = joint_angle[idx[keys_sw['knee']]]
+            hip_now  = joint_angle[idx[keys_sw['hip']]]
+            foot_id  = self.env.right_foot_link_id if swing=='right' else self.env.left_foot_link_id
+            foot_z   = p.getLinkState(self.env.robot_id, foot_id)[0][2]
+            
+            
+            if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
+                # swing = derecha
+                self.angle_controller.set_free_joint('right_anckle', True)
+                self.angle_controller.set_angle_tolerance('right_hip', 0.10)
+                self.angle_controller.set_angle_tolerance('right_knee', 0.10)
+                self.angle_controller.set_angle_tolerance('right_anckle', 0.12)
+                # aseguramos que el soporte no sea libre
+                self.angle_controller.set_free_joint('left_anckle', False)
+            else:
+                # swing = izquierda
+                self.angle_controller.set_free_joint('left_anckle', True)
+                self.angle_controller.set_angle_tolerance('left_hip', 0.10)
+                self.angle_controller.set_angle_tolerance('left_knee', 0.10)
+                self.angle_controller.set_angle_tolerance('left_anckle', 0.12)
+                self.angle_controller.set_free_joint('right_anckle', False)
+            # ---- máquina de estados simple ----
+            self.phase_timer += 1
+            if self.phase == 'prep':
+                # pre: asegurar soporte sólido; tobillo swing libre desde ya
+                self.angle_controller.set_free_joint(f"{swing}_anckle", True)
+                self.angle_controller.set_free_joint(f"{support}_anckle", False)
+                # tolerancias más estrictas en soporte
+                self.angle_controller.set_angle_tolerance(f"{support}_hip", 0.05)
+                self.angle_controller.set_angle_tolerance(f"{support}_knee",0.05)
+                self.angle_controller.set_angle_tolerance(f"{support}_anckle",0.05)
+                if self.phase_timer >= self.PHASE_MIN_STEPS:
+                    self.phase = 'knee_first'; self.phase_timer = 0
+
+            elif self.phase == 'knee_first':
+                # Objetivo: flexiona rodilla del swing ≈ 0.6 rad, cadera aún cerca de 0
+                base[keys_sw['knee']] = np.sign(self.KNEE_TARGET)*abs(self.KNEE_TARGET)
+                base[keys_sw['hip']]  = np.sign(self.HIP_TARGET) * 0.05  # casi neutra
+                # tolerancias permisivas
+                self.angle_controller.set_angle_tolerance(keys_sw['knee'], 0.10)
+                self.angle_controller.set_angle_tolerance(keys_sw['hip'],  0.10)
+                # paso de fase cuando la rodilla llega a banda
+                if abs(knee_now - self.KNEE_TARGET) <= 0.10 and self.phase_timer >= self.PHASE_MIN_STEPS:
+                    self.phase = 'hip_lift'; self.phase_timer = 0
+
+            elif self.phase == 'hip_lift':
+                # Objetivo: ahora sí levanta con cadera ≈ 0.6 rad; rodilla se mantiene
+                base[keys_sw['knee']] = np.sign(self.KNEE_TARGET)*abs(self.KNEE_TARGET)
+                base[keys_sw['hip']]  = np.sign(self.HIP_TARGET) * abs(self.HIP_TARGET)
+                self.angle_controller.set_angle_tolerance(keys_sw['hip'], 0.10)
+                # pasa a hold cuando hay clearance
+                if foot_z >= self.CLEARANCE_Z and self.phase_timer >= self.PHASE_MIN_STEPS:
+                    self.phase = 'hold'; self.phase_timer = 0
+
+            elif self.phase == 'hold':
+                # Mantener postura; tobillo swing libre para auto-orientarse
+                self.angle_controller.set_free_joint(f"{swing}_anckle", True)
+                # si el sistema cambia de pierna objetivo, reseteamos
+                if getattr(self.env.simple_reward_system, 'target_leg', swing) != swing:
+                    self.phase = 'prep'; self.phase_timer = 0
+
+            # aplica el “base” ya modificado por fase
+            target_angles = base
         
         # PASO 2: Calcular torques PD
         pd_torques = self.angle_controller.calculate_pd_torques(target_angles)
@@ -206,3 +268,12 @@ class SingleLegActionSelector:
         # Reset para nuevo episodio
         self.current_action = SingleLegActionType.BALANCE_LEFT_SUPPORT
         self.time_in_current_stance = 0
+
+    # utilidades pequeñas
+    def _side_keys(self, side):
+        # side: 'left' or 'right'
+        return {
+            'hip':  f'{side}_hip',
+            'knee': f'{side}_knee',
+            'ankle':f'{side}_anckle'
+        }

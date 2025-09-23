@@ -93,13 +93,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Observation space SIMPLIFICADO: 16 elementos total
         # - 8: Estado del torso (pos, orient, velocidades)
-        # - 4: Estados articulares básicos (posiciones)
+        # - 6: Estados articulares básicos (posiciones)
         # - 2: ZMP básico (x, y)
         # - 2: Contactos de pies (izq, der)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(18,), # Ver si es 18 o 16
+            shape=(18,), 
             dtype=np.float32
         )
         
@@ -306,10 +306,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.8,        # Reducido de 1.2 a 0.8
+                lateralFriction=3.0,        # Reducido de 1.2 a 0.8
                 spinningFriction=0.15,       # Reducido de 0.8 a 0.15
                 rollingFriction=0.01,       # Reducido de 0.1 a 0.01
-                restitution=0.01,           # Reducido de 0.05 a 0.01 (menos rebote)
+                restitution=0.0,           # Reducido de 0.05 a 0.01 (menos rebote)
                 contactDamping=100,         # Aumentado de 50 a 100 (más amortiguación)
                 contactStiffness=15000,      # Aumentado de 10000 a 15000 (más rigidez)
                 frictionAnchor=1
@@ -334,12 +334,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.6,        # Fricción estándar del suelo
+            lateralFriction=0.8,        # Fricción estándar del suelo
             spinningFriction=0.2,
             rollingFriction=0.005
         )
         
-    def contact_with_force(self, link_id, min_F=20.0):
+    def contact_with_force(self, link_id, min_F=15.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False
@@ -631,10 +631,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
-            0: -0.05,   # left_hip - ligera flexión
-            1: 0.05,   # left_knee - extendida (pierna de soporte)
-            3: -0.05,   # right_hip - más flexión
-            4: 0.05,   # right_knee - flexionada (pierna levantada)
+            0: -0.0,   
+            1: 0.0,   
+            2: 0.0,
+            3: -0.0,   
+            4: 0.0, 
+            5: 0.0
         }
         
         for joint_id, pos in initial_positions.items():
@@ -812,8 +814,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
                 left_hip_angle = joint_states[0][0]
                 left_knee_angle = joint_states[1][0]
-                right_hip_angle = joint_states[2][0]
-                right_knee_angle = joint_states[3][0]
+                left_anckle_angle = joint_states[2][0]
+                right_hip_angle = joint_states[3][0]
+                right_knee_angle = joint_states[4][0]
+                right_anckle_angle = joint_states[5][0]
                 for idx, state in zip(self.joint_indices, joint_states):
                     pos, vel, reaction, _ = state
                     Fx,Fy,Fz,Mx,My,Mz = reaction
@@ -825,10 +829,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"   Right hip: {right_hip_angle:.3f} rad ({math.degrees(right_hip_angle):.1f}°)")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
                 log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
+                log_print(f"   Left anckle: {left_anckle_angle:.3f} rad ({math.degrees(left_anckle_angle):.1f}°)")
+                log_print(f"   Right anckle: {right_anckle_angle:.3f} rad ({math.degrees(right_anckle_angle):.1f}°)")
                 log_print(f"   L Hip flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
                 log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
                 log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
                 log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
+                log_print(f"   L anckle flex/ext: {pam_pressures[8]:.3f} / {pam_pressures[9]:.3f}")
+                log_print(f"   R anckle flex/ext: {pam_pressures[10]:.3f} / {pam_pressures[11]:.3f}")
                 #log_print(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
             
             except Exception as e:

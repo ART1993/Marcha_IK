@@ -74,7 +74,7 @@ class AngleBasedExpertController:
             },
             
             'level_3_right_support': {
-                'left_hip': -1.0,     # Pierna izq: levantada 34°
+                'left_hip': 1.0,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
                 'left_anckle':-0.20,
                 'right_hip': -0.0,    # Pierna der: soporte
@@ -116,7 +116,7 @@ class AngleBasedExpertController:
 
     def medir_progreso_cadera_rodilla(self, base, lift_side):
         joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
-        hip_now = joint_states[2][0] if lift_side=='right' else joint_states[0][0]
+        hip_now = joint_states[3][0] if lift_side=='right' else joint_states[0][0]
         # progreso 0..1 entre 0.25 y 0.60 rad aprox
         hip_prog = float(np.clip((abs(hip_now) - 0.25)/0.35, 0.0, 1.0))
         # rodilla acompaña a cadera (mínimo suave para despegar)
@@ -166,13 +166,6 @@ class AngleBasedExpertController:
         order = self.env.joint_names
         # Ángulos objetivo en orden correcto
         target_angles_array = np.array([target_angles_dict[k] for k in order],dtype=float)
-        #     target_angles_dict['left_hip'],
-        #     target_angles_dict['left_knee'],
-        #     target_angles_dict['left_anckle'], 
-        #     target_angles_dict['right_hip'],
-        #     target_angles_dict['right_knee'],
-        #     target_angles_dict['right_anckle'],
-        # ], dtype=float)
 
         torques = np.zeros_like(target_angles_array)
         for i, name in enumerate(order):
@@ -188,10 +181,6 @@ class AngleBasedExpertController:
                 e = 0.0
             torques[i] = self.kp * e + self.kd * (-current_velocities[i])
 
-        # Antibloqueo + rescate cruzado de caderas
-        # pd_torques = self._anti_stall_pd(pd_torques, target_angles_array, current_angles, current_velocities)
-        # pd_torques = self._cross_hip_rescue(pd_torques, target_angles_array, current_angles, current_velocities)
-        # Limitar torques
         pd_torques = np.clip(torques, -self.max_torque, self.max_torque)
 
         

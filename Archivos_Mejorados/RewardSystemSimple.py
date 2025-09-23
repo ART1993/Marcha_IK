@@ -42,8 +42,8 @@ class SimpleProgressiveReward:
         self.single_support_ticks = 0
 
         if self.enable_curriculum==False:
-            # MODO SIN CURRICULUM: sistema fijo y permisivo
-            self.level = 3  # Siempre nivel 3
+            # MODO SIN CURRICULUM: sistema permisivo, control en base a recompensas
+            self.level = 1  # Siempre nivel 1
             self.level_progression_disabled = True
             both_print(f"🎯 Progressive System: CURRICULUM DISABLED")
             both_print(f"   Mode: Fixed basic balance (Level max only)")
@@ -200,7 +200,7 @@ class SimpleProgressiveReward:
         F_R = self.env.contact_normal_force(right_foot_id)
         F_sum = max(F_L + F_R, 1e-6)
         left_hip_id, left_knee_id, left_anckle_id, right_hip_id, right_knee_id, right_anckle_id = self.env.joint_indices
-        min_F=20
+        min_F=15
         # Cambiar pierna cada switch interval
         self.switch_timer += 1
         if self.switch_timer >= self.switch_interval:
