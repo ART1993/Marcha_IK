@@ -33,11 +33,16 @@ def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
 def PAM_McKibben():
 
     return {
-        # Caderas - Control antagónico completo
-        'left_hip_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'left_hip_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
-        'right_hip_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'right_hip_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        # Caderas roll - Control antagónico completo
+        'left_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
+        'left_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        'right_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
+        'right_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        # caderas pitch
+        'left_hip_pitch_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
+        'left_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        'right_hip_pitch_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
+        'right_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
         
         # Rodillas - Control antagónico completo
         'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.03, alpha0=np.pi/4),
@@ -105,22 +110,31 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
                     in zip(env.muscle_names, pam_pressures)], dtype=float)
 
     # Cadera izquierda j0
-    pam_forces[0], pam_forces[1], R_flex_L, R_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 0, 1,
+    pam_forces[0], pam_forces[1], R_flex_roll_L, R_ext_roll_L=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 0, 1,
                                                                                      env.hip_flexor_moment_arm,
                                                                                      env.hip_extensor_moment_arm)
 
     # Cadera derecha j2
-    pam_forces[2], pam_forces[3], R_flex_R, R_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 2, 3,
+    pam_forces[2], pam_forces[3], R_flex_roll_R, R_ext_roll_R=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 2, 3,
+                                                                                     env.hip_flexor_moment_arm,
+                                                                                     env.hip_extensor_moment_arm)
+    
+    pam_forces[4], pam_forces[5], R_flex_pitch_L, R_ext_pitch_L=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 4, 5,
+                                                                                     env.hip_flexor_moment_arm,
+                                                                                     env.hip_extensor_moment_arm)
+
+    # Cadera derecha j2
+    pam_forces[6], pam_forces[7], R_flex_pitch_R, R_ext_pitch_R=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 6, 7,
                                                                                      env.hip_flexor_moment_arm,
                                                                                      env.hip_extensor_moment_arm)
 
     # RODILLAS (solo flexores activos)  (j1 = left_knee, j3 = right_knee)
-    pam_forces[4], pam_forces[5], R_knee_flex_L, R_knee_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[1], P, 4, 5,
+    pam_forces[8], pam_forces[9], R_knee_flex_L, R_knee_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[1], P, 8, 9,
                                                                                      env.knee_flexor_moment_arm,
                                                                                      env.knee_extensor_moment_arm)
 
     # flexor_rodilla_R, extensor_rodilla_R=env.muscle_names[6], env.muscle_names[7]
-    pam_forces[6], pam_forces[7], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[3], P, 6, 7,
+    pam_forces[10], pam_forces[11], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[3], P, 10, 11,
                                                                                                  env.knee_flexor_moment_arm,
                                                                                                  env.knee_extensor_moment_arm)
 
@@ -140,16 +154,20 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
 
     # Convertir a torques articulares
     joint_torques = np.zeros(4)
-
+    # TODO Ver que cambios tengo que aplicar para los torques ya queno tiene por que tener mismo torque en x que en y
     # Cadera izquierda: flexión positiva por flexor, extensión por extensor
-    joint_torques[0] = ( pam_forces[0] * R_flex_L) + (-pam_forces[1] * R_ext_L)
+    joint_torques[0] = ( pam_forces[0] * R_flex_roll_L) + (-pam_forces[1] * R_ext_roll_L)
+    # Cadera izquierda_pitch: flexión positiva por flexor, extensión por extensor
+    joint_torques[1] = ( pam_forces[4] * R_flex_pitch_L) + (-pam_forces[5] * R_ext_pitch_L)
 
     # Rodilla izquierda: flexor + resorte/damping pasivos
-    joint_torques[1] = (pam_forces[4] * R_knee_flex_L) + (-pam_forces[5] * R_knee_ext_L)
+    joint_torques[2] = (pam_forces[8] * R_knee_flex_L) + (-pam_forces[9] * R_knee_ext_L)
     # Cadera derecha
-    joint_torques[2] = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
+    joint_torques[3] = ( pam_forces[2] * R_flex_roll_R) + (-pam_forces[3] * R_ext_roll_R)
+    # Cadera derecha_pitch
+    joint_torques[3] = ( pam_forces[6] * R_flex_pitch_R) + (-pam_forces[7] * R_ext_pitch_R)
     # Rodilla derecha
-    joint_torques[3] = (pam_forces[6] * R_knee_flex_R) + (-pam_forces[7] * R_knee_ext_R) 
+    joint_torques[5] = (pam_forces[10] * R_knee_flex_R) + (-pam_forces[11] * R_knee_ext_R) 
 
     joint_torques[1] -= env.DAMPING_COEFFICIENT * joint_velocities[1]
     joint_torques[3] -= env.DAMPING_COEFFICIENT * joint_velocities[3]
@@ -163,10 +181,14 @@ def calculate_robot_specific_joint_torques_8_pam(env, pam_pressures):
         'raw_forces': pam_forces,
         'joint_torques': joint_torques.copy(),
         'moment_arms': {
-            'left_hip_flexor': R_flex_L,
-            'left_hip_extensor': R_ext_L,
-            'right_hip_flexor': R_flex_R,
-            'right_hip_extensor': R_ext_R,
+            'left_hip_roll_flexor': R_flex_roll_L,
+            'left_hip_roll_extensor': R_ext_roll_L,
+            'right_hip_roll_flexor': R_flex_roll_R,
+            'right_hip_roll_extensor': R_ext_roll_R,
+            'left_hip_pitch_flexor': R_flex_roll_L,
+            'left_hip_pitch_extensor': R_ext_roll_L,
+            'right_hip_pitch_flexor': R_flex_roll_R,
+            'right_hip_pitch_extensor': R_ext_roll_R,
             'left_knee_flexor': R_knee_flex_L,
             'left_knee_extensor': R_knee_ext_L,
             'right_knee_flexor': R_knee_flex_R,

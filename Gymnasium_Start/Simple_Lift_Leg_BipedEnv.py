@@ -50,10 +50,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # self.action_space_type = action_space  # Solo "pam"
         self.probe_expert_only = probe_expert_only
         self.testeo_movimiento=testeo_movimiento
-
-        self.muscle_names = ['left_hip_flexor', 'left_hip_extensor', 'right_hip_flexor', 
-                            'right_hip_extensor', 'left_knee_flexor','left_knee_extensor', 
-                            'right_knee_flexor','right_knee_extensor']
+        muscles_hip_roll=['left_hip_roll_flexor', 'left_hip_roll_extensor', 'right_hip_roll_flexor', 
+                            'right_hip_roll_extensor']
+        muscles_hip_pitch=['left_hip_pitch_flexor', 'left_hip_pitch_extensor', 'right_hip_pitch_flexor', 
+                            'right_hip_pitch_extensor']
+        muscles_knee=['left_knee_flexor','left_knee_extensor','right_knee_flexor','right_knee_extensor']
+        self.muscle_names = muscles_hip_roll + muscles_hip_pitch + muscles_knee
         
         self.num_active_pams = len(self.muscle_names)
 
@@ -89,15 +91,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation space SIMPLIFICADO: 16 elementos total
+        # Observation space SIMPLIFICADO: 18 elementos total
         # - 8: Estado del torso (pos, orient, velocidades)
-        # - 4: Estados articulares básicos (posiciones)
+        # - 6: Estados articulares básicos (posiciones)
         # - 2: ZMP básico (x, y)
         # - 2: Contactos de pies (izq, der)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(16,),
+            shape=(18,),
             dtype=np.float32
         )
         
@@ -127,10 +129,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.joint_indices = [0, 1, 3, 4]  # left_hip, left_knee, right_hip, right_knee
-        self.joint_names = ['left_hip', 'left_knee', 'right_hip', 'right_knee']
-        self.left_foot_link_id = 2
-        self.right_foot_link_id = 5
+        self.joint_indices = [0, 1, 2, 4, 5, 6]  # left_hip, left_knee, right_hip, right_knee
+        self.joint_names = ['left_hip_roll','left_hip_pitch' 'left_knee', 'right_hip_roll','right_hip_pitch', 'right_knee']
+        self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
+        self.left_foot_link_id = 3
+        self.right_foot_link_id = 7
 
         # Añadir tracking de pierna levantada
         self.raised_leg = 'left'  # 'left' o 'right' - cuál pierna está levantada
@@ -357,12 +360,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if left_contact and not right_contact:
             # Pierna derecha levantada - controlar rodilla derecha (índice 3)
-            controlled_knee_idx = 3  # right_knee en joint_torques
-            knee_joint_id = 4 #self.joint_indices[controlled_knee_idx]        # right_knee_joint en PyBullet
+            knee_joint_id = self.dict_joints["right_knee"] #self.joint_indices[controlled_knee_idx]   6     # right_knee_joint en PyBullet
+            controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # right_knee en joint_torques ultimo valor
         elif right_contact and not left_contact:
             # Pierna izquierda levantada - controlar rodilla izquierda (índice 1)
-            controlled_knee_idx = 1  # left_knee en joint_torques  
-            knee_joint_id = 1 #self.joint_indices[controlled_knee_idx]        # left_knee_joint en PyBullet
+            knee_joint_id = self.dict_joints["left_knee"] #self.joint_indices[controlled_knee_idx]    2    # left_knee_joint en PyBullet
+            controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # left_knee en joint_torques  tercero
         else:
             # Ambas o ninguna - no aplicar control automático
             return base_torques
