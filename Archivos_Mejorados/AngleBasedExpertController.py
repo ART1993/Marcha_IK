@@ -37,17 +37,21 @@ class AngleBasedExpertController:
             'level_1_balance': {
                 'left_hip': -0.05,
                 'left_knee': 0.05,
+                'left_anckle':0.00,
                 'right_hip': -0.05,
                 'right_knee': 0.05,
+                'right_anckle':0.00,
                 'description': 'Posición erguida básica'
             },
             
             # NIVEL 2: Balance estable con micro-ajustes
             'level_2_balance': {
-                'left_hip': -0.05,    # Ligera flexión para estabilidad
+                'left_hip': -0.05,
                 'left_knee': 0.05,
+                'left_anckle':0.00,
                 'right_hip': -0.05,
                 'right_knee': 0.05,
+                'right_anckle':0.00,
                 'description': 'Balance estable con micro-flexión'
             },
             
@@ -55,29 +59,33 @@ class AngleBasedExpertController:
             'level_3_left_support': {
                 'left_hip': -0.0,     # Pierna izq: soporte
                 'left_knee': 0.00,
+                'left_anckle':0.00,
                 'right_hip': 1.0,    # Pierna der: levantada 34°
                 'right_knee': 0.6,
+                'right_anckle':-0.2,
                 'description': 'Pierna derecha levantada'
             },
             
             'level_3_right_support': {
                 'left_hip': -1.0,     # Pierna izq: levantada 34°
                 'left_knee': 0.6,
+                'left_anckle':-0.20,
                 'right_hip': -0.0,    # Pierna der: soporte
                 'right_knee': 0.00,
+                'right_anckle':0.0,
                 'description': 'Pierna izquierda levantada'
             }
         }
     
     def get_target_angles_for_task(self, current_task):
         """
-        Obtener ángulos objetivo según la tarea actual
-        
-        Args:
-            current_task: SingleLegActionType enum
+            Obtener ángulos objetivo según la tarea actual
             
-        Returns:
-            dict: Ángulos objetivo para cada articulación
+            Args:
+                current_task: SingleLegActionType enum
+                
+            Returns:
+                dict: Ángulos objetivo para cada articulación
         """
         
         if current_task == SingleLegActionType.BALANCE_LEFT_SUPPORT:
@@ -151,9 +159,11 @@ class AngleBasedExpertController:
         # Ángulos objetivo en orden correcto
         target_angles_array = np.array([
             target_angles_dict['left_hip'],
-            target_angles_dict['left_knee'], 
+            target_angles_dict['left_knee'],
+            target_angles_dict['left_anckle'], 
             target_angles_dict['right_hip'],
-            target_angles_dict['right_knee']
+            target_angles_dict['right_knee'],
+            target_angles_dict['right_anckle'],
         ], dtype=float)
         
         # Calcular errores
@@ -191,7 +201,7 @@ class AngleBasedExpertController:
         pam_pressures = np.zeros(self.env.num_active_pams)
         
         # ===== CONVERSIÓN TORQUE → PRESIONES PAM =====
-        pam = self.torques_to_pam_pressures_for_8_pam(desired_torques, pam_pressures)
+        pam = self.torques_to_pam_pressures_for_12_pam(desired_torques, pam_pressures)
         #pam = self._hip_complementary_routing(pam, desired_torques)       # si ya lo tienes
         #pam = self._ensure_opposition(pam, desired_torques, target_angles) # ⬅️ NUEVO
         
@@ -229,7 +239,7 @@ class AngleBasedExpertController:
         return self.P_to_u(P_flexor,muscle_flexor_name), self.P_to_u(P_extensor, muscle_extensor_name)
 
     
-    def torques_to_pam_pressures_for_8_pam(self,desired_torques, pam_pressures):
+    def torques_to_pam_pressures_for_12_pam(self,desired_torques, pam_pressures):
         env = self.env
         muscle_names=env.muscle_names
         
@@ -239,10 +249,12 @@ class AngleBasedExpertController:
 
         R_min_base = 1e-3 # Para evitar división por cero
         R_min_knee  = 1e-2    # ↑ mayor que base
+        R_min_anckle  = 1e-2    # = que que tobillo
         # Antes era el min de 30
         F_co_hip = 20.0 #Genero rigidez y evito saturación
         F_co_knee   = 50.0    # nueva rigidez basal de rodilla
-        
+        Fo_co_anckle = 60.0 # Rigidez para evitar que se mueva demasiado
+        #Comprobar si las posiciones de angulos deseados y thetas es correcto
         # ------ CADERA IZQUIERDA (antagónica: PAM0 flexor, PAM1 extensor) ------
         pam_pressures[0], pam_pressures[1] = self.par_presiones_flexor_extensor(env, muscle_names[0], muscle_names[1],
                                                                                 desired_torques[0], thetas[0],
@@ -252,7 +264,7 @@ class AngleBasedExpertController:
         
         # ------ CADERA DERECHA (PAM2 flexor, PAM3 extensor) ------
         pam_pressures[2], pam_pressures[3] = self.par_presiones_flexor_extensor(env, muscle_names[2], muscle_names[3],
-                                                                                desired_torques[2], thetas[2],
+                                                                                desired_torques[3], thetas[3],
                                                                                 R_min_base, F_co_hip,
                                                                                 env.hip_flexor_moment_arm,env.hip_extensor_moment_arm)
 
@@ -264,9 +276,21 @@ class AngleBasedExpertController:
 
         # ------ RODILLA Derecha (antagónica: PAM6 flexor, PAM7 extensor) ------
         pam_pressures[6], pam_pressures[7] = self.par_presiones_flexor_extensor(env, muscle_names[6], muscle_names[7],
-                                                                                desired_torques[3], thetas[3],
+                                                                                desired_torques[4], thetas[4],
                                                                                 R_min_knee, F_co_knee,
                                                                                 env.knee_flexor_moment_arm,env.knee_extensor_moment_arm)
+        
+        # ------ TOBILLO Izquierdo (antagónica: PAM8 flexor, PAM9 extensor) ------
+        pam_pressures[8], pam_pressures[9] = self.par_presiones_flexor_extensor(env, muscle_names[8], muscle_names[9],
+                                                                                desired_torques[2], thetas[2],
+                                                                                R_min_anckle, Fo_co_anckle,
+                                                                                env.knee_flexor_moment_arm,env.knee_extensor_moment_arm)
+        
+        # ------ TOBILLO Derecho (antagónica: PAM6 flexor, PAM7 extensor) ------
+        pam_pressures[10], pam_pressures[11] = self.par_presiones_flexor_extensor(env, muscle_names[10], muscle_names[11],
+                                                                                desired_torques[5], thetas[5],
+                                                                                R_min_anckle, Fo_co_anckle,
+                                                                                env.anckle_flexor_moment_arm, env.anckle_extensor_moment_arm)
 
         return pam_pressures
 

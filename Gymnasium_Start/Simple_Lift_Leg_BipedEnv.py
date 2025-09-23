@@ -710,20 +710,27 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
     def parametros_torque_pam(self):
         # Momentos de brazo calculados desde dimensiones reales
-        self.HIP_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
-        self.HIP_FLEXOR_VARIATION = 0.0101     # ±1.01cm variación por ángulo
 
         self.KP = 80.0   # Ganancia proporcional
         self.KD = 12.0   # Ganancia derivativa
+
+        self.HIP_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
+        self.HIP_FLEXOR_VARIATION = self.HIP_FLEXOR_BASE_ARM/4.98     # ±1.01cm variación por ángulo 
         
         self.HIP_EXTENSOR_BASE_ARM = 0.0628    
-        self.HIP_EXTENSOR_VARIATION = 0.0126   
+        self.HIP_EXTENSOR_VARIATION = self.HIP_EXTENSOR_BASE_ARM/ 4.98 #+-1.26cm   
 
         self.KNEE_FLEXOR_BASE_ARM = 0.0566     
-        self.KNEE_FLEXOR_VARIATION = 0.0113    
+        self.KNEE_FLEXOR_VARIATION = self.KNEE_FLEXOR_BASE_ARM/5 # +-1.13 cm    
 
         self.KNEE_EXTENSOR_BASE_ARM = 0.0640     
-        self.KNEE_EXTENSOR_VARIATION = 0.0120    
+        self.KNEE_EXTENSOR_VARIATION = self.KNEE_EXTENSOR_BASE_ARM/5 # +-1.20 cm    
+
+        self.ANCKLE_FLEXOR_BASE_ARM = 0.0610     
+        self.ANCKLE_FLEXOR_VARIATION = self.ANCKLE_FLEXOR_BASE_ARM/5.2 # +-1.17 cm    
+
+        self.ANCKLE_EXTENSOR_BASE_ARM = 0.0680     
+        self.ANCKLE_EXTENSOR_VARIATION = self.ANCKLE_EXTENSOR_BASE_ARM/5.2 # +-1.30 cm 
         
         # Parámetros de resortes pasivos (calculados desde momento gravitacional)
         self.PASSIVE_SPRING_STRENGTH = 180.5   # N⋅m 
@@ -752,7 +759,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         Más efectivo en rango medio de flexión.
         """
         # Extensor más efectivo en flexión ligera-moderada
-        angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
+        angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera. Probar distintos angulos
         return self.HIP_EXTENSOR_BASE_ARM + self.HIP_EXTENSOR_VARIATION * angle_factor
 
     def knee_flexor_moment_arm(self, angle):
@@ -773,6 +780,21 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle - np.pi/6)
         return self.KNEE_EXTENSOR_BASE_ARM + self.KNEE_EXTENSOR_VARIATION * angle_factor
+    
+    def anckle_flexor_moment_arm(self, angle):
+        """
+            Momento de brazo de flexión de talon
+        """
+        angle_factor = np.cos(angle + np.pi/6)
+        return self.ANCKLE_FLEXOR_BASE_ARM + self.ANCKLE_FLEXOR_VARIATION*angle_factor
+    
+    def anckle_extensor_moment_arm(self, angle):
+        """
+            Momento de brazo de extensión de talon
+        """
+        angle_factor = np.cos(angle - np.pi/6)
+        return self.ANCKLE_EXTENSOR_BASE_ARM + self.ANCKLE_EXTENSOR_VARIATION*angle_factor
+
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
@@ -792,7 +814,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 right_hip_angle = joint_states[2][0]
                 right_knee_angle = joint_states[3][0]
                 for idx, state in zip(self.joint_indices, joint_states):
-                    pos, vel, reaction, applied = state
+                    pos, vel, reaction, _ = state
                     Fx,Fy,Fz,Mx,My,Mz = reaction
                     both_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
