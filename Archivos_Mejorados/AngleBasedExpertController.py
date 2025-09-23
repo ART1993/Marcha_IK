@@ -30,6 +30,13 @@ class AngleBasedExpertController:
         self.CONTACT_ENTER_N = 25.0       # N para "entrar" en apoyo
         self.CONTACT_EXIT_N  = 17.0       # N para "salir" de apoyo
 
+        self.angle_tolerance = {
+            'left_hip': 0.05, 'left_knee': 0.05, 'left_anckle': 0.05,
+            'right_hip': 0.05, 'right_knee': 0.05, 'right_anckle': 0.05,
+        }
+        # articulaciones marcadas como "libres" (sin objetivo rígido)
+        self.free_joints = set()
+
         
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
@@ -156,30 +163,36 @@ class AngleBasedExpertController:
         current_angles = [state[0] for state in joint_states] # q en DK o PD
         current_velocities = [state[1] for state in joint_states]# qDot
         
+        order = self.env.joint_names
         # Ángulos objetivo en orden correcto
-        target_angles_array = np.array([
-            target_angles_dict['left_hip'],
-            target_angles_dict['left_knee'],
-            target_angles_dict['left_anckle'], 
-            target_angles_dict['right_hip'],
-            target_angles_dict['right_knee'],
-            target_angles_dict['right_anckle'],
-        ], dtype=float)
-        
-        # Calcular errores
-        angle_errors = np.array(target_angles_array) - np.array(current_angles)
-        velocity_errors = -np.array(current_velocities)  # Queremos velocidad 0
-        
-        # Control PD
-        pd_torques = self.kp * angle_errors + self.kd * velocity_errors
-        # Limitar torques
-        # pd_torques = np.clip(pd_torques, -self.max_torque, self.max_torque)
+        target_angles_array = np.array([target_angles_dict[k] for k in order],dtype=float)
+        #     target_angles_dict['left_hip'],
+        #     target_angles_dict['left_knee'],
+        #     target_angles_dict['left_anckle'], 
+        #     target_angles_dict['right_hip'],
+        #     target_angles_dict['right_knee'],
+        #     target_angles_dict['right_anckle'],
+        # ], dtype=float)
+
+        torques = np.zeros_like(target_angles_array)
+        for i, name in enumerate(order):
+            if name in self.free_joints:
+                # articulación libre: sólo amortiguar un poco (o nada)
+                kd_i = 0.3 * self.kd
+                torques[i] = - kd_i * current_velocities[i]
+                continue
+            tol = self.angle_tolerance.get(name, 0.0)
+            e = target_angles_array[i] - current_angles[i]
+            # deadband
+            if abs(e) <= tol:
+                e = 0.0
+            torques[i] = self.kp * e + self.kd * (-current_velocities[i])
 
         # Antibloqueo + rescate cruzado de caderas
         # pd_torques = self._anti_stall_pd(pd_torques, target_angles_array, current_angles, current_velocities)
         # pd_torques = self._cross_hip_rescue(pd_torques, target_angles_array, current_angles, current_velocities)
         # Limitar torques
-        pd_torques = np.clip(pd_torques, -self.max_torque, self.max_torque)
+        pd_torques = np.clip(torques, -self.max_torque, self.max_torque)
 
         
         return pd_torques
@@ -285,7 +298,7 @@ class AngleBasedExpertController:
         pam_pressures[8], pam_pressures[9] = self.par_presiones_flexor_extensor(env, muscle_names[8], muscle_names[9],
                                                                                 desired_torques[2], thetas[2],
                                                                                 R_min_anckle, Fo_co_anckle,
-                                                                                env.knee_flexor_moment_arm,env.knee_extensor_moment_arm)
+                                                                                env.anckle_flexor_moment_arm,env.anckle_extensor_moment_arm)
         
         # ------ TOBILLO Derecho (antagónica: PAM6 flexor, PAM7 extensor) ------
         pam_pressures[10], pam_pressures[11] = self.par_presiones_flexor_extensor(env, muscle_names[10], muscle_names[11],
@@ -483,3 +496,16 @@ class AngleBasedExpertController:
             # Fco = k * (|tauL|+|tauR|)  -> reparte con split_cocontraction_torque_neutral(...)
             # y conviértelo a presiones invertidas en ambos PAMs de cada cadera.
         return np.clip(pam, 0.0, 1.0)
+    
+    # ====================================================================================================================================================================================================================================================== #
+    # ====================================================================================== Generación de tolerancia de angulos objetivo ================================================================================================================== #
+    # ====================================================================================================================================================================================================================================================== #
+
+
+    # API pública
+    def set_angle_tolerance(self, joint_name, tol_rad):
+        self.angle_tolerance[joint_name] = float(tol_rad)
+
+    def set_free_joint(self, joint_name, free=True):
+        if free: self.free_joints.add(joint_name)
+        else:    self.free_joints.discard(joint_name)

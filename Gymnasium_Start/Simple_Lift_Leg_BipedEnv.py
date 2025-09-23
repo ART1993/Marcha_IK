@@ -735,6 +735,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Parámetros de resortes pasivos (calculados desde momento gravitacional)
         self.PASSIVE_SPRING_STRENGTH = 180.5   # N⋅m 
         self.DAMPING_COEFFICIENT = 12.0        # N⋅m⋅s/rad (optimizado para masa real)
+        self.ANKLE_DAMPING_COEFF = 0.5 * self.DAMPING_COEFFICIENT
         
         # Control antagónico
         self.INHIBITION_FACTOR = 0.3           # 30% inhibición recíproca

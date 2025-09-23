@@ -170,15 +170,22 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     joint_torques[1] = (pam_forces[4] * R_knee_flex_L) + (-pam_forces[5] * R_knee_ext_L)
     # tobillo izquierdo
     joint_torques[2] = ( pam_forces[8] * R_anckle_flex_L) + (-pam_forces[9] * R_anckle_ext_L)
+
     # Cadera derecha
     joint_torques[3] = ( pam_forces[2] * R_flex_R) + (-pam_forces[3] * R_ext_R)
     # Rodilla derecha
     joint_torques[4] = (pam_forces[6] * R_knee_flex_R) + (-pam_forces[7] * R_knee_ext_R)
     # tobillo derecho
-    joint_torques[5] = (pam_forces[10] * R_anckle_flex_R) + (-pam_forces[11] * R_anckle_flex_R) 
+    joint_torques[5] = (pam_forces[10] * R_anckle_flex_R) + (-pam_forces[11] * R_anckle_ext_R) 
 
     joint_torques[1] -= env.DAMPING_COEFFICIENT * joint_velocities[1]
-    joint_torques[3] -= env.DAMPING_COEFFICIENT * joint_velocities[3]
+    joint_torques[4] -= env.DAMPING_COEFFICIENT * joint_velocities[4]
+
+    # damping suave de tobillos (opcional, ~40–60% del de rodilla)
+    if hasattr(env, "ANKLE_DAMPING_COEFF"):
+        joint_torques[2] -= env.ANKLE_DAMPING_COEFF * joint_velocities[2]
+        joint_torques[5] -= env.ANKLE_DAMPING_COEFF * joint_velocities[5]
+
     joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====

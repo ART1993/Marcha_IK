@@ -92,8 +92,22 @@ class SingleLegActionSelector:
                                 else SingleLegActionType.BALANCE_RIGHT_SUPPORT)
             # PASO 1: Obtener ángulos objetivo
             target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
-        # PASO 1: Obtener ángulos objetivo
-        #target_angles = self.angle_controller.get_target_angles_for_task(self.current_action)
+        
+        if self.current_action == SingleLegActionType.BALANCE_LEFT_SUPPORT:
+            # swing = derecha
+            self.angle_controller.set_free_joint('right_anckle', True)
+            self.angle_controller.set_angle_tolerance('right_hip', 0.10)
+            self.angle_controller.set_angle_tolerance('right_knee', 0.10)
+            self.angle_controller.set_angle_tolerance('right_anckle', 0.12)
+            # aseguramos que el soporte no sea libre
+            self.angle_controller.set_free_joint('left_anckle', False)
+        else:
+            # swing = izquierda
+            self.angle_controller.set_free_joint('left_anckle', True)
+            self.angle_controller.set_angle_tolerance('left_hip', 0.10)
+            self.angle_controller.set_angle_tolerance('left_knee', 0.10)
+            self.angle_controller.set_angle_tolerance('left_anckle', 0.12)
+            self.angle_controller.set_free_joint('right_anckle', False)
         
         # PASO 2: Calcular torques PD
         pd_torques = self.angle_controller.calculate_pd_torques(target_angles)
