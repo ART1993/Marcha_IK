@@ -95,9 +95,9 @@ class SimpleProgressiveReward:
         # Inclinación crítica - MÁS PERMISIVO según nivel
         if self.enable_curriculum==False:
             self.max_tilt_by_level = {
-                1: 0.5,  # 
-                2: 0.5,  # 
-                3: 0.5   # 
+                1: 0.8,  # 
+                2: 0.8,  # 
+                3: 0.8   # 
             }
             both_print(f"   Max tilt: 70° (permisivo)")
         else:

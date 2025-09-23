@@ -60,7 +60,7 @@ def train_balance_pure_rl(total_timesteps=1000000, n_envs=4, resume=True):
     """
     Función principal para entrenar balance con RL PURO (sin ayuda experta)
     """
-    
+    logger = init_simple_logging()
     print("🎯 PURE RL BALANCE TRAINING")
     print("=" * 60)
     print("Objetivo específico:")
@@ -82,5 +82,5 @@ def train_balance_pure_rl(total_timesteps=1000000, n_envs=4, resume=True):
         print(f"📁 Modelo guardado en: {trainer.model_dir}")
         print(f"📊 Logs disponibles en: {trainer.logs_dir}")
         print("🤖 El modelo aprendió sin ayuda experta")
-    
+    logger.close()
     return trainer, model

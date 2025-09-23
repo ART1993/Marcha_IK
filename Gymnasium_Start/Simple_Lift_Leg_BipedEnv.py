@@ -203,8 +203,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         p.stepSimulation()
 
-        # ✅ LLAMAR DEBUG OCASIONALMENTE
-        self._debug_joint_angles_and_pressures(u_final)
+        
 
         
         #if self.simple_reward_system:
@@ -213,6 +212,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         system_used = "PROGRESSIVE"
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
+        # ✅ LLAMAR DEBUG OCASIONALMENTE
+        self._debug_joint_angles_and_pressures(u_final, done)
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
@@ -729,14 +730,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
-    def _debug_joint_angles_and_pressures(self, pam_pressures):
+    def _debug_joint_angles_and_pressures(self, pam_pressures, done):
         """
             ✅ MÉTODO DE DEBUG para verificar la lógica biomecánica
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
         
-        if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundo aprox
+        if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
                 # Joint indices [0,1,3,4]
                 joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
