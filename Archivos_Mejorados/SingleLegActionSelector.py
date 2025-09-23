@@ -27,9 +27,11 @@ class SingleLegActionSelector:
         self.phase = 'prep'         # 'prep' → 'knee_first' → 'hip_lift' → 'hold'
         self.phase_timer = 0
         self.PHASE_MIN_STEPS = int(0.15 * self.env.frequency_simulation)  # 150ms por fase
-        self.KNEE_TARGET = 0.60     # rad
-        self.HIP_TARGET  = 0.60     # rad
-        self.CLEARANCE_Z = 0.08     # 8 cm
+        self.KNEE_TARGET = self.env.KNEE_TARGET     # rad
+        self.hip_tol    = self.env.hip_tol         # ±rad
+        self.HIP_TARGET  = self.env.HIP_TARGET     # rad
+        self.knee_tol   = self.env.knee_tol         # ±rad
+        self.CLEARANCE_Z = self.env.CLEARANCE_Z     # 8 cm
         
         # ===== PARÁMETROS DE CURRICULUM =====
         if hasattr(env, 'enable_curriculum') and not env.enable_curriculum:

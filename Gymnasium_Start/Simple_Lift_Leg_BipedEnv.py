@@ -306,7 +306,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=3.0,        # Reducido de 1.2 a 0.8
+                lateralFriction=1.0,        # Reducido de 1.2 a 0.8
                 spinningFriction=0.15,       # Reducido de 0.8 a 0.15
                 rollingFriction=0.01,       # Reducido de 0.1 a 0.01
                 restitution=0.0,           # Reducido de 0.05 a 0.01 (menos rebote)
@@ -334,7 +334,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.8,        # Fricción estándar del suelo
+            lateralFriction=1.0,        # Fricción estándar del suelo
             spinningFriction=0.2,
             rollingFriction=0.005
         )
@@ -746,6 +746,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
         self.MAX_REASONABLE_TORQUE = 240.0     # N⋅m (factor de seguridad incluido)
+        self.objetivos_entrenameinto()
+
+    def objetivos_entrenameinto(self):
+        self.KNEE_TARGET = 0.60     # rad
+        self.hip_tol    = 0.10         # ±rad
+        self.HIP_TARGET  = 0.60     # rad
+        self.knee_tol   = 0.10         # ±rad
+        self.CLEARANCE_Z = 0.08     # 8 cm
 
     def hip_flexor_moment_arm(self, angle):
         """
@@ -867,6 +875,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if pam_pressures[6] > 0.7 and pam_pressures[7] > 0.7:
             cocontraction_level = (pam_pressures[6] + pam_pressures[7]) / 2
             warnings.append(f"Right Knee co-contraction: {cocontraction_level:.1%}")
+        if pam_pressures[8] > 0.7 and pam_pressures[9] > 0.7:
+            cocontraction_level = (pam_pressures[6] + pam_pressures[7]) / 2
+            warnings.append(f"Left Anckle co-contraction: {cocontraction_level:.1%}")
+        if pam_pressures[10] > 0.7 and pam_pressures[11] > 0.7:
+            cocontraction_level = (pam_pressures[6] + pam_pressures[7]) / 2
+            warnings.append(f"Right Anckle co-contraction: {cocontraction_level:.1%}")
         
         
         # ===== VALIDAR TORQUES DENTRO DE CAPACIDAD FÍSICA =====

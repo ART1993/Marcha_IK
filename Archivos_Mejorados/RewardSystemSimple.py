@@ -40,6 +40,11 @@ class SimpleProgressiveReward:
         self.enable_curriculum = env.enable_curriculum
         self.robot_id = env.robot_id
         self.single_support_ticks = 0
+        self.KNEE_TARGET = self.env.KNEE_TARGET     # rad
+        self.hip_tol    = self.env.hip_tol         # ±rad
+        self.HIP_TARGET  = self.env.HIP_TARGET     # rad
+        self.knee_tol   = self.env.knee_tol         # ±rad
+        self.CLEARANCE_Z = self.env.CLEARANCE_Z     # 8 cm
 
         if self.enable_curriculum==False:
             # MODO SIN CURRICULUM: sistema permisivo, control en base a recompensas
@@ -250,19 +255,28 @@ class SimpleProgressiveReward:
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
         foot_z = p.getLinkState(self.robot_id, target_foot_id)[0][2]
-        clearance_target = 0.08  # 8 cm
+        clearance_target = self.CLEARANCE_Z  # 8 cm self.CLEARANCE_Z en SingleLeg ActionSelector
         clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 1.5
 
         # Rodilla (≈0.6 rad)
         knee_id  = right_knee_id if target_is_right else left_knee_id
         knee_ang = p.getJointState(self.robot_id, knee_id)[0]
-        knee_bonus = (1.0 - min(abs(knee_ang - 0.6), 1.0)) * 1.0
+        #knee_bonus = (1.0 - min(abs(knee_ang - 0.6), 1.0)) * 1.0
+        knee_err = abs(knee_ang - self.KNEE_TARGET)
+        if knee_err <= self.knee_tol:
+            knee_bonus = 1.0  # lleno si está dentro de la banda
+        else:
+            knee_bonus = max(0.0, 1.0 - (knee_err - self.knee_tol))  # decae lineal
         knee_bonus = 0.0 if target_foot_down else knee_bonus
 
         # Cadera (≈|0.6| rad) — uso el módulo para no depender del signo
         hip_id  = right_hip_id if target_is_right else left_hip_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
-        hip_bonus = (1.0 - min(abs(abs(hip_ang) - 0.6), 1.0)) * 0.7
+        hip_err = abs(abs(hip_ang) - self.HIP_TARGET)
+        if hip_err <= self.hip_tol:
+            hip_bonus = 0.7
+        else:
+            hip_bonus = max(0.0, 0.7 - (hip_err - self.hip_tol))  # decae lineal
         hip_bonus = 0.0 if target_foot_down else hip_bonus
 
         # Gating de bonos de forma: solo si has transferido suficiente carga al pie de soporte
