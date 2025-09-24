@@ -10,7 +10,7 @@ import math
 from collections import deque
 
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
-                                                    calculate_robot_specific_joint_torques_8_pam
+                                                    calculate_robot_specific_joint_torques_12_pam
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
@@ -66,7 +66,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self._balance_start_time = 0
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
-        self.urdf_path = "2_legged_human_like_robot.urdf"
+        self.urdf_path = "2_legged_human_like_robot12DOF.urdf"
         self.frequency_simulation=400.0
         self.switch_interval=2000  # Intervalo para cambiar pierna objetivo en curriculum
         self.time_step = 1.0 / self.frequency_simulation
@@ -83,7 +83,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
         self.recent_rewards=deque(maxlen=50)
-        # Action space: 6 presiones PAM normalizadas [0, 1]
+        # Action space: 12 presiones PAM normalizadas [0, 1]
         self.action_space = spaces.Box(
             low=0.0, 
             high=1.0, 
@@ -129,8 +129,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.joint_indices = [0, 1, 2, 4, 5, 6]  # left_hip, left_knee, right_hip, right_knee
-        self.joint_names = ['left_hip_roll','left_hip_pitch' 'left_knee', 'right_hip_roll','right_hip_pitch', 'right_knee']
+        self.joint_indices = [0, 1, 2, 4, 5, 6]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
+        self.joint_names = ['left_hip_roll','left_hip_pitch', 'left_knee', 
+                            'right_hip_roll','right_hip_pitch', 'right_knee']
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         self.left_foot_link_id = 3
         self.right_foot_link_id = 7
@@ -424,7 +425,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
-        joint_torques = calculate_robot_specific_joint_torques_8_pam(self, pam_pressures)
+        joint_torques = calculate_robot_specific_joint_torques_12_pam(self, pam_pressures)
         
 
         balance_info = self.current_balance_status
@@ -467,8 +468,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de rodillas
-        left_knee_state = p.getLinkState(self.robot_id, 1)
-        right_knee_state = p.getLinkState(self.robot_id, 4)
+        left_knee_state = p.getLinkState(self.robot_id, self.dict_joints["left_knee"])
+        right_knee_state = p.getLinkState(self.robot_id, self.dict_joints["right_knee"])
         obs.extend([left_knee_state[0][2], right_knee_state[0][2]])
         
         return np.array(obs, dtype=np.float32)
@@ -589,9 +590,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
             0: -0.05,   # left_hip - ligera flexión
-            1: 0.05,   # left_knee - extendida (pierna de soporte)
-            3: -0.05,   # right_hip - más flexión
-            4: 0.05,   # right_knee - flexionada (pierna levantada)
+            1: 0.00,   # left_hip_pitch - extendida (pierna de soporte)
+            2: 0.05,     # left knee
+            4: -0.05,   # right_hip - más flexión
+            5: 0.00,   # right_hip_pitch - flexionada (pierna levantada)
+            6: 0.05     # right_knee
         }
         
         for joint_id, pos in initial_positions.items():
@@ -605,8 +608,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ZMP calculator (todavía útil para métricas)
         self.zmp_calculator = ZMPCalculator(
             robot_id=self.robot_id,
-            left_foot_id=2,   # left_foot_link
-            right_foot_id=5,  # right_foot_link
+            left_foot_id=self.left_foot_link_id,   # left_foot_link
+            right_foot_id=self.right_foot_link_id,  # right_foot_link
             frequency_simulation=self.frequency_simulation,
             robot_data=self.robot_data,
             ground_id=self.plane_id
@@ -667,20 +670,26 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
     def parametros_torque_pam(self):
         # Momentos de brazo calculados desde dimensiones reales
-        self.HIP_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
-        self.HIP_FLEXOR_VARIATION = 0.0101     # ±1.01cm variación por ángulo
-
-        self.KP = 80.0   # Ganancia proporcional
-        self.KD = 12.0   # Ganancia derivativa
+        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
+        self.HIP_ROLL_FLEXOR_VARIATION = round(self.HIP_ROLL_FLEXOR_BASE_ARM/4.98, 4)     # ±1.01cm variación por ángulo
         
-        self.HIP_EXTENSOR_BASE_ARM = 0.0628    
-        self.HIP_EXTENSOR_VARIATION = 0.0126   
+        self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.0628    
+        self.HIP_ROLL_EXTENSOR_VARIATION = round(self.HIP_ROLL_EXTENSOR_BASE_ARM/4.98, 4)   
+
+        self.HIP_PITCH_FLEXOR_BASE_ARM = 0.045
+        self.HIP_PITCH_FLEXOR_VARIATION = round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.96, 4) 
+        
+        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.055    
+        self.HIP_PITCH_EXTENSOR_VARIATION = round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.96, 4) 
 
         self.KNEE_FLEXOR_BASE_ARM = 0.0566     
-        self.KNEE_FLEXOR_VARIATION = 0.0113    
+        self.KNEE_FLEXOR_VARIATION = round(self.KNEE_FLEXOR_BASE_ARM/5, 4)    
 
         self.KNEE_EXTENSOR_BASE_ARM = 0.0640     
-        self.KNEE_EXTENSOR_VARIATION = 0.0120    
+        self.KNEE_EXTENSOR_VARIATION = round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
+
+        self.KP = 80.0   # Ganancia proporcional
+        self.KD = 12.0   # Ganancia derivativa    
         
         # Parámetros de resortes pasivos (calculados desde momento gravitacional)
         self.PASSIVE_SPRING_STRENGTH = 180.5   # N⋅m 
@@ -694,23 +703,41 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
         self.MAX_REASONABLE_TORQUE = 240.0     # N⋅m (factor de seguridad incluido)
 
-    def hip_flexor_moment_arm(self, angle):
+    def hip_roll_flexor_moment_arm(self, angle):
         """
         Momento de brazo del flexor de cadera específico para tu robot.
         Basado en geometría real: circunferencia muslo = 0.503m
         """
         # Flexor más efectivo cuando cadera está extendida (ángulo negativo)
         angle_factor = np.cos(angle + np.pi/3)  # Desplazamiento para peak en extensión
-        return self.HIP_FLEXOR_BASE_ARM + self.HIP_FLEXOR_VARIATION * angle_factor
+        return self.HIP_ROLL_FLEXOR_BASE_ARM + self.HIP_ROLL_FLEXOR_VARIATION * angle_factor
     
-    def hip_extensor_moment_arm(self, angle):
+    def hip_roll_extensor_moment_arm(self, angle):
         """
         Momento de brazo del extensor de cadera (glúteos).
         Más efectivo en rango medio de flexión.
         """
         # Extensor más efectivo en flexión ligera-moderada
         angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
-        return self.HIP_EXTENSOR_BASE_ARM + self.HIP_EXTENSOR_VARIATION * angle_factor
+        return self.HIP_ROLL_EXTENSOR_BASE_ARM + self.HIP_ROLL_EXTENSOR_VARIATION * angle_factor
+    
+    def hip_pitch_flexor_moment_arm(self, angle):
+        """
+        Momento de brazo del flexor de cadera específico para tu robot.
+        Basado en geometría real: circunferencia muslo = 0.503m
+        """
+        # Flexor más efectivo cuando cadera está extendida (ángulo negativo)
+        angle_factor = np.cos(angle + np.pi/3)  # Desplazamiento para peak en extensión
+        return self.HIP_PITCH_FLEXOR_BASE_ARM + self.HIP_PITCH_FLEXOR_VARIATION * angle_factor
+    
+    def hip_pitch_extensor_moment_arm(self, angle):
+        """
+        Momento de brazo del extensor de cadera (glúteos).
+        Más efectivo en rango medio de flexión.
+        """
+        # Extensor más efectivo en flexión ligera-moderada
+        angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
+        return self.HIP_PITCH_EXTENSOR_BASE_ARM + self.HIP_PITCH_EXTENSOR_VARIATION * angle_factor
 
     def knee_flexor_moment_arm(self, angle):
         """
@@ -742,12 +769,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
-                # Joint indices [0,1,3,4]
+                # Joint indices [0,1,2,4,5,6]
                 joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
-                left_hip_angle = joint_states[0][0]
-                left_knee_angle = joint_states[1][0]
-                right_hip_angle = joint_states[2][0]
-                right_knee_angle = joint_states[3][0]
+                left_hip_roll_angle = joint_states[0][0]
+                left_hip_pitch_angle = joint_states[1][0]
+                left_knee_angle = joint_states[2][0]
+                right_hip_roll_angle = joint_states[3][0]
+                right_hip_pitch_angle = joint_states[4][0]
+                right_knee_angle = joint_states[5][0]
                 for idx, state in zip(self.joint_indices, joint_states):
                     pos, vel, reaction, applied = state
                     Fx,Fy,Fz,Mx,My,Mz = reaction
@@ -755,14 +784,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
                 left_contact, right_contact = self.contacto_pies
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
-                log_print(f"   Left hip: {left_hip_angle:.3f} rad ({math.degrees(left_hip_angle):.1f}°)")
-                log_print(f"   Right hip: {right_hip_angle:.3f} rad ({math.degrees(right_hip_angle):.1f}°)")
+                log_print(f"   Left hip: {left_hip_roll_angle:.3f} rad ({math.degrees(left_hip_roll_angle):.1f}°)")
+                log_print(f"   Right hip: {right_hip_roll_angle:.3f} rad ({math.degrees(right_hip_roll_angle):.1f}°)")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
                 log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
-                log_print(f"   L Hip flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
-                log_print(f"   R Hip flex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
-                log_print(f"   L knee flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
-                log_print(f"   R knee flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
+                log_print(f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
+                log_print(f"   R Hip rollflex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
+                log_print(f"   L Hip pitch flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
+                log_print(f"   R Hip pitch flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
+                log_print(f"   L knee flex/ext: {pam_pressures[8]:.3f} / {pam_pressures[9]:.3f}")
+                log_print(f"   R knee flex/ext: {pam_pressures[10]:.3f} / {pam_pressures[11]:.3f}")
                 log_print(f"Contactos pie izquierdo: {left_contact}")
                 log_print(f"Contactos pie derecho: {right_contact}")
                 #log_print(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
@@ -862,7 +893,7 @@ def configure_robot_specific_pam_system(env):
     env.expected_robot_height = expected_height
     
     # Reemplazar el método de cálculo de torques
-    env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques_8_pam
+    env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques_12_pam
     
     log_print("✅ Robot-specific PAM system configured!")
     

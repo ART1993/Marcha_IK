@@ -58,6 +58,7 @@ class SimpleProgressiveReward:
         self.episode_count = 0
         self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
         self.success_streak = 0  # Episodios consecutivos exitosos
+        self._no_contact_steps = 0
         
         # Configuración por nivel (muy simple)
         # Configuración más graduada
@@ -88,8 +89,8 @@ class SimpleProgressiveReward:
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
             # NIVEL 1: Solo balance básico
-            "level_3_left_support":  {"left_hip":  0.0, "left_knee": 0.0, "right_hip":  0.6, "right_knee": 0.6},
-            "level_3_right_support": {"left_hip": 0.6, "left_knee": 0.6, "right_hip": 0.0, "right_knee": 0.0},
+            "level_3_left_support":  {"left_hip_roll":  0.0,"left_hip_pitch":0.0, "left_knee": 0.0, "right_hip_roll":  0.6, "right_hip_pitch":0.0,"right_knee": 0.6},
+            "level_3_right_support": {"left_hip_roll": 0.6, "left_hip_pitch":0.0, "left_knee": 0.6, "right_hip_roll": 0.0, "right_hip_pitch":0.0,"right_knee": 0.0},
         }
 
         # Inclinación crítica - MÁS PERMISIVO según nivel
@@ -99,7 +100,7 @@ class SimpleProgressiveReward:
                 2: 0.8,  # 
                 3: 0.8   # 
             }
-            both_print(f"   Max tilt: 70° (permisivo)")
+            both_print(f"   Max tilt: {np.degrees(self.max_tilt_by_level[3]):.1f}° (permisivo)")
         else:
             self.max_tilt_by_level = {
                 1: 0.8,  #  - muy permisivo para aprender básicos
@@ -131,8 +132,12 @@ class SimpleProgressiveReward:
             reward = self._level_1_reward(pos,euler)      # Solo supervivencia
         elif self.level == 2 and self.enable_curriculum:
             reward = self._level_2_reward(pos, euler)      # + balance estable
+            #stability, r_score, p_score = _stability_terms_from_euler(euler)
+            #reward += 1.2 * stability
         else:  # level == 3
             reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
+            #stability, r_score, p_score = _stability_terms_from_euler(euler)
+            #reward += 1.6 * stability
         level = self.level if self.enable_curriculum else 3
         max_reward = self.level_config[level]['max_reward']
         
@@ -143,8 +148,7 @@ class SimpleProgressiveReward:
     
     def _level_1_reward(self,pos,euler):
         """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
-        front_back_positions= self.env.init_pos[0]
-        self.dx = float(pos[0] - front_back_positions)
+        self.dx = float(pos[0] - self.env.init_pos[0])
         # Tolerancia sin penalización ±5 cm
         tol = 0.05
         # Penaliza deriva total fuera de tolerancia (suave; tope aprox -2.0)
@@ -174,15 +178,24 @@ class SimpleProgressiveReward:
         height_reward=self._level_1_reward(pos, euler)
         
         # + Recompensa por estabilidad (NUEVA)
-        tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
-        if tilt < 0.2:
-            stability_reward = 1.5  # Muy estable
-        elif tilt < 0.4:
-            stability_reward = 0.5  # Moderadamente estable
-        else:
-            stability_reward = -0.5  # Inestable
+        # tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
+        # if tilt < 0.2:
+        #     stability_reward = 1.5  # Muy estable
+        # elif tilt < 0.4:
+        #     stability_reward = 0.5  # Moderadamente estable
+        # else:
+        #     stability_reward = -0.5  # Inestable
         
-        return height_reward + stability_reward
+        # Pitch (erguido)
+        
+        pitch_pen = - (abs(euler[1]) / np.deg2rad(30)) * (0.5 / self.frequency_simulation)
+
+        # Roll con zona muerta
+        roll_soft = np.deg2rad(8)
+        roll_excess = max(0.0, abs(euler[0]) - roll_soft)
+        roll_pen = - (roll_excess / np.deg2rad(20)) * (0.5 / self.frequency_simulation)
+        
+        return height_reward +  pitch_pen + roll_pen
     
     def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
@@ -205,7 +218,7 @@ class SimpleProgressiveReward:
         F_L = self.env.contact_normal_force(left_foot_id)
         F_R = self.env.contact_normal_force(right_foot_id)
         F_sum = max(F_L + F_R, 1e-6)
-        left_hip_id, left_knee_id, right_hip_id, right_knee_id = self.env.joint_indices
+        left_hip_roll_id, left_hip_pitch_id, left_knee_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id = self.env.joint_indices
         min_F=20
         # Cambiar pierna cada switch interval
         self.switch_timer += 1
@@ -221,6 +234,13 @@ class SimpleProgressiveReward:
         left_down = self.env.contact_with_force(left_foot_id, min_F=min_F)
         right_down = self.env.contact_with_force(right_foot_id, min_F=min_F)
 
+        # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
+        support_sign = +1.0 if (left_down and not right_down) else (-1.0 if (right_down and not left_down) else 0.0)
+        torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
+        hiproll_align_bonus = 0.0
+        if support_sign != 0.0:
+            hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.3 / self.frequency_simulation)
+
         target_is_right   = (self.target_leg == 'right')
         target_foot_id    = right_foot_id if target_is_right else left_foot_id
         target_foot_down  = right_down if target_is_right else left_down
@@ -231,6 +251,13 @@ class SimpleProgressiveReward:
         # Cargas del pie de SOPORTE (esperado) y del pie OBJETIVO (debe ir al aire)
         F_sup = F_L if target_is_right else F_R   # si objetivo=right, soporte=left (F_L)
         F_tar = F_R if target_is_right else F_L
+
+        lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
+        rpos = p.getLinkState(self.robot_id, right_foot_id)[0]
+        ml = abs((rpos[1] - lpos[1]) if target_is_right else (lpos[1] - rpos[1]))  # eje Y
+        ml_min = 0.08  # 8 cm de separación deseable
+        support_foot_down = left_down if target_is_right else right_down
+        midline_pen = 0.0 if (not support_foot_down) else -np.clip((ml_min - ml)/ml_min, 0.0, 1.0) * 0.6
 
         # (1) Penaliza doble apoyo fuerte
         both_down_pen = -1.0 if (F_L >= min_F and F_R >= min_F) else 0.0
@@ -246,7 +273,7 @@ class SimpleProgressiveReward:
         if (F_sup >= min_F) and (F_tar < 1.0):
             # acumula ticks (~400 Hz ⇒ 0.30 s ≈ 120 ticks)
             self.single_support_ticks += 1
-            ss_step = 0.05
+            ss_step = 0.05/ self.frequency_simulation
             ss_terminal = 0.5 if self.single_support_ticks == int(0.30 * self.frequency_simulation) else 0.0
         else:
             self.single_support_ticks = 0
@@ -266,7 +293,7 @@ class SimpleProgressiveReward:
         knee_bonus = 0.0 if target_foot_down else knee_bonus
 
         # Cadera (≈|0.6| rad) — uso el módulo para no depender del signo
-        hip_id  = right_hip_id if target_is_right else left_hip_id
+        hip_id  = right_hip_roll_id if target_is_right else left_hip_roll_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
         hip_bonus = (1.0 - min(abs(abs(hip_ang) - 0.6), 1.0)) * 0.7
         hip_bonus = 0.0 if target_foot_down else hip_bonus
@@ -297,7 +324,7 @@ class SimpleProgressiveReward:
 
         # Suma total
         shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
-        leg_reward = contacto_reward + clearance_bonus + knee_bonus + hip_bonus + shaping
+        leg_reward = contacto_reward + clearance_bonus + knee_bonus + hip_bonus + shaping + hiproll_align_bonus + midline_pen
         return leg_reward
     
     def update_after_episode(self, episode_reward, success=None):
@@ -352,23 +379,34 @@ class SimpleProgressiveReward:
         euler = p.getEulerFromQuaternion(orn)
         
         # Caída
-        if testeo_movimiento==False:
-            if pos[2] <= 0.5:
-                self.last_done_reason = "fall"
-                log_print("❌ Episode done: Robot fell")
-                return True
-            
-            if abs(self.dx) > 0.35:
-                self.last_done_reason = "drift"
-                log_print("❌ Episode done: Excessive longitudinal drift")
-                return True
-            
-            max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
-            # Inclinación extrema
-            if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
-                self.last_done_reason = "tilt"
-                log_print("❌ Episode done: Robot tilted too much")
-                return True
+        #if testeo_movimiento==False:
+        if pos[2] <= 0.5:
+            self.last_done_reason = "fall"
+            log_print("❌ Episode done: Robot fell")
+            return True
+        
+        if abs(self.dx) > 0.35:
+            self.last_done_reason = "drift"
+            log_print("❌ Episode done: Excessive longitudinal drift")
+            return True
+        
+        max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
+        # Inclinación extrema
+        if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
+            self.last_done_reason = "tilt"
+            log_print("❌ Episode done: Robot tilted too much")
+            return True
+        
+        # dentro de is_episode_done(...) tras calcular contactos:
+        left_on, right_on = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
+        if not (left_on or right_on):
+            self._no_contact_steps += 1
+        else:
+            self._no_contact_steps = 0
+        if self._no_contact_steps >= int(0.20 * self.frequency_simulation):  # 0.2 s
+            self.last_done_reason = "no_support"
+            log_print("❌ Episode done: No foot support for too long")
+            return True
         
         # Tiempo máximo (crece con nivel)
         max_steps = (200 + ((self.level-1) * 200))*10 if self.enable_curriculum else 6000 # 2000, 4000, 6000 steps
@@ -394,3 +432,33 @@ class SimpleProgressiveReward:
             'curriculum_enabled': self.enable_curriculum,
             'level_progression_disabled': getattr(self, 'level_progression_disabled', False)
         }
+    
+    # ======================================================================================================================================================================= #
+    # ================================================Recompensas adicionales================================================================================================ #
+    # ======================================================================================================================================================================= #
+
+    # --- helpers de estabilidad postural ---
+def _band_reward(x, tol_ok, tol_max):
+    """
+    Devuelve 1.0 si |x|<=tol_ok, cae linealmente hasta 0 en |x|=tol_max
+    y <0 (penaliza) de forma suave más allá (hasta -1 con cola cuadrática).
+    """
+    ax = abs(x)
+    if ax <= tol_ok:
+        return 1.0
+    if ax <= tol_max:
+        return 1.0 - (ax - tol_ok) / (tol_max - tol_ok)
+    # cola suave: cuadrática, acotada a [-1,0)
+    over = (ax - tol_max) / max(1e-6, tol_max)
+    return -min(1.0, over * over)
+
+def _stability_terms_from_euler(euler):
+    roll, pitch, _ = euler
+    # tolerancias en radianes (≈5° ok, 10° margen):
+    tol_ok   = np.deg2rad(5.0)
+    tol_max  = np.deg2rad(10.0)
+    r_score  = _band_reward(roll,  tol_ok, tol_max)  # [-1..1]
+    p_score  = _band_reward(pitch, tol_ok, tol_max)  # [-1..1]
+    # peso ligeramente mayor a roll para single-support
+    stability = 0.6*r_score + 0.4*p_score
+    return stability, r_score, p_score
