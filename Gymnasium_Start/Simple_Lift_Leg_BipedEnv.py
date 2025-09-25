@@ -238,22 +238,53 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['curriculum'] = curriculum_info  # Añadir sin reemplazar
             info['system_type'] = 'progressive'
             info['current_level'] = curriculum_info.get('level', 1)
+            F_L = self.contact_normal_force(self.left_foot_link_id)
+            F_R = self.contact_normal_force(self.right_foot_link_id)
+            left_down, right_down = self.contacto_pies
+
+            # ZMP (si está disponible)
+            if self.zmp_calculator:
+                try:
+                    zmp_xy = self.zmp_calculator.calculate_zmp()
+                    zmp_x, zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
+                except Exception:
+                    zmp_x, zmp_y = 0.0, 0.0
+            else:
+                zmp_x, zmp_y = 0.0, 0.0
+            info["kpi"] = {
+                            "global_step": int(self.step_count),
+                            "reward": float(reward),
+                            "roll": float(self.euler[0]),
+                            "pitch": float(self.euler[1]),
+                            "left_down": int(bool(left_down)),
+                            "right_down": int(bool(right_down)),
+                            "F_L": float(F_L),
+                            "F_R": float(F_R),
+                            "zmp_x": float(zmp_x),
+                            "zmp_y": float(zmp_y),
+                        }
             # Debug simple
+            info = self.info_pam_torque(info)
             if done:
+                info["ep_kpi"] = {
+                                    "ep_return": float(self.episode_reward),
+                                    "ep_len": int(self.step_count),
+                                    "done_reason": getattr(self.simple_reward_system, "last_done_reason", None)
+                                }
                 episode_total = info['episode_reward']  # Ya calculado arriba
+                
                 self.simple_reward_system.update_after_episode(episode_total)
                 log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
         
         # CONSERVAR tu debug existente 
-        if self.step_count % (self.frequency_simulation//10) == 0 or done:
+        if (self.step_count % (self.frequency_simulation//10) == 0 or done) and self.simple_reward_system:
             log_print(f"🔍 Step {self.step_count} - Control Analysis:")
             log_print(f"   Height: {self.pos[2]:.2f}m")
             log_print(f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
             #log_print(f"   Action source: {action_source}")
             
-            if self.simple_reward_system:
-                curriculum_info = self.simple_reward_system.get_info()
-                log_print(f"   Level: {info['curriculum'].get('level')}")
+            #curriculum_info = self.simple_reward_system.get_info()
+            log_print(f"   Level: {info['curriculum'].get('level')}")
     
             # Verificar si está cerca de límites
             max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
@@ -262,18 +293,55 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
 
         # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
-        if self.step_count % (self.frequency_simulation//10) == 0 and self.simple_reward_system:  # Cada 5 segundos aprox
-            status = self.simple_reward_system.get_info()
+            #status = self.simple_reward_system.get_info()
             elapsed_time = self.step_count / self.frequency_simulation
             #log_print(f" {action_source} action, reward={reward:.2f}")
             log_print(f"Step {done=:}, is_valid={is_valid}")
             log_print(f"🎮 Active system: {system_used} at step {self.step_count}")
             log_print(f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
-            log_print(f"   Current level: {status['level']}")
-            log_print(f"   Target leg: {status.get('target_leg', 'N/A')}")
+            log_print(f"   Current level: {curriculum_info['level']}")
+            log_print(f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
             log_print(f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
         
         return observation, reward, done, False, info
+    
+
+    def info_pam_torque(self, info):
+        jt = getattr(self, "pam_states", {}).get("joint_torques", None)
+        ps = getattr(self, "pam_states", {}).get("pressures", None)
+
+        # Ejemplos: mapea índices a nombres (ver mapeo más abajo)
+        if jt is not None:
+            info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
+            info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
+            info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
+            info["kpi"]["tau_RHR"]   = float(jt[3])  # Right Hip Roll
+            info["kpi"]["tau_RHP"]   = float(jt[4])  # Right Hip Pitch
+            info["kpi"]["tau_RK"]    = float(jt[5])  # Right Knee
+
+        if ps is not None:
+            info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
+            info["kpi"]["u_LHR_ext"]  = float(ps[1])   # PAM 1: extensor cadera izq (roll)
+            info["kpi"]["u_RHR_flex"] = float(ps[2])   # PAM 2: flexor cadera der (roll)
+            info["kpi"]["u_RHR_ext"]  = float(ps[3])   # PAM 3: extensor cadera der (roll)
+            info["kpi"]["u_LHP_flex"] = float(ps[4])   # PAM 4: flexor cadera izq (pitch)
+            info["kpi"]["u_LHP_ext"]  = float(ps[5])   # PAM 5: extensor cadera izq (pitch)
+            info["kpi"]["u_RHP_flex"] = float(ps[6])   # PAM 6: flexor cadera der (pitch)
+            info["kpi"]["u_RHP_ext"]  = float(ps[7])   # PAM 7: extensor cadera der (pitch)
+            info["kpi"]["u_LK_flex"]  = float(ps[8])   # PAM 8: flexor rodilla izq
+            info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
+            info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
+            info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
+
+
+        if hasattr(self, "left_hip_roll_angle"):
+            info["kpi"]["q_LHR"] = self.left_hip_roll_angle
+            info["kpi"]["q_LHP"] = self.left_hip_pitch_angle
+            info["kpi"]["q_LK"]  = self.left_knee_angle
+            info["kpi"]["q_RHR"] = self.right_hip_roll_angle
+            info["kpi"]["q_RHP"] = self.right_hip_pitch_angle
+            info["kpi"]["q_RK"]  = self.right_knee_angle
+        return info
     
 
     def _configure_contact_friction(self):
@@ -426,7 +494,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
         joint_torques = calculate_robot_specific_joint_torques_12_pam(self, pam_pressures)
-        
+        joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
@@ -766,30 +834,30 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
+        # Joint indices [0,1,2,4,5,6]
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
+        self.left_hip_roll_angle = joint_states[0][0]
+        self.left_hip_pitch_angle = joint_states[1][0]
+        self.left_knee_angle = joint_states[2][0]
+        self.right_hip_roll_angle = joint_states[3][0]
+        self.right_hip_pitch_angle = joint_states[4][0]
+        self.right_knee_angle = joint_states[5][0]
         
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
-                # Joint indices [0,1,2,4,5,6]
-                joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
-                left_hip_roll_angle = joint_states[0][0]
-                left_hip_pitch_angle = joint_states[1][0]
-                left_knee_angle = joint_states[2][0]
-                right_hip_roll_angle = joint_states[3][0]
-                right_hip_pitch_angle = joint_states[4][0]
-                right_knee_angle = joint_states[5][0]
                 for idx, state in zip(self.joint_indices, joint_states):
                     pos, vel, reaction, applied = state
                     Fx,Fy,Fz,Mx,My,Mz = reaction
-                    both_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
+                    log_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
                 left_contact, right_contact = self.contacto_pies
-                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
-                log_print(f"   Left hip roll: {left_hip_roll_angle:.3f} rad ({math.degrees(left_hip_roll_angle):.1f}°)")
-                log_print(f"   Right hip roll: {right_hip_roll_angle:.3f} rad ({math.degrees(right_hip_roll_angle):.1f}°)")
-                log_print(f"   Left hip pitch: {left_hip_pitch_angle:.3f} rad ({math.degrees(left_hip_pitch_angle):.1f}°)")
-                log_print(f"   Right hip pitch: {right_hip_pitch_angle:.3f} rad ({math.degrees(right_hip_pitch_angle):.1f}°)")
-                log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
-                log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
+                both_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
+                both_print(f"   Left hip roll: {self.left_hip_roll_angle:.3f} rad ({math.degrees(self.left_hip_roll_angle):.1f}°)")
+                both_print(f"   Right hip roll: {self.right_hip_roll_angle:.3f} rad ({math.degrees(self.right_hip_roll_angle):.1f}°)")
+                both_print(f"   Left hip pitch: {self.left_hip_pitch_angle:.3f} rad ({math.degrees(self.left_hip_pitch_angle):.1f}°)")
+                both_print(f"   Right hip pitch: {self.right_hip_pitch_angle:.3f} rad ({math.degrees(self.right_hip_pitch_angle):.1f}°)")
+                both_print(f"   Left knee: {self.left_knee_angle:.3f} rad ({math.degrees(self.left_knee_angle):.1f}°)")
+                both_print(f"   Right knee: {self.right_knee_angle:.3f} rad ({math.degrees(self.right_knee_angle):.1f}°)")
                 log_print(f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
                 log_print(f"   R Hip rollflex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
                 log_print(f"   L Hip pitch flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")

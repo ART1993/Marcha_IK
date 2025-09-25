@@ -69,7 +69,7 @@ def train_balance_pure_rl(total_timesteps=1000000, n_envs=4, resume=True):
     print("  ✅ Sin progression de niveles")
     print("  ✅ RL puro - el modelo aprende solo")
     print("=" * 60)
-    
+    _setup_multiprocessing_simple()
     trainer = create_balance_leg_trainer_no_curriculum(
         total_timesteps=total_timesteps,
         n_envs=n_envs

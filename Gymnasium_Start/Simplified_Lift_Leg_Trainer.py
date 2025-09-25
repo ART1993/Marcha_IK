@@ -9,19 +9,102 @@ import glob
 import re
 from datetime import datetime
 import json
+import csv
+from stable_baselines3.common.callbacks import BaseCallback
 
 # Import your environments
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
+
+class SimpleCsvKpiCallback(BaseCallback):
+    """
+    Lee info['kpi'] por step e info['ep_kpi'] al finalizar episodios
+    y los vuelca a CSV en self.logs_dir.
+    """
+    def __init__(self, logs_dir: str, verbose: int = 0):
+        super().__init__(verbose)
+        self.logs_dir = logs_dir
+        self._step_f = None
+        self._ep_f = None
+        self._step_writer = None
+        self._ep_writer = None
+
+    def _on_training_start(self) -> None:
+        os.makedirs(self.logs_dir, exist_ok=True)
+        self._step_f = open(os.path.join(self.logs_dir, "kpi_step.csv"), "w", newline="")
+        self._ep_f   = open(os.path.join(self.logs_dir, "kpi_episode.csv"), "w", newline="")
+        self._step_writer = csv.DictWriter(self._step_f,
+            fieldnames=["timesteps","env_idx","reward","roll","pitch","left_down","right_down","F_L","F_R","zmp_x","zmp_y"])
+        self._ep_writer = csv.DictWriter(self._ep_f,
+            fieldnames=["timesteps","env_idx","ep_return","ep_len","done_reason"])
+        self._step_writer.writeheader()
+        self._ep_writer.writeheader()
+
+    def _on_step(self) -> bool:
+        # infos por cada env en este step
+        infos = self.locals.get("infos", [])
+        for env_idx, info in enumerate(infos):
+            kpi = info.get("kpi")
+            if kpi:
+                row = {
+                    "timesteps": int(self.num_timesteps),
+                    "env_idx": env_idx,
+                    "reward": kpi.get("reward", 0.0),
+                    "roll": kpi.get("roll", 0.0),
+                    "pitch": kpi.get("pitch", 0.0),
+                    "left_down": kpi.get("left_down", 0),
+                    "right_down": kpi.get("right_down", 0),
+                    "F_L": kpi.get("F_L", 0.0),
+                    "F_R": kpi.get("F_R", 0.0),
+                    "zmp_x": kpi.get("zmp_x", 0.0),
+                    "zmp_y": kpi.get("zmp_y", 0.0),
+                }
+                self._step_writer.writerow(row)
+        return True
+
+    def _on_rollout_end(self) -> None:
+        # algunos episodios terminan aquí; SB3 no siempre pasa ep_info,
+        # pero nosotros miramos en infos por si hay 'ep_kpi'
+        ep_infos = self.locals.get("infos", [])
+        for env_idx, info in enumerate(ep_infos):
+            ep_kpi = info.get("ep_kpi")
+            if ep_kpi:
+                row = {
+                    "timesteps": int(self.num_timesteps),
+                    "env_idx": env_idx,
+                    "ep_return": ep_kpi.get("ep_return", 0.0),
+                    "ep_len": ep_kpi.get("ep_len", 0),
+                    "done_reason": ep_kpi.get("done_reason", None),
+                }
+                self._ep_writer.writerow(row)
+
+    def _on_training_end(self) -> None:
+        try:
+            if self._step_f: self._step_f.close()
+            if self._ep_f: self._ep_f.close()
+        except Exception:
+            pass
+
+"""
+KPI CHECKLIST (entrenamiento PAM – bípede)
+- Éxito L3 por pierna (%), duración single-support (media/p95)
+- Tilt p95 / pico, ZMP margin p05 (>0 ideal), rate de toe-touch (<5%)
+- No-support time máx (<0.2 s), slip del pie de soporte
+- Saturación PAM (<25%), co-contracción, ||Δu|| (suavidad)
+- Cap-hit rate (L3=7.0) < 30%, acciones en borde < 30%
+- PPO: entropy, approx_kl, clip_fraction, explained_variance
+Alertas (3 ventanas seguidas):
+- éxito ↓ 5pp, tilt_p95 > 20°, KL > 2×obj o clip_fraction > 0.6, FPS cae >30%
+"""
 class Simplified_Lift_Leg_Trainer:
     """
     Entrenador unificado mejorado para sistemas de robot bípedo con músculos PAM antagónicos.
     
     Esta versión mejorada del entrenador entiende la diferencia fundamental entre:
     - Sistemas de músculos simples (4 PAMs independientes)
-    - Sistemas de músculos antagónicos (6 PAMs coordinados biomecánicamente)
+    - Sistemas de músculos antagónicos (12 PAMs coordinados biomecánicamente)
     
     Es como la diferencia entre entrenar a alguien para mover músculos individuales
     versus entrenar a un atleta para coordinar grupos musculares de manera natural.
@@ -32,6 +115,7 @@ class Simplified_Lift_Leg_Trainer:
                  n_envs=4,
                  learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
+                 enable_curriculum=True
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -41,6 +125,7 @@ class Simplified_Lift_Leg_Trainer:
         self.n_envs = n_envs
         self.learning_rate = learning_rate
         self.resume_from = resume_from
+        self.enable_curriculum=enable_curriculum
         
 
         # Configurar el entorno y modelo según el tipo de sistema
@@ -122,7 +207,7 @@ class Simplified_Lift_Leg_Trainer:
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
                     render_mode='human' if self.n_envs == 1 else 'direct', 
-                    enable_curriculum=True,
+                    enable_curriculum=self.enable_curriculum,
                     print_env="TRAIN"  # Para diferenciar en logs
                     
                 )
@@ -241,8 +326,8 @@ class Simplified_Lift_Leg_Trainer:
             render=False,
             verbose=1
         )
-        
-        callbacks = CallbackList([checkpoint_callback, eval_callback])
+        kpi_csv_cb = SimpleCsvKpiCallback(logs_dir=self.logs_dir, verbose=0)
+        callbacks = CallbackList([checkpoint_callback, eval_callback, kpi_csv_cb])
         
         
         return callbacks
@@ -464,51 +549,52 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
     trainer = Simplified_Lift_Leg_Trainer(
         total_timesteps=total_timesteps,
         n_envs=n_envs,
-        learning_rate=learning_rate
+        learning_rate=learning_rate,
+        enable_curriculum=False
     )
     
     # Modificar solo la creación del entorno para deshabilitar curriculum
-    original_create_training = trainer.create_training_env
-    original_create_eval = trainer.create_eval_env
+    #original_create_training = trainer.create_training_env
+    #original_create_eval = trainer.create_eval_env
     
-    def create_training_env_no_curriculum():
-        config = trainer.env_configs
-        log_print(f"🏗️ Creating NO-CURRICULUM training environment: {config['description']}")
+    # def create_training_env_no_curriculum():
+    #     config = trainer.env_configs
+    #     log_print(f"🏗️ Creating NO-CURRICULUM training environment: {config['description']}")
         
-        def make_env():
-            def _init():
-                env = Simple_Lift_Leg_BipedEnv(
-                    render_mode='human' if trainer.n_envs == 1 else 'direct', 
-                    enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
-                )
-                env = Monitor(env, trainer.logs_dir)
-                return env
-            return _init
+    #     def make_env():
+    #         def _init():
+    #             env = Simple_Lift_Leg_BipedEnv(
+    #                 render_mode='human' if trainer.n_envs == 1 else 'direct', 
+    #                 enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
+    #             )
+    #             env = Monitor(env, trainer.logs_dir)
+    #             return env
+    #         return _init
         
-        return trainer._create_parallel_env(make_env=make_env, config=config)
+    #     return trainer._create_parallel_env(make_env=make_env, config=config)
     
-    def create_eval_env_no_curriculum():
-        def make_eval_env():
-            def _init():
-                env = Simple_Lift_Leg_BipedEnv(
-                    render_mode='direct', 
-                    enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
-                )
-                env = Monitor(env, os.path.join(trainer.logs_dir, "eval"))
-                return env
-            return _init
+    # def create_eval_env_no_curriculum():
+    #     def make_eval_env():
+    #         def _init():
+    #             env = Simple_Lift_Leg_BipedEnv(
+    #                 render_mode='direct', 
+    #                 enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
+    #             )
+    #             env = Monitor(env, os.path.join(trainer.logs_dir, "eval"))
+    #             return env
+    #         return _init
         
-        eval_env = DummyVecEnv([make_eval_env()])
-        eval_env = VecNormalize(eval_env, 
-                               norm_obs=True, 
-                               norm_reward=True, 
-                               clip_obs=trainer.env_configs['clip_obs'], 
-                               training=False)
-        return eval_env
+    #     eval_env = DummyVecEnv([make_eval_env()])
+    #     eval_env = VecNormalize(eval_env, 
+    #                            norm_obs=True, 
+    #                            norm_reward=True, 
+    #                            clip_obs=trainer.env_configs['clip_obs'], 
+    #                            training=False)
+    #     return eval_env
     
-    # Reemplazar métodos
-    trainer.create_training_env = create_training_env_no_curriculum
-    trainer.create_eval_env = create_eval_env_no_curriculum
+    # # Reemplazar métodos
+    # trainer.create_training_env = create_training_env_no_curriculum
+    # trainer.create_eval_env = create_eval_env_no_curriculum
     
     print(f"✅ Trainer created (NO CURRICULUM)")
     print(f"   Focus: Balance básico con RL puro")
@@ -528,7 +614,8 @@ def create_balance_leg_trainer(total_timesteps=2000000, n_envs=4, learning_rate=
     trainer = Simplified_Lift_Leg_Trainer(
         total_timesteps=total_timesteps,
         n_envs=n_envs,
-        learning_rate=learning_rate
+        learning_rate=learning_rate,
+        enable_curriculum=True
     )
     
     print(f"✅ Simplified Trainer created")
