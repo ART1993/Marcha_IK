@@ -784,8 +784,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
                 left_contact, right_contact = self.contacto_pies
                 log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
-                log_print(f"   Left hip: {left_hip_roll_angle:.3f} rad ({math.degrees(left_hip_roll_angle):.1f}°)")
-                log_print(f"   Right hip: {right_hip_roll_angle:.3f} rad ({math.degrees(right_hip_roll_angle):.1f}°)")
+                log_print(f"   Left hip roll: {left_hip_roll_angle:.3f} rad ({math.degrees(left_hip_roll_angle):.1f}°)")
+                log_print(f"   Right hip roll: {right_hip_roll_angle:.3f} rad ({math.degrees(right_hip_roll_angle):.1f}°)")
+                log_print(f"   Left hip pitch: {left_hip_pitch_angle:.3f} rad ({math.degrees(left_hip_pitch_angle):.1f}°)")
+                log_print(f"   Right hip pitch: {right_hip_pitch_angle:.3f} rad ({math.degrees(right_hip_pitch_angle):.1f}°)")
                 log_print(f"   Left knee: {left_knee_angle:.3f} rad ({math.degrees(left_knee_angle):.1f}°)")
                 log_print(f"   Right knee: {right_knee_angle:.3f} rad ({math.degrees(right_knee_angle):.1f}°)")
                 log_print(f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
@@ -794,8 +796,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 log_print(f"   R Hip pitch flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
                 log_print(f"   L knee flex/ext: {pam_pressures[8]:.3f} / {pam_pressures[9]:.3f}")
                 log_print(f"   R knee flex/ext: {pam_pressures[10]:.3f} / {pam_pressures[11]:.3f}")
-                log_print(f"Contactos pie izquierdo: {left_contact}")
-                log_print(f"Contactos pie derecho: {right_contact}")
+                log_print(f"   Contactos pie izquierdo: {left_contact}")
+                log_print(f"   Contactos pie derecho: {right_contact}")
                 #log_print(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
             
             except Exception as e:
