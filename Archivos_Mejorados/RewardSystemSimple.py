@@ -132,12 +132,8 @@ class SimpleProgressiveReward:
             reward = self._level_1_reward(pos,euler)      # Solo supervivencia
         elif self.level == 2 and self.enable_curriculum:
             reward = self._level_2_reward(pos, euler)      # + balance estable
-            #stability, r_score, p_score = _stability_terms_from_euler(euler)
-            #reward += 1.2 * stability
         else:  # level == 3
             reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
-            #stability, r_score, p_score = _stability_terms_from_euler(euler)
-            #reward += 1.6 * stability
         level = self.level if self.enable_curriculum else 3
         max_reward = self.level_config[level]['max_reward']
         
@@ -177,25 +173,25 @@ class SimpleProgressiveReward:
         
         height_reward=self._level_1_reward(pos, euler)
         
-        # + Recompensa por estabilidad (NUEVA)
-        # tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
-        # if tilt < 0.2:
-        #     stability_reward = 1.5  # Muy estable
-        # elif tilt < 0.4:
-        #     stability_reward = 0.5  # Moderadamente estable
-        # else:
-        #     stability_reward = -0.5  # Inestable
+        # Versión antigua
+        tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
+        if tilt < 0.2:
+            stability_reward = 1.5  # Muy estable
+        elif tilt < 0.4:
+            stability_reward = 0.5  # Moderadamente estable
+        else:
+            stability_reward = -0.5  # Inestable
         
         # Pitch (erguido)
         
-        pitch_pen = - (abs(euler[1]) / np.deg2rad(30)) * (0.5 / self.frequency_simulation)
+        # pitch_pen = - (abs(euler[1]) / np.deg2rad(30)) * (0.5 / self.frequency_simulation)
 
-        # Roll con zona muerta
-        roll_soft = np.deg2rad(8)
-        roll_excess = max(0.0, abs(euler[0]) - roll_soft)
-        roll_pen = - (roll_excess / np.deg2rad(20)) * (0.5 / self.frequency_simulation)
+        # # Roll con zona muerta
+        # roll_soft = np.deg2rad(8)
+        # roll_excess = max(0.0, abs(euler[0]) - roll_soft)
+        # roll_pen = - (roll_excess / np.deg2rad(20)) * (0.5 / self.frequency_simulation)
         
-        return height_reward +  pitch_pen + roll_pen
+        return height_reward +  stability_reward
     
     def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
@@ -437,28 +433,3 @@ class SimpleProgressiveReward:
     # ================================================Recompensas adicionales================================================================================================ #
     # ======================================================================================================================================================================= #
 
-    # --- helpers de estabilidad postural ---
-def _band_reward(x, tol_ok, tol_max):
-    """
-    Devuelve 1.0 si |x|<=tol_ok, cae linealmente hasta 0 en |x|=tol_max
-    y <0 (penaliza) de forma suave más allá (hasta -1 con cola cuadrática).
-    """
-    ax = abs(x)
-    if ax <= tol_ok:
-        return 1.0
-    if ax <= tol_max:
-        return 1.0 - (ax - tol_ok) / (tol_max - tol_ok)
-    # cola suave: cuadrática, acotada a [-1,0)
-    over = (ax - tol_max) / max(1e-6, tol_max)
-    return -min(1.0, over * over)
-
-def _stability_terms_from_euler(euler):
-    roll, pitch, _ = euler
-    # tolerancias en radianes (≈5° ok, 10° margen):
-    tol_ok   = np.deg2rad(5.0)
-    tol_max  = np.deg2rad(10.0)
-    r_score  = _band_reward(roll,  tol_ok, tol_max)  # [-1..1]
-    p_score  = _band_reward(pitch, tol_ok, tol_max)  # [-1..1]
-    # peso ligeramente mayor a roll para single-support
-    stability = 0.6*r_score + 0.4*p_score
-    return stability, r_score, p_score
