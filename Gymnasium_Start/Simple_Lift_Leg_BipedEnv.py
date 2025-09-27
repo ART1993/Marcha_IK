@@ -55,6 +55,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         muscles_hip_pitch=['left_hip_pitch_flexor', 'left_hip_pitch_extensor', 'right_hip_pitch_flexor', 
                             'right_hip_pitch_extensor']
         muscles_knee=['left_knee_flexor','left_knee_extensor','right_knee_flexor','right_knee_extensor']
+        muscle_anckles=['left_anckle_flexor', 'left_anckle_extensor', 'right_anckle_flexor', 'right_anckle_extensor']
         self.muscle_names = muscles_hip_roll + muscles_hip_pitch + muscles_knee
         
         self.num_active_pams = len(self.muscle_names)
@@ -135,7 +136,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         self.left_foot_link_id = 3
         self.right_foot_link_id = 7
+        self.swing_hip_target = 0.35
+        self.swing_hip_tol=0.10 
 
+        self.swing_knee_lo = 0.40
+        self.swing_knee_hi = 0.85
         # Añadir tracking de pierna levantada
         self.raised_leg = 'left'  # 'left' o 'right' - cuál pierna está levantada
         self.target_knee_height = 0.8  # Altura objetivo de la rodilla levantada
@@ -165,6 +170,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             4. ✅ Mejor integración con sistema de recompensas
         """
         self.step_count += 1
+        self.info = {"kpi": {}}
         # ===== DECISIÓN: EXPERTO vs RL =====
         # En env.step (o donde construyas la acción final)
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
@@ -825,6 +831,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle - np.pi/6)
         return self.KNEE_EXTENSOR_BASE_ARM + self.KNEE_EXTENSOR_VARIATION * angle_factor
+    
+    def set_ankle_passive_pd(self, kp=2.0, kd=0.3):
+        for j in [self.jidx["L_ankle_roll"], self.jidx["R_ankle_roll"]]:
+            p.setJointMotorControl2(self.robot_id, j,
+                controlMode=p.POSITION_CONTROL,
+                targetPosition=0.0, positionGain=kp, velocityGain=kd, force=5.0)
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 

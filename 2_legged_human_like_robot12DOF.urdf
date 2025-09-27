@@ -115,7 +115,7 @@
     <child link="left_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <!--limit lower="-0.100" upper="0.100" effort="50" velocity="2.0"/-->
+    <!--limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/-->
   </joint>
 
   <!-- Link: Left Foot -->
@@ -234,7 +234,7 @@
     <child link="right_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <!--limit lower="-0.1" upper="0.1" effort="50" velocity="2.0"/-->
+    <!--limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/-->
   </joint>
 
   <!-- Link: Right Foot -->

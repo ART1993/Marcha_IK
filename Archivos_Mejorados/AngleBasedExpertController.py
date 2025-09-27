@@ -107,8 +107,17 @@ class AngleBasedExpertController:
         # rodilla acompaña a cadera (mínimo suave para despegar)
         knee_key = f"{lift_side}_knee"
         hip_key  = f"{lift_side}_hip"
-        base[knee_key] = np.sign(base[knee_key]) * (0.20 + 0.60*hip_prog)   # ≤ ~0.8 rad solo si la cadera progresa
-        base[hip_key]  = np.sign(base[hip_key])  * max(0.45, 0.80*hip_prog) # empuja que la cadera lidere
+        #base[knee_key] = np.sign(base[knee_key]) * (0.20 + 0.60*hip_prog)   # ≤ ~0.8 rad solo si la cadera progresa
+        #base[hip_key]  = np.sign(base[hip_key])  * max(0.45, 0.80*hip_prog) # empuja que la cadera lidere
+        # Limita la cadera del swing a env.swing_hip_target (p.ej. 0.35–0.40)
+        hip_cap = float(getattr(self.env, "swing_hip_target", 0.40))
+        base[hip_key]  = np.sign(base[hip_key])  * (hip_cap * hip_prog)      # 0 → hip_cap gradual
+        # Rodilla acompaña, pero dentro del rango env.swing_knee_[lo,hi]
+        knee_lo = float(getattr(self.env, "swing_knee_lo", 0.45))
+        knee_hi = float(getattr(self.env, "swing_knee_hi", 0.75))
+        knee_cmd = 0.20 + (knee_hi - 0.20) * hip_prog
+        knee_cmd = float(np.clip(knee_cmd, knee_lo, knee_hi))
+        base[knee_key] = np.sign(base[knee_key]) * knee_cmd
         
         return base
     

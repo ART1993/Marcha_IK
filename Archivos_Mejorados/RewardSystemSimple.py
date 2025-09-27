@@ -40,6 +40,14 @@ class SimpleProgressiveReward:
         self.enable_curriculum = env.enable_curriculum
         self.robot_id = env.robot_id
         self.single_support_ticks = 0
+        # --- Parámetros configurables (puedes sobreescribirlos desde env) ---
+        # Cadera de la pierna en el aire (roll absoluto). Recomendado 0.3–0.5
+        self.swing_hip_target  = float(getattr(env, "swing_hip_target", 0.40))
+        # Ventana suave para cadera y rodilla (ancho de tolerancia)
+        self.swing_hip_tol     = float(getattr(env, "swing_hip_tol",  0.10))  # ±0.10 rad
+        # Rodilla en el aire: rango recomendado 0.45–0.75
+        self.swing_knee_lo     = float(getattr(env, "swing_knee_lo",  0.45))
+        self.swing_knee_hi     = float(getattr(env, "swing_knee_hi",  0.75))
 
         if self.enable_curriculum==False:
             # MODO SIN CURRICULUM: sistema fijo y permisivo
@@ -85,12 +93,24 @@ class SimpleProgressiveReward:
                 'success_streak_needed': 999
             }
         }
-
+        # Objetivos "blandos" (solo orientativos para control experto/PD)
         # ===== ÁNGULOS OBJETIVO SEGÚN TAREA =====
         self.target_angles = {
-            # NIVEL 1: Solo balance básico
-            "level_3_left_support":  {"left_hip_roll":  0.0,"left_hip_pitch":0.0, "left_knee": 0.0, "right_hip_roll":  0.6, "right_hip_pitch":0.0,"right_knee": 0.6},
-            "level_3_right_support": {"left_hip_roll": 0.6, "left_hip_pitch":0.0, "left_knee": 0.6, "right_hip_roll": 0.0, "right_hip_pitch":0.0,"right_knee": 0.0},
+            "level_3_left_support":  {
+                "left_hip_roll":  0.0, "left_hip_pitch":0.0, "left_knee": 0.0,
+                "right_hip_roll":  self.swing_hip_target, "right_hip_pitch":0.0, "right_knee": (self.swing_knee_lo + self.swing_knee_hi)/2
+            },
+            "level_3_right_support": {
+                "left_hip_roll":  self.swing_hip_target, "left_hip_pitch":0.0, "left_knee": (self.swing_knee_lo + self.swing_knee_hi)/2,
+                "right_hip_roll": 0.0, "right_hip_pitch":0.0, "right_knee": 0.0
+            },
+        }
+
+        # Presets por nivel (ajustables)
+        self.level_ranges = {
+            1: {"swing_hip_target": 0.35, "swing_hip_tol": 0.08, "knee_lo": 0.45, "knee_hi": 0.70},
+            2: {"swing_hip_target": 0.35, "swing_hip_tol": 0.10, "knee_lo": 0.45, "knee_hi": 0.75},
+            3: {"swing_hip_target": 0.40, "swing_hip_tol": 0.10, "knee_lo": 0.40, "knee_hi": 0.85},
         }
 
         # Inclinación crítica - MÁS PERMISIVO según nivel
@@ -203,8 +223,10 @@ class SimpleProgressiveReward:
         
         # + Recompensa por levantar pierna (NUEVA)
         leg_reward = self._calculate_leg_reward(step_count)
+
+        zmp_reward = self.zmp_and_smooth_reward()
         
-        return base_reward + leg_reward
+        return base_reward + leg_reward + zmp_reward
     
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
@@ -282,16 +304,30 @@ class SimpleProgressiveReward:
         clearance_target = 0.09  # 9 cm
         clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 1.5
 
-        # Rodilla (≈0.6 rad)
+        # === Helpers de rango suave ===
+        def soft_range_bonus(x, lo, hi, slope=0.15):
+            """
+            Devuelve 1.0 dentro de [lo,hi]. Fuera, cae linealmente con pendiente 'slope' (rad^-1), acotado a [0,1].
+            """
+            if x < lo:
+                return max(0.0, 1.0 - (lo - x)/slope)
+            if x > hi:
+                return max(0.0, 1.0 - (x - hi)/slope)
+            return 1.0
+
+        def soft_center_bonus(x, center, tol, slope=0.15):
+            """Meseta alrededor de 'center' ± tol. Cae fuera con pendiente 'slope' (rad^-1)."""
+            return soft_range_bonus(x, center - tol, center + tol, slope=slope)
+        # Rodilla (rango recomendado 0.45–0.75 rad)
         knee_id  = right_knee_id if target_is_right else left_knee_id
         knee_ang = p.getJointState(self.robot_id, knee_id)[0]
-        knee_bonus = (1.0 - min(abs(knee_ang - 0.6), 1.0)) * 1.0
+        knee_bonus = soft_range_bonus(knee_ang, self.swing_knee_lo, self.swing_knee_hi, slope=0.20) * 1.0
         knee_bonus = 0.0 if target_foot_down else knee_bonus
 
-        # Cadera (≈|0.6| rad) — uso el módulo para no depender del signo
+        # Cadera (roll) del swing — objetivo configurable, con meseta ± self.swing_hip_tol
         hip_id  = right_hip_roll_id if target_is_right else left_hip_roll_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
-        hip_bonus = (1.0 - min(abs(abs(hip_ang) - 0.6), 1.0)) * 0.7
+        hip_bonus = soft_center_bonus(abs(hip_ang), self.swing_hip_target, self.swing_hip_tol, slope=0.20) * 0.7
         hip_bonus = 0.0 if target_foot_down else hip_bonus
 
         # Gating de bonos de forma: solo si has transferido suficiente carga al pie de soporte
@@ -320,8 +356,45 @@ class SimpleProgressiveReward:
 
         # Suma total
         shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
-        leg_reward = contacto_reward + clearance_bonus + knee_bonus + hip_bonus + shaping + hiproll_align_bonus + midline_pen
+        leg_reward = (contacto_reward + clearance_bonus + knee_bonus + hip_bonus
++                      + shaping + hiproll_align_bonus + midline_pen)
         return leg_reward
+    
+    def zmp_and_smooth_reward(self):
+        zmp_term = 0.0
+        try:
+            if hasattr(self.env, "zmp") and hasattr(self.env.zmp, "stability_margin_distance"):
+                margin = float(self.env.zmp.stability_margin_distance())  # metros (+ estable si >0)
+                # Escala: +0.5 en margen >= 5 cm; -0.5 si -5 cm
+                zmp_term = 0.5 * np.clip(margin / 0.05, -1.0, 1.0)
+                # Exporta KPI opcional
+                if hasattr(self.env, "info"):
+                    self.env.info["kpi"]["zmp_margin_m"] = margin
+        except Exception:
+            pass
+
+        # --- Smoothness term (penaliza vibraciones de presiones/pares) ---
+        smooth_pen = 0.0
+        try:
+            ps_prev = getattr(self.env, "pam_states_prev", {}).get("pressures", None)
+            ps_curr = getattr(self.env, "pam_states", {}).get("pressures", None)
+            if ps_prev is not None and ps_curr is not None:
+                du = float(np.linalg.norm(np.asarray(ps_curr) - np.asarray(ps_prev)))
+                smooth_pen = -0.01 * du
+                if hasattr(self.env, "info"):
+                    self.env.info["kpi"]["dP_norm"] = du
+            else:
+                # fallback a torques si no hay presiones
+                tq_prev = getattr(self.env, "pam_states_prev", {}).get("joint_torques", None)
+                tq_curr = getattr(self.env, "pam_states", {}).get("joint_torques", None)
+                if tq_prev is not None and tq_curr is not None:
+                    dtau = float(np.linalg.norm(np.asarray(tq_curr) - np.asarray(tq_prev)))
+                    smooth_pen = -0.005 * dtau
+                    if hasattr(self.env, "info"):
+                        self.env.info["kpi"]["dTau_norm"] = dtau
+        except Exception:
+            pass
+        return zmp_term + smooth_pen
     
     def update_after_episode(self, episode_reward, success=None):
         """Actualizar nivel después de cada episodio"""
@@ -362,6 +435,7 @@ class SimpleProgressiveReward:
                     self.level += 1
                     self.success_streak = 0
                     both_print(f"🎉 LEVEL UP! {old} → {self.level}")
+                    self._apply_level_ranges()
         else:
             # MODO SIN CURRICULUM: solo logging básico
             both_print(f"🏁 Episode {self.episode_count}: "
@@ -429,7 +503,16 @@ class SimpleProgressiveReward:
             'level_progression_disabled': getattr(self, 'level_progression_disabled', False)
         }
     
-    # ======================================================================================================================================================================= #
-    # ================================================Recompensas adicionales================================================================================================ #
-    # ======================================================================================================================================================================= #
+    def _apply_level_ranges(self):
+        cfg = self.level_ranges.get(self.level, {})
+        if cfg:
+            self.swing_hip_target = cfg["swing_hip_target"]
+            self.swing_hip_tol    = cfg["swing_hip_tol"]
+            self.swing_knee_lo    = cfg["knee_lo"]
+            self.swing_knee_hi    = cfg["knee_hi"]
+            # actualizar “blandos” orientativos para el experto/PD
+            self.target_angles["level_3_left_support"]["right_hip_roll"] = self.swing_hip_target
+            self.target_angles["level_3_left_support"]["right_knee"]     = (self.swing_knee_lo + self.swing_knee_hi)/2
+            self.target_angles["level_3_right_support"]["left_hip_roll"] = self.swing_hip_target
+            self.target_angles["level_3_right_support"]["left_knee"]     = (self.swing_knee_lo + self.swing_knee_hi)/2
 
