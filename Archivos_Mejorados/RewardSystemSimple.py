@@ -236,7 +236,7 @@ class SimpleProgressiveReward:
         F_L = self.env.contact_normal_force(left_foot_id)
         F_R = self.env.contact_normal_force(right_foot_id)
         F_sum = max(F_L + F_R, 1e-6)
-        left_hip_roll_id, left_hip_pitch_id, left_knee_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id = self.env.joint_indices
+        left_hip_roll_id, left_hip_pitch_id, left_knee_id,left_anckle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_anckle_id = self.env.joint_indices
         min_F=20
         # Cambiar pierna cada switch interval
         self.switch_timer += 1
@@ -442,14 +442,13 @@ class SimpleProgressiveReward:
                     f"reward={episode_reward:.1f} | success={success} | "
                     f"fixed_level=3")
     
-    def is_episode_done(self, step_count, testeo_movimiento):
+    def is_episode_done(self, step_count):
         """Criterios simples de terminación"""
         
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         
         # Caída
-        #if testeo_movimiento==False:
         if pos[2] <= 0.5:
             self.last_done_reason = "fall"
             log_print("❌ Episode done: Robot fell")

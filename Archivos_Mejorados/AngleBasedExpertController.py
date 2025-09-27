@@ -101,7 +101,7 @@ class AngleBasedExpertController:
 
     def medir_progreso_cadera_rodilla(self, base, lift_side):
         joint_states = p.getJointStates(self.robot_id, self.env.joint_indices)
-        hip_now = joint_states[2][0] if lift_side=='right' else joint_states[0][0]
+        hip_now = joint_states[5][0] if lift_side=='right' else joint_states[1][0]
         # progreso 0..1 entre 0.25 y 0.60 rad aprox
         hip_prog = float(np.clip((abs(hip_now) - 0.25)/0.35, 0.0, 1.0))
         # rodilla acompaña a cadera (mínimo suave para despegar)
