@@ -45,14 +45,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.pam_muscles = PAM_McKibben()
         self.render_mode = render_mode
         
-        # self.action_space_type = action_space  # Solo "pam"
-        # muscles_hip_roll=['left_hip_roll_flexor', 'left_hip_roll_extensor', 'right_hip_roll_flexor', 
-        #                     'right_hip_roll_extensor']
-        # muscles_hip_pitch=['left_hip_pitch_flexor', 'left_hip_pitch_extensor', 'right_hip_pitch_flexor', 
-        #                     'right_hip_pitch_extensor']
-        # muscles_knee=['left_knee_flexor','left_knee_extensor','right_knee_flexor','right_knee_extensor']
-        # muscle_anckles=['left_anckle_flexor', 'left_anckle_extensor', 'right_anckle_flexor', 'right_anckle_extensor']
-        #musculo completo antes: muscles_hip_roll + muscles_hip_pitch + muscles_knee
         self.muscle_names = list(self.pam_muscles.keys())
         
         self.num_active_pams = len(self.muscle_names)
@@ -644,13 +636,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             # useFixedBase=False,
             useFixedBase=False
         )
+        self.robot_data = PyBullet_Robot_Data(self.robot_id)
+        robot_joint_info=self.robot_data._get_joint_info
         self.num_joints=p.getNumJoints(self.robot_id)
         self.joint_indices, self.joint_names=[],[]
         for j in range(self.num_joints):
-            info_joint=p.getJointInfo(self.robot_id, j)
-            self.joint_indices.append(info_joint[0])
-            self.joint_names.append(info_joint[1])
-            p.enableJointForceTorqueSensor(self.robot_id, jointIndex=info_joint[0], enableSensor=True)
+            self.joint_indices.append(robot_joint_info[j]['index'])
+            self.joint_names.append(robot_joint_info[j]['name'])
+            p.enableJointForceTorqueSensor(self.robot_id, jointIndex=robot_joint_info[j]['index'], enableSensor=True)
+        self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
+        
             
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
@@ -669,11 +664,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             0: -0.05,   # left_hip - ligera flexión
             1: 0.00,   # left_hip_pitch - extendida (pierna de soporte)
             2: 0.05,     # left knee
-            3:0.0,
+            3: 0.0,
             4: -0.05,   # right_hip - más flexión
             5: 0.00,   # right_hip_pitch - flexionada (pierna levantada)
             6: 0.05,     # right_knee
-            7:0.0
+            7: 0.0
         }
         
         for joint_id, pos in initial_positions.items():
@@ -682,7 +677,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== CONFIGURACIÓN DE DATOS Y CALCULADORES =====
         
-        self.robot_data = PyBullet_Robot_Data(self.robot_id)
+        
         
         # ZMP calculator (todavía útil para métricas)
         self.zmp_calculator = ZMPCalculator(

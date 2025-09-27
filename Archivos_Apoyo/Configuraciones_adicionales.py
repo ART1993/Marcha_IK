@@ -289,8 +289,11 @@ def calculate_robot_specific_joint_torques_16_pam(env, pam_pressures):
     # tobillo derecha
     joint_torques[7] = (pam_forces[14] * R_anckle_flex_R) + (-pam_forces[15] * R_anckle_ext_R) 
 
+    # PAra reducir el movimiento agresivo del robot
     joint_torques[2] -= env.DAMPING_COEFFICIENT * joint_velocities[2]
     joint_torques[6] -= env.DAMPING_COEFFICIENT * joint_velocities[6]
+    joint_torques[3] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[3]
+    joint_torques[7] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[7]
     joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
