@@ -20,10 +20,7 @@ from Archivos_Mejorados.RewardSystemSimple import SimpleProgressiveReward
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
-        Versión expandida con 6 PAMs activos + elementos pasivos
-        - 4 PAMs antagónicos en caderas (flexor/extensor bilateral)  
-        - 2 PAMs flexores en rodillas + resortes extensores pasivos
-        - Resortes pasivos en tobillos para estabilización
+        Versión expandida con 16 PAMs activos + elementos pasivos
         Indices de robot bípedo pam:
             - left hip_roll joint: 0
             - left hip_pitch joint: 1
@@ -35,7 +32,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 7
     """
     
-    def __init__(self, render_mode='human',enable_curriculum=True, print_env="ENV"):
+    def __init__(self, render_mode='human',enable_curriculum=False, print_env="ENV"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -80,7 +77,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
         self.recent_rewards=deque(maxlen=50)
-        # Action space: 12 presiones PAM normalizadas [0, 1]
+        # Action space: self.num_active_pams presiones PAM normalizadas [0, 1]
         self.action_space = spaces.Box(
             low=0.0, 
             high=1.0, 
@@ -88,9 +85,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation space SIMPLIFICADO: 18 elementos total
+        # Observation space SIMPLIFICADO: 20 elementos total
         # - 8: Estado del torso (pos, orient, velocidades)
-        # - 6: Estados articulares básicos (posiciones)
+        # - 8: Estados articulares básicos (posiciones)
         # - 2: ZMP básico (x, y)
         # - 2: Contactos de pies (izq, der)
         self.observation_space = spaces.Box(
@@ -126,9 +123,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.joint_indices = [0, 1, 2,3, 4, 5, 6,7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
-        self.joint_names = ['left_hip_roll','left_hip_pitch', 'left_knee', 'left_anckle' 
-                            'right_hip_roll','right_hip_pitch', 'right_knee', 'right_anckle']
+        self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
+        self.joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
+                            'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         self.left_foot_link_id = 3
         self.right_foot_link_id = 7
@@ -144,7 +141,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
 
-        self.enable_curriculum = False # Por si las moscas
+        self.enable_curriculum = enable_curriculum # Por si las moscas
         self.simple_reward_system = None
         self.print_env = print_env
         log_print(f"🤖 Simplified Lift legs Environment initialized")
@@ -193,11 +190,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         # Aplicar torques
         torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
-        #     (0, joint_torques[0]),  # left_hip_joint
-        #     (1, joint_torques[1]),  # left_knee_joint  
-        #     (3, joint_torques[2]),  # right_hip_joint
-        #     (4, joint_torques[3])   # right_knee_joint
-        # ]
+
         #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
         for joint_id, torque in torque_mapping:
             p.setJointMotorControl2(
@@ -431,11 +424,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if left_contact and not right_contact:
             # Pierna derecha levantada - controlar rodilla derecha (índice 3)
-            knee_joint_id = self.dict_joints["right_knee"] #self.joint_indices[controlled_knee_idx]   6     # right_knee_joint en PyBullet
+            knee_joint_id = self.dict_joints["right_knee_joint"] #self.joint_indices[controlled_knee_idx]   6     # right_knee_joint en PyBullet
             controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # right_knee en joint_torques ultimo valor
         elif right_contact and not left_contact:
             # Pierna izquierda levantada - controlar rodilla izquierda (índice 1)
-            knee_joint_id = self.dict_joints["left_knee"] #self.joint_indices[controlled_knee_idx]    2    # left_knee_joint en PyBullet
+            knee_joint_id = self.dict_joints["left_knee_joint"] #self.joint_indices[controlled_knee_idx]    2    # left_knee_joint en PyBullet
             controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # left_knee en joint_torques  tercero
         else:
             # Ambas o ninguna - no aplicar control automático
@@ -482,16 +475,24 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             2. Considera contracción basada en ángulo articular  
             3. Aplica física biomecánica real
             
-            Mapeo: 6 PAMs -> 4 articulaciones
-            - PAM 0,1: cadera izquierda (flexor, extensor)
-            - PAM 2,3: cadera derecha (flexor, extensor)  
-            - PAM 4: rodilla izquierda (flexor)
-            - PAM 5: rodilla derecha (flexor)
+            Mapeo: 16 PAMs -> 8 articulaciones
+            - PAM 0,1: cadera izquierda roll (flexor, extensor)
+            - PAM 2,3: cadera derecha roll(flexor, extensor)  
+            - PAM 4,5: cadera izquierda pitch(flexor, extensor)
+            - PAM 6,7: cadera derecha pitch(flexor, extensor)
+            - PAM 8,9: rodilla izquierda (flexor, extensor)
+            - PAM 10,11: rodilla derecha (flexor, extensor)
+            - PAM 12,13: tobillo izquierdo (flexor, extensor)
+            - PAM 14,15: tobillo derecha (flexor, extensor)
             # MAPEO CLARO: PAM → Joint
-            # joint_states[0] = left_hip (joint 0)
-            # joint_states[1] = left_knee (joint 1) 
-            # joint_states[2] = right_hip (joint 3)
-            # joint_states[3] = right_knee (joint 4)
+            # joint_states[0] = left_hip_roll (joint 0)
+            # joint_states[1] = left_hip_pitch (joint 1)
+            # joint_states[2] = left_knee (joint 2)
+            # joint_states[3] = left_anckle (joint 3) 
+            # joint_states[4] = right_hip_roll (joint 4)
+            # joint_states[5] = right_hip_pitch (joint 5)
+            # joint_states[6] = right_knee (joint 6)
+            # joint_states[7] = right_anckle (joint 7)
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
@@ -538,8 +539,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de rodillas
-        left_knee_state = p.getLinkState(self.robot_id, self.dict_joints["left_knee"])
-        right_knee_state = p.getLinkState(self.robot_id, self.dict_joints["right_knee"])
+        left_knee_state = p.getLinkState(self.robot_id, self.dict_joints["left_knee_joint"])
+        right_knee_state = p.getLinkState(self.robot_id, self.dict_joints["right_knee_joint"])
         obs.extend([left_knee_state[0][2], right_knee_state[0][2]])
         
         return np.array(obs, dtype=np.float32)
@@ -643,8 +644,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             # useFixedBase=False,
             useFixedBase=False
         )
-        for j in self.joint_indices:
-            p.enableJointForceTorqueSensor(self.robot_id, jointIndex=j, enableSensor=True)
+        self.num_joints=p.getNumJoints(self.robot_id)
+        self.joint_indices, self.joint_names=[],[]
+        for j in range(self.num_joints):
+            info_joint=p.getJointInfo(self.robot_id, j)
+            self.joint_indices.append(info_joint[0])
+            self.joint_names.append(info_joint[1])
+            p.enableJointForceTorqueSensor(self.robot_id, jointIndex=info_joint[0], enableSensor=True)
+            
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas

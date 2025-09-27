@@ -268,22 +268,8 @@ def calculate_robot_specific_joint_torques_16_pam(env, pam_pressures):
                                                                                                     env.anckle_flexor_moment_arm,
                                                                                                     env.anckle_extensor_moment_arm)
 
-    # Aplicar a las caderas y rodillas (tienen músculos antagónicos)
-    # pam_forces[0], pam_forces[1] = apply_reciprocal_inhibition(pam_forces[0], 
-    #                                                             pam_forces[1],
-    #                                                             env.INHIBITION_FACTOR)  # Cadera izq
-    # pam_forces[2], pam_forces[3] = apply_reciprocal_inhibition(pam_forces[2], 
-    #                                                             pam_forces[3],
-    #                                                             env.INHIBITION_FACTOR)  # Cadera der
-    # pam_forces[4], pam_forces[5] = apply_reciprocal_inhibition(pam_forces[4], 
-    #                                                             pam_forces[5],
-    #                                                             env.INHIBITION_FACTOR)  # rodilla izq
-    # pam_forces[6], pam_forces[7] = apply_reciprocal_inhibition(pam_forces[6],
-    #                                                             pam_forces[7],
-    #                                                             env.INHIBITION_FACTOR)  # rodilla der
-
     # Convertir a torques articulares
-    joint_torques = np.zeros(8)
+    joint_torques = np.zeros(len(joint_states))
     # TODO Ver que cambios tengo que aplicar para los torques ya queno tiene por que tener mismo torque en x que en y
     # Cadera izquierda roll: flexión positiva por flexor, extensión por extensor
     joint_torques[0] = ( pam_forces[0] * R_flex_roll_L) + (-pam_forces[1] * R_ext_roll_L)
