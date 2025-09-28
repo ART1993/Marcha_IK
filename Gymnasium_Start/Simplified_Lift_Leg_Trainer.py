@@ -244,6 +244,15 @@ class Simplified_Lift_Leg_Trainer:
                                norm_reward=True, 
                                clip_obs=self.env_configs['clip_obs'], 
                                training=False)
+        # NEW: cargar stats de normalización del train si existen
+        norm_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
+        if os.path.exists(norm_path):
+            try:
+                eval_env = VecNormalize.load(norm_path, eval_env)
+                eval_env.training = False          # importante para que no actualice stats
+                eval_env.norm_reward = False       # opcional: no normalizar reward en eval
+            except Exception as e:
+                print(f"⚠️ Could not load eval normalization: {e}")
 
         return eval_env
     
@@ -552,49 +561,6 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
         learning_rate=learning_rate,
         enable_curriculum=False
     )
-    
-    # Modificar solo la creación del entorno para deshabilitar curriculum
-    #original_create_training = trainer.create_training_env
-    #original_create_eval = trainer.create_eval_env
-    
-    # def create_training_env_no_curriculum():
-    #     config = trainer.env_configs
-    #     log_print(f"🏗️ Creating NO-CURRICULUM training environment: {config['description']}")
-        
-    #     def make_env():
-    #         def _init():
-    #             env = Simple_Lift_Leg_BipedEnv(
-    #                 render_mode='human' if trainer.n_envs == 1 else 'direct', 
-    #                 enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
-    #             )
-    #             env = Monitor(env, trainer.logs_dir)
-    #             return env
-    #         return _init
-        
-    #     return trainer._create_parallel_env(make_env=make_env, config=config)
-    
-    # def create_eval_env_no_curriculum():
-    #     def make_eval_env():
-    #         def _init():
-    #             env = Simple_Lift_Leg_BipedEnv(
-    #                 render_mode='direct', 
-    #                 enable_curriculum=False  # ⭐ CLAVE: Deshabilitar curriculum
-    #             )
-    #             env = Monitor(env, os.path.join(trainer.logs_dir, "eval"))
-    #             return env
-    #         return _init
-        
-    #     eval_env = DummyVecEnv([make_eval_env()])
-    #     eval_env = VecNormalize(eval_env, 
-    #                            norm_obs=True, 
-    #                            norm_reward=True, 
-    #                            clip_obs=trainer.env_configs['clip_obs'], 
-    #                            training=False)
-    #     return eval_env
-    
-    # # Reemplazar métodos
-    # trainer.create_training_env = create_training_env_no_curriculum
-    # trainer.create_eval_env = create_eval_env_no_curriculum
     
     print(f"✅ Trainer created (NO CURRICULUM)")
     print(f"   Focus: Balance básico con RL puro")

@@ -179,7 +179,7 @@ class SimpleProgressiveReward:
         
         # Recompensa simple por altura
         if height > 0.9:
-            height_reward= 1.5  # Buena altura
+            height_reward= 1.0  # Buena altura
         elif height > 0.8:
             height_reward= 0.8  # Altura mínima
         elif height <= 0.8:
@@ -192,7 +192,7 @@ class SimpleProgressiveReward:
 
         pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies
         if pie_izquierdo_contacto is False and pie_derecho_contacto:
-            contact_reward= 0.5
+            contact_reward= 1.0
         elif pie_izquierdo_contacto and pie_derecho_contacto:
             contact_reward= 0.1
         else:
@@ -362,45 +362,42 @@ class SimpleProgressiveReward:
         # Cadera (pitch) del swing — objetivo configurable, con meseta ± self.swing_hip_tol
         hip_id  = right_hip_pitch_id if target_is_right else left_hip_pitch_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
-        hip_bonus = soft_center_bonus(abs(hip_ang), self.swing_hip_target, self.swing_hip_tol, slope=0.20) * 0.7
-        hip_bonus = 0.0 if target_foot_down else hip_bonus
+        #hip_bonus = soft_center_bonus(abs(hip_ang), self.swing_hip_target, self.swing_hip_tol, slope=0.20) * 0.7
+        #hip_bonus = 0.0 if target_foot_down else hip_bonus
+        # después (direccional):
+        desired_sign = +1.0  # pon -1.0 si en tu robot la flexión hacia delante es negativa
+        hip_bonus_dir = soft_center_bonus(desired_sign * hip_ang,
+                                        self.swing_hip_target, self.swing_hip_tol,
+                                        slope=0.20) * 0.7
+        hip_bonus = 0.0 if target_foot_down else hip_bonus_dir
 
-        # Gating de bonos de forma: solo si has transferido suficiente carga al pie de soporte
+        if not target_foot_down:
+            tgt_foot_id = right_foot_id if target_is_right else left_foot_id
+            x_foot, _ = self._safe_get_link_xy(tgt_foot_id)
+            x_base, _ = self._safe_get_base_xy()
+            forward_margin = 0.03   # 3 cm por delante
+            # sigmoide suave: 0 a 1 cuando el pie pasa por delante de la pelvis ~3cm
+            forward_bonus = 1.0 / (1.0 + np.exp(-25.0 * ((x_foot - x_base) - forward_margin)))
+        else:
+            forward_bonus = 0.0
+
+        # ✅ Penalización por velocidad articular excesiva en la cadera del swing
+        hip_vel = p.getJointState(self.robot_id, hip_id)[1]
+        v_thresh = 0.8   # rad/s umbral de "demasiado rápido"
+        kv = 0.15        # ganancia de penalización
+        speed_pen = -kv * max(0.0, abs(hip_vel) - v_thresh)
+
         if ratio < 0.70:
-            clearance_bonus = 0.0
-            knee_bonus = 0.0
-            hip_bonus = 0.0
-
-        if self.fixed_target_leg == 'left':
-            if right_down and not left_down:
-                contacto_reward = 2.0
-            elif right_down and left_down:
-                contacto_reward = 0.3  # transición tolerada
-            else:
-                contacto_reward = -0.8
-
-        # Evaluar si está haciendo lo correcto
-        # if self.target_leg == 'right':
-        #     # Quiero: pie izquierdo abajo, pie derecho arriba
-        #     if left_down and not right_down:
-        #         contacto_reward = 2.0  # ¡Perfecto!
-        #     elif left_down and right_down:
-        #         contacto_reward = 0.5  # Ambos abajo (transición)
-        #     else:
-        #         contacto_reward = -0.5  # Incorrecto
-        # else:  # target_leg == 'left'
-        #     # Quiero: pie derecho abajo, pie izquierdo arriba
-        #     if right_down and not left_down:
-        #         contacto_reward = 2.0  # ¡Perfecto!
-        #     elif left_down and right_down:
-        #         contacto_reward = 0.5  # Ambos abajo (transición)
-        #     else:
-        #         contacto_reward = -0.5  # Incorrecto
+             clearance_bonus = 0.0
+             knee_bonus = 0.0
+             hip_bonus = 0.0
+             forward_bonus = 0.0
 
         # Suma total
+        # 
         shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
-        leg_reward = (contacto_reward + clearance_bonus + knee_bonus + hip_bonus
-                      + shaping  + midline_pen)
+        leg_reward = ( clearance_bonus + knee_bonus + hip_bonus + forward_bonus
+                      + shaping  + midline_pen + speed_pen)
         return leg_reward
     
     def zmp_and_smooth_reward(self):
