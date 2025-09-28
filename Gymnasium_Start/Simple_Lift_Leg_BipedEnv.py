@@ -320,9 +320,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
             info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
             info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
-            info["kpi"]["tau_RHR"]   = float(jt[3])  # Right Hip Roll
-            info["kpi"]["tau_RHP"]   = float(jt[4])  # Right Hip Pitch
-            info["kpi"]["tau_RK"]    = float(jt[5])  # Right Knee
+            info["kpi"]["tau_LA"]   = float(jt[3])  # Right Anckle
+            info["kpi"]["tau_RHR"]   = float(jt[4])  # Right Hip Roll
+            info["kpi"]["tau_RHP"]    = float(jt[5])  # Right HIP Pitch
+            info["kpi"]["tau_RK"]    = float(jt[6])  # Right Knee
+            info["kpi"]["tau_RA"]    = float(jt[7])  # Right Anckle
 
         if ps is not None:
             info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
@@ -673,7 +675,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system.env = self
             self.simple_reward_system.robot_id = self.robot_id
             self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
-            self.simple_reward_system.steps_air=0
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)

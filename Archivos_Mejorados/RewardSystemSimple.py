@@ -66,6 +66,7 @@ class SimpleProgressiveReward:
         self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
         self.success_streak = 0  # Episodios consecutivos exitosos
         self._no_contact_steps = 0
+        self.contact_both = 0
         
         # Configuración por nivel (muy simple)
         # Configuración más graduada
@@ -132,8 +133,7 @@ class SimpleProgressiveReward:
         self.fixed_target_leg=self.target_leg
         self.switch_timer = 0
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
-        self.bad_ending=("fall", "tilt", "drift", "feet_air")
-        self.steps_air=0
+        self.bad_ending=("fall", "tilt", "drift", "no_support")
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
         self.min_F=30
@@ -190,7 +190,24 @@ class SimpleProgressiveReward:
         pitch = euler[1]
         back_pitch_pen = - np.clip(pitch - 0.05, 0.0, 0.30) * 6.0
 
-        return height_reward + drift_pen + back_only_pen +back_pitch_pen
+        pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies
+        if pie_izquierdo_contacto is False and pie_derecho_contacto:
+            contact_reward= 0.5
+        elif pie_izquierdo_contacto and pie_derecho_contacto:
+            contact_reward= 0.1
+        else:
+            contact_reward= -1.0
+
+        # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
+        support_sign = +1.0 if (pie_izquierdo_contacto and not pie_derecho_contacto) else (-1.0 if (pie_derecho_contacto and not pie_izquierdo_contacto) else 0.0)
+        torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
+        hiproll_align_bonus = 0.0
+        if support_sign != 0.0:
+            hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.3 / self.frequency_simulation)
+
+        
+
+        return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + contact_reward
     
     def _level_2_reward(self,pos,euler):
         """NIVEL 2: Balance estable (recompensas 0-5)"""
@@ -258,12 +275,7 @@ class SimpleProgressiveReward:
         left_down = self.env.contact_with_force(left_foot_id, min_F=self.min_F)
         right_down = self.env.contact_with_force(right_foot_id, min_F=self.min_F)
 
-        # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
-        support_sign = +1.0 if (left_down and not right_down) else (-1.0 if (right_down and not left_down) else 0.0)
-        torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
-        hiproll_align_bonus = 0.0
-        if support_sign != 0.0:
-            hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.3 / self.frequency_simulation)
+        
 
         
         # NUEVO: si estamos en left-only, el soporte debe ser el pie derecho
@@ -288,59 +300,8 @@ class SimpleProgressiveReward:
             # Carga mínima en soporte (80%) y toe-touch estricto del objetivo
             support_load_reward = np.clip((F_sup / F_sum - 0.80) / 0.20, 0.0, 1.0) * 1.2
             toe_touch_pen = -0.8 if (0.0 < F_tar < self.min_F) else 0.0
-        # load = F_sup / max(F_L + F_R, 1e-6)
-        # r_support_window = 1.0 - min(1.0, abs(load - 0.72) / 0.10)  # [0..1], picos fuera de [0.62,0.82] => 0
-        # w_support = 0.30  # peso sugerido
-        # xL, yL = self._safe_get_link_xy(self.env.left_foot_link_id)
-        # if hasattr(self.env, "pelvis_link_id") and self.env.pelvis_link_id is not None:
-        #     xP, yP = self._safe_get_link_xy(self.env.pelvis_link_id)
-        # else:
-        #     xP, yP = self._safe_get_base_xy()
-
-        # #    Lateral: mantener |Δy| pequeño (σ≈4 cm). Sagital: favorecer xL >= xP - 3 cm.
-        # dy = abs(yL - yP)
-        # r_lat  = np.exp(- (dy / 0.04)**2 )  # [0..1]
-        # r_fwd  = 1.0 / (1.0 + np.exp(-12.0 * ( (xL - xP) + 0.03 )))  # sigmoide, umbral a -3cm
-        # r_corridor = 0.6 * r_lat + 0.4 * r_fwd
-        # w_corridor = 0.25  # peso sugerido
-
-        # # 3) LÍMITES SUAVES A ROLL DE PELVIS Y CADERA IZQUIERDA
-        # #    Pelvis levemente inclinada hacia el soporte (derecha): +2.5° ≈ 0.044 rad
-        # roll_pelvis = self._safe_get_pelvis_roll()
-        # r_pelvis_roll = np.exp(- ((roll_pelvis - 0.044) / 0.052)**2 )  # σ≈3°
-        # w_pelvis_roll = 0.20
-
-        # #    Penalización selectiva a aducción (roll) de cadera izquierda en swing
-        # #    Ajusta nombres a tus joints si es necesario.
-        # q_roll_L = self._safe_get_joint_angle([
-        #     "left_hip_roll_joint", "l_hip_roll", "hip_roll_left", "LHR"
-        # ], default=0.0)
-        # # margen muerto ±0.08 rad (~4.6°)
-        # over = max(0.0, abs(q_roll_L) - 0.08)
-        # pen_rollL = -0.15 * over  # lineal suave
-        # w_rollL = 1.0  # ya incluye magnitud, piensa esto como "activar" la pena
-
-        # # 4) COMBINAR EN LA RECOMPENSA TOTAL
-        # #    Suma ponderada; pesos pequeños para no "ahogar" el resto de tu shaping.
-        # r_patch = (
-        #     w_support      * r_support_window +
-        #     w_corridor     * r_corridor +
-        #     w_pelvis_roll  * r_pelvis_roll +
-        #     w_rollL        * pen_rollL
-        # )
-
-        # # >>> Añade r_patch a tu reward acumulada <<<
-        # reward += float(r_patch)
-
-        # # (Opcional) logging de depuración no intrusivo
-        # if getattr(self, "debug_reward_patch", False):
-        #     log_print(
-        #         f"[patch] load={load:.2f} r_sup={r_support_window:.2f} "
-        #         f"dy={dy:.3f} r_lat={r_lat:.2f} r_fwd={r_fwd:.2f} "
-        #         f"rollP={roll_pelvis:.3f} r_proll={r_pelvis_roll:.2f} "
-        #         f"qLroll={q_roll_L:.3f} penL={pen_rollL:.3f} -> add={r_patch:.3f}"
-        #     )
-
+       
+        #self.extra_reward_1
 
 
         lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
@@ -439,7 +400,7 @@ class SimpleProgressiveReward:
         # Suma total
         shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
         leg_reward = (contacto_reward + clearance_bonus + knee_bonus + hip_bonus
-                      + shaping + hiproll_align_bonus + midline_pen)
+                      + shaping  + midline_pen)
         return leg_reward
     
     def zmp_and_smooth_reward(self):
@@ -530,7 +491,6 @@ class SimpleProgressiveReward:
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         self.dx = float(pos[0] - self.env.init_pos[0])
-        pie_izquierdo_contacto, pie_derecho_contacto=self.env.contacto_pies
         # Caída
         if pos[2] <= 0.7:
             self.last_done_reason = "fall"
@@ -550,8 +510,8 @@ class SimpleProgressiveReward:
             return True
         
         # dentro de is_episode_done(...) tras calcular contactos:
-        left_on, right_on = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
-        if not (left_on or right_on):
+        pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
+        if not (pie_izquierdo_contacto or pie_derecho_contacto):
             self._no_contact_steps += 1
         else:
             self._no_contact_steps = 0
@@ -559,24 +519,20 @@ class SimpleProgressiveReward:
             self.last_done_reason = "no_support"
             log_print("❌ Episode done: No foot support for too long")
             return True
-        
+        if (pie_izquierdo_contacto and pie_derecho_contacto):
+            self.contact_both += 1
+            if self.contact_both >int(0.80 * self.frequency_simulation):
+                self.last_done_reason = "excessive support"
+                log_print("❌ Episode done: No foot support for too long")
+                return True
+        else:
+            self.contact_both=0
         # Tiempo máximo (crece con nivel)
         max_steps = (200 + ((self.level-1) * 200))*10 if self.enable_curriculum else 6000 # 2000, 4000, 6000 steps
         if step_count >= max_steps:
             self.last_done_reason = "time"
             log_print("⏰ Episode done: Max time reached")
             return True
-        
-        if pie_izquierdo_contacto is False and pie_derecho_contacto is False:
-            self.steps_air+=1
-            if self.steps_air>= self.frequency_simulation:
-                self.last_done_reason = "feet_air"
-                log_print("⏰ Episode done: Demasiado tiempo en el aire")
-                return True
-        else:
-            self.steps_air=0
-        
-
         
         self.last_done_reason = None
         
@@ -641,6 +597,61 @@ class SimpleProgressiveReward:
             return default
         except Exception:
             return default
+        
+    def extra_reward_1():
+        pass
+         # load = F_sup / max(F_L + F_R, 1e-6)
+        # r_support_window = 1.0 - min(1.0, abs(load - 0.72) / 0.10)  # [0..1], picos fuera de [0.62,0.82] => 0
+        # w_support = 0.30  # peso sugerido
+        # xL, yL = self._safe_get_link_xy(self.env.left_foot_link_id)
+        # if hasattr(self.env, "pelvis_link_id") and self.env.pelvis_link_id is not None:
+        #     xP, yP = self._safe_get_link_xy(self.env.pelvis_link_id)
+        # else:
+        #     xP, yP = self._safe_get_base_xy()
+
+        # #    Lateral: mantener |Δy| pequeño (σ≈4 cm). Sagital: favorecer xL >= xP - 3 cm.
+        # dy = abs(yL - yP)
+        # r_lat  = np.exp(- (dy / 0.04)**2 )  # [0..1]
+        # r_fwd  = 1.0 / (1.0 + np.exp(-12.0 * ( (xL - xP) + 0.03 )))  # sigmoide, umbral a -3cm
+        # r_corridor = 0.6 * r_lat + 0.4 * r_fwd
+        # w_corridor = 0.25  # peso sugerido
+
+        # # 3) LÍMITES SUAVES A ROLL DE PELVIS Y CADERA IZQUIERDA
+        # #    Pelvis levemente inclinada hacia el soporte (derecha): +2.5° ≈ 0.044 rad
+        # roll_pelvis = self._safe_get_pelvis_roll()
+        # r_pelvis_roll = np.exp(- ((roll_pelvis - 0.044) / 0.052)**2 )  # σ≈3°
+        # w_pelvis_roll = 0.20
+
+        # #    Penalización selectiva a aducción (roll) de cadera izquierda en swing
+        # #    Ajusta nombres a tus joints si es necesario.
+        # q_roll_L = self._safe_get_joint_angle([
+        #     "left_hip_roll_joint", "l_hip_roll", "hip_roll_left", "LHR"
+        # ], default=0.0)
+        # # margen muerto ±0.08 rad (~4.6°)
+        # over = max(0.0, abs(q_roll_L) - 0.08)
+        # pen_rollL = -0.15 * over  # lineal suave
+        # w_rollL = 1.0  # ya incluye magnitud, piensa esto como "activar" la pena
+
+        # # 4) COMBINAR EN LA RECOMPENSA TOTAL
+        # #    Suma ponderada; pesos pequeños para no "ahogar" el resto de tu shaping.
+        # r_patch = (
+        #     w_support      * r_support_window +
+        #     w_corridor     * r_corridor +
+        #     w_pelvis_roll  * r_pelvis_roll +
+        #     w_rollL        * pen_rollL
+        # )
+
+        # # >>> Añade r_patch a tu reward acumulada <<<
+        # reward += float(r_patch)
+
+        # # (Opcional) logging de depuración no intrusivo
+        # if getattr(self, "debug_reward_patch", False):
+        #     log_print(
+        #         f"[patch] load={load:.2f} r_sup={r_support_window:.2f} "
+        #         f"dy={dy:.3f} r_lat={r_lat:.2f} r_fwd={r_fwd:.2f} "
+        #         f"rollP={roll_pelvis:.3f} r_proll={r_pelvis_roll:.2f} "
+        #         f"qLroll={q_roll_L:.3f} penL={pen_rollL:.3f} -> add={r_patch:.3f}"
+        #     )
     
     def get_info(self):
         """Info para debugging"""
