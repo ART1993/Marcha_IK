@@ -132,7 +132,8 @@ class SimpleProgressiveReward:
         self.fixed_target_leg=self.target_leg
         self.switch_timer = 0
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
-        self.bad_ending=("fall", "tilt", "drift")
+        self.bad_ending=("fall", "tilt", "drift", "feet_air")
+        self.steps_air=0
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
         self.min_F=30
@@ -287,6 +288,59 @@ class SimpleProgressiveReward:
             # Carga mínima en soporte (80%) y toe-touch estricto del objetivo
             support_load_reward = np.clip((F_sup / F_sum - 0.80) / 0.20, 0.0, 1.0) * 1.2
             toe_touch_pen = -0.8 if (0.0 < F_tar < self.min_F) else 0.0
+        # load = F_sup / max(F_L + F_R, 1e-6)
+        # r_support_window = 1.0 - min(1.0, abs(load - 0.72) / 0.10)  # [0..1], picos fuera de [0.62,0.82] => 0
+        # w_support = 0.30  # peso sugerido
+        # xL, yL = self._safe_get_link_xy(self.env.left_foot_link_id)
+        # if hasattr(self.env, "pelvis_link_id") and self.env.pelvis_link_id is not None:
+        #     xP, yP = self._safe_get_link_xy(self.env.pelvis_link_id)
+        # else:
+        #     xP, yP = self._safe_get_base_xy()
+
+        # #    Lateral: mantener |Δy| pequeño (σ≈4 cm). Sagital: favorecer xL >= xP - 3 cm.
+        # dy = abs(yL - yP)
+        # r_lat  = np.exp(- (dy / 0.04)**2 )  # [0..1]
+        # r_fwd  = 1.0 / (1.0 + np.exp(-12.0 * ( (xL - xP) + 0.03 )))  # sigmoide, umbral a -3cm
+        # r_corridor = 0.6 * r_lat + 0.4 * r_fwd
+        # w_corridor = 0.25  # peso sugerido
+
+        # # 3) LÍMITES SUAVES A ROLL DE PELVIS Y CADERA IZQUIERDA
+        # #    Pelvis levemente inclinada hacia el soporte (derecha): +2.5° ≈ 0.044 rad
+        # roll_pelvis = self._safe_get_pelvis_roll()
+        # r_pelvis_roll = np.exp(- ((roll_pelvis - 0.044) / 0.052)**2 )  # σ≈3°
+        # w_pelvis_roll = 0.20
+
+        # #    Penalización selectiva a aducción (roll) de cadera izquierda en swing
+        # #    Ajusta nombres a tus joints si es necesario.
+        # q_roll_L = self._safe_get_joint_angle([
+        #     "left_hip_roll_joint", "l_hip_roll", "hip_roll_left", "LHR"
+        # ], default=0.0)
+        # # margen muerto ±0.08 rad (~4.6°)
+        # over = max(0.0, abs(q_roll_L) - 0.08)
+        # pen_rollL = -0.15 * over  # lineal suave
+        # w_rollL = 1.0  # ya incluye magnitud, piensa esto como "activar" la pena
+
+        # # 4) COMBINAR EN LA RECOMPENSA TOTAL
+        # #    Suma ponderada; pesos pequeños para no "ahogar" el resto de tu shaping.
+        # r_patch = (
+        #     w_support      * r_support_window +
+        #     w_corridor     * r_corridor +
+        #     w_pelvis_roll  * r_pelvis_roll +
+        #     w_rollL        * pen_rollL
+        # )
+
+        # # >>> Añade r_patch a tu reward acumulada <<<
+        # reward += float(r_patch)
+
+        # # (Opcional) logging de depuración no intrusivo
+        # if getattr(self, "debug_reward_patch", False):
+        #     log_print(
+        #         f"[patch] load={load:.2f} r_sup={r_support_window:.2f} "
+        #         f"dy={dy:.3f} r_lat={r_lat:.2f} r_fwd={r_fwd:.2f} "
+        #         f"rollP={roll_pelvis:.3f} r_proll={r_pelvis_roll:.2f} "
+        #         f"qLroll={q_roll_L:.3f} penL={pen_rollL:.3f} -> add={r_patch:.3f}"
+        #     )
+
 
 
         lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
@@ -476,6 +530,7 @@ class SimpleProgressiveReward:
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         self.dx = float(pos[0] - self.env.init_pos[0])
+        pie_izquierdo_contacto, pie_derecho_contacto=self.env.contacto_pies
         # Caída
         if pos[2] <= 0.7:
             self.last_done_reason = "fall"
@@ -512,9 +567,80 @@ class SimpleProgressiveReward:
             log_print("⏰ Episode done: Max time reached")
             return True
         
+        if pie_izquierdo_contacto is False and pie_derecho_contacto is False:
+            self.steps_air+=1
+            if self.steps_air>= self.frequency_simulation:
+                self.last_done_reason = "feet_air"
+                log_print("⏰ Episode done: Demasiado tiempo en el aire")
+                return True
+        else:
+            self.steps_air=0
+        
+
+        
         self.last_done_reason = None
         
         return False
+    
+    def _safe_get_link_xy(self, link_id, default=(0.0, 0.0)):
+        """Devuelve (x,y) globales de un link, o default si falla."""
+        try:
+            st = self.env.p.getLinkState(self.env.robot_id, link_id, computeForwardKinematics=True)
+            # st[0] = world position (x,y,z)
+            return float(st[0][0]), float(st[0][1])
+        except Exception:
+            return default
+        
+    def _safe_get_base_xy(self, default=(0.0, 0.0)):
+        """Devuelve (x,y) globales del base/pelvis si no hay pelvis_link_id."""
+        try:
+            pos, _ = self.env.p.getBasePositionAndOrientation(self.env.robot_id)
+            return float(pos[0]), float(pos[1])
+        except Exception:
+            return default
+        
+    def _safe_get_pelvis_roll(self, default=0.0):
+        """
+        Devuelve el roll (rad) de la pelvis o del base si no hay pelvis link.
+        Convención: euler XYZ de pybullet.
+        """
+        try:
+            if hasattr(self.env, "pelvis_link_id") and self.env.pelvis_link_id is not None:
+                _, orn, _, _, _, _ = self.env.p.getLinkState(self.env.robot_id, self.env.pelvis_link_id, computeForwardKinematics=True)
+            else:
+                _, orn = self.env.p.getBasePositionAndOrientation(self.env.robot_id)
+            roll, pitch, yaw = self.env.p.getEulerFromQuaternion(orn)
+            return float(roll), float(pitch), float(yaw)
+        except Exception:
+            return default
+        
+    def _safe_get_joint_angle(self, joint_name_candidates, default=0.0):
+        """
+        Lee el ángulo de una articulación por nombre (o lista de candidatos).
+        Intenta usar dicts comunes; si no existen, recurre a los joint states cacheados.
+        """
+        try:
+            # 1) Si existe un map nombre->índice
+            jmap = getattr(self.env, "joint_name_to_index", None)
+            if isinstance(joint_name_candidates, str):
+                joint_name_candidates = [joint_name_candidates]
+            if jmap:
+                for nm in joint_name_candidates:
+                    if nm in jmap:
+                        jidx = jmap[nm]
+                        js = self.env.p.getJointState(self.env.robot_id, jidx)
+                        return float(js[0])  # posición
+            # 2) Si el propio env expone getters
+            if hasattr(self.env, "get_joint_angle"):
+                for nm in joint_name_candidates:
+                    try:
+                        return float(self.env.get_joint_angle(nm))
+                    except Exception:
+                        pass
+            # 3) Último recurso: 0.0 (no rompas el entrenamiento)
+            return default
+        except Exception:
+            return default
     
     def get_info(self):
         """Info para debugging"""

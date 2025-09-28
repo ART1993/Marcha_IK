@@ -673,6 +673,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system.env = self
             self.simple_reward_system.robot_id = self.robot_id
             self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
+            self.simple_reward_system.steps_air=0
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
