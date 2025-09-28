@@ -32,7 +32,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 7
     """
     
-    def __init__(self, render_mode='human',enable_curriculum=False, print_env="ENV"):
+    def __init__(self, render_mode='human',enable_curriculum=False, print_env="ENV", fixed_target_leg="left"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -127,7 +127,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.swing_knee_lo = 0.40
         self.swing_knee_hi = 0.85
         # Añadir tracking de pierna levantada
-        self.raised_leg = 'left'  # 'left' o 'right' - cuál pierna está levantada
+        self.fixed_target_leg = fixed_target_leg
+        self.raised_leg = self.fixed_target_leg  # 'left' o 'right' - cuál pierna está levantada
+        
         self.target_knee_height = 0.8  # Altura objetivo de la rodilla levantada
         self.episode_reward = 0
         #Parámetros constantes que se usan en el calculo de torques
@@ -194,17 +196,21 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         p.stepSimulation()
 
+        # ✅ LLAMAR DEBUG OCASIONALMENTE
         
 
         
         #if self.simple_reward_system:
-        reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
+        # Joint indices [0,1,2,4,5,6]
+        joint_states = self.obtener_estado_articulaciones()
+        
         done = self.simple_reward_system.is_episode_done(self.step_count)
+        reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
+        self._debug_joint_angles_and_pressures(u_final, joint_states, done)
         system_used = "PROGRESSIVE"
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
-        # ✅ LLAMAR DEBUG OCASIONALMENTE
-        self._debug_joint_angles_and_pressures(u_final, done)
+        
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
@@ -292,6 +298,18 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         return observation, reward, done, False, info
     
+    def obtener_estado_articulaciones(self):
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
+        self.left_hip_roll_angle = joint_states[0][0]
+        self.left_hip_pitch_angle = joint_states[1][0]
+        self.left_knee_angle = joint_states[2][0]
+        self.left_anckle_angle = joint_states[3][0]
+        self.right_hip_roll_angle = joint_states[4][0]
+        self.right_hip_pitch_angle = joint_states[5][0]
+        self.right_knee_angle = joint_states[6][0]
+        self.right_anckle_angle = joint_states[7][0]
+        return joint_states
+    
 
     def info_pam_torque(self, info):
         jt = getattr(self, "pam_states", {}).get("joint_torques", None)
@@ -337,22 +355,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         (Complementa las propiedades del URDF)
         """
         
-        # ===== FRICCIÓN ESPECÍFICA PARA PIES =====
-        
-        # Pie izquierdo - alta fricción para agarre
-        for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
-            p.changeDynamics(
-                self.robot_id, 
-                foot_id,
-                lateralFriction=0.8,        # Reducido de 1.2 a 0.8
-                spinningFriction=0.15,       # Reducido de 0.8 a 0.15
-                rollingFriction=0.01,       # Reducido de 0.1 a 0.01
-                restitution=0.01,           # Reducido de 0.05 a 0.01 (menos rebote)
-                contactDamping=100,         # Aumentado de 50 a 100 (más amortiguación)
-                contactStiffness=15000,      # Aumentado de 10000 a 15000 (más rigidez)
-                frictionAnchor=1
-            )
-        
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
@@ -365,6 +367,20 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
                 restitution=0.05
             )
+
+        # Pie izquierdo - alta fricción para agarre
+        for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
+            p.changeDynamics(
+                self.robot_id, 
+                foot_id,
+                lateralFriction=0.9,                #0.8,       
+                spinningFriction=0.2,                   #0.15,       
+                rollingFriction=0.01,       
+                restitution=0.01,           
+                contactDamping=100,         
+                contactStiffness=15000,      
+                frictionAnchor=1
+            )
         
         # ===== FRICCIÓN DEL SUELO =====
         
@@ -372,7 +388,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.6,        # Fricción estándar del suelo
+            lateralFriction=0.7,        # Fricción estándar del suelo 0.6
             spinningFriction=0.2,
             rollingFriction=0.005
         )
@@ -613,12 +629,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
-            numSolverIterations=20,
+            numSolverIterations=50,         # antes 20
             numSubSteps=6,
             contactBreakingThreshold=0.0005,
-            erp=0.9,
-            contactERP=0.95,
-            frictionERP=0.9,
+            erp=0.2,                    # antes 0.9
+            contactERP=0.3,            # antes 0.95
+            frictionERP=0.2,            # antes  0.9
             enableConeFriction=1,        # Habilitar fricción cónica
             deterministicOverlappingPairs=1
         )
@@ -654,22 +670,27 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system = SimpleProgressiveReward(self)
         else:
             # solo re-vincula IDs si cambiaron, sin perder contadores/racha
+            self.simple_reward_system.env = self
             self.simple_reward_system.robot_id = self.robot_id
-            self.simple_reward_system.plane_id = self.plane_id
-            self.simple_reward_system.env=self
+            self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
-            0: -0.05,   # left_hip - ligera flexión
-            1: 0.00,   # left_hip_pitch - extendida (pierna de soporte)
-            2: 0.05,     # left knee
-            3: 0.0,
-            4: -0.05,   # right_hip - más flexión
-            5: 0.00,   # right_hip_pitch - flexionada (pierna levantada)
-            6: 0.05,     # right_knee
-            7: 0.0
+            self.joint_indices[0]: 0.00,   #   self.joint_indices[0] 'left_hip_roll_joint'
+            self.joint_indices[1]: -0.05,   # left_hip_pitch_joint
+            self.joint_indices[2]: 0.05,     # left_knee_joint
+            self.joint_indices[3]: 0.0,     # left_anckle_joint
+            self.joint_indices[4]: 0.00,   # right_hip_roll_joint
+            self.joint_indices[5]: -0.05,   # right_hip_pitch_joint
+            self.joint_indices[6]: 0.05,     # right_knee_joint
+            self.joint_indices[7]: 0.0     # right_anckle_joint
         }
+        if self.fixed_target_leg == 'left':
+            initial_positions[self.joint_indices[4]] += +0.03  # right_hip_roll_joint: inclina pelvis hacia la derecha
+            initial_positions[self.joint_indices[6]] += +0.05  # right_knee_joint: ligera flexión para absorber carga
+            # Opcional: elevar un poco la cadera izquierda en pitch para facilitar clearance inicial
+            initial_positions[self.joint_indices[1]] += +0.03  # left_hip_pitch_joint
         
         for joint_id, pos in initial_positions.items():
             p.resetJointState(self.robot_id, joint_id, pos)
@@ -866,22 +887,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
-    def _debug_joint_angles_and_pressures(self, pam_pressures, done):
+    def _debug_joint_angles_and_pressures(self, pam_pressures, joint_states, done):
         """
             ✅ MÉTODO DE DEBUG para verificar la lógica biomecánica
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
-        # Joint indices [0,1,2,4,5,6]
-        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
-        self.left_hip_roll_angle = joint_states[0][0]
-        self.left_hip_pitch_angle = joint_states[1][0]
-        self.left_knee_angle = joint_states[2][0]
-        self.left_anckle_angle = joint_states[3][0]
-        self.right_hip_roll_angle = joint_states[4][0]
-        self.right_hip_pitch_angle = joint_states[5][0]
-        self.right_knee_angle = joint_states[6][0]
-        self.right_anckle_angle = joint_states[7][0]
         
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:

@@ -47,8 +47,7 @@ class SimpleProgressiveReward:
         self.swing_hip_tol     = float(getattr(env, "swing_hip_tol",  0.10))  # ±0.10 rad
         # Rodilla en el aire: rango recomendado 0.45–0.75
         self.swing_knee_lo     = float(getattr(env, "swing_knee_lo",  0.45))
-        self.swing_knee_hi     = float(getattr(env, "swing_knee_hi",  0.75))
-
+        self.swing_knee_hi     = float(getattr(env, "swing_knee_hi",  0.75)) 
         if self.enable_curriculum==False:
             # MODO SIN CURRICULUM: sistema fijo y permisivo
             self.level = 3  # Siempre nivel 3
@@ -129,12 +128,14 @@ class SimpleProgressiveReward:
             }
         
         # Para alternancia de piernas (solo nivel 3)
-        self.target_leg = 'left'
+        self.target_leg = getattr(env, "fixed_target_leg", None)  # 'left'|'right'|None self.fixed_target_leg
+        self.fixed_target_leg=self.target_leg
         self.switch_timer = 0
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
-
+        self.bad_ending=("fall", "tilt", "drift")
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
+        self.min_F=30
         both_print(f"🎯 Progressive System initialized:")
         both_print(f"   Switch interval: {self.switch_interval} steps ({switch_time_seconds:.1f}s)")
         both_print(f"   Frequency: {self.frequency_simulation} Hz")
@@ -147,7 +148,7 @@ class SimpleProgressiveReward:
 
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
-        
+        # self.
         if self.level == 1 and self.enable_curriculum:
             reward = self._level_1_reward(pos,euler)      # Solo supervivencia
         elif self.level == 2 and self.enable_curriculum:
@@ -180,8 +181,10 @@ class SimpleProgressiveReward:
             height_reward= 1.5  # Buena altura
         elif height > 0.8:
             height_reward= 0.8  # Altura mínima
-        else:
+        elif height <= 0.8:
             height_reward= -1.0  # Caída
+        elif height<= 0.7:       # and self.last_done_reason == self.bad_ending[0]:
+            height_reward= -10
 
         pitch = euler[1]
         back_pitch_pen = - np.clip(pitch - 0.05, 0.0, 0.30) * 6.0
@@ -194,14 +197,15 @@ class SimpleProgressiveReward:
         height_reward=self._level_1_reward(pos, euler)
         
         # Versión antigua
-        tilt = abs(euler[0]) + abs(euler[1])  # roll + pitch
-        if tilt < 0.2:
+        roll,pitch = abs(euler[0]) , abs(euler[1])  # roll + pitch
+        if pitch < 0.2:
             stability_reward = 1.5  # Muy estable
-        elif tilt < 0.4:
+        elif pitch < 0.4:
             stability_reward = 0.5  # Moderadamente estable
-        else:
+        elif pitch < self.max_tilt_by_level[self.level]:
             stability_reward = -0.5  # Inestable
-        
+        elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
+            stability_reward = -5.0  # Inestable
         # Pitch (erguido)
         
         # pitch_pen = - (abs(euler[1]) / np.deg2rad(30)) * (0.5 / self.frequency_simulation)
@@ -236,21 +240,22 @@ class SimpleProgressiveReward:
         F_L = self.env.contact_normal_force(left_foot_id)
         F_R = self.env.contact_normal_force(right_foot_id)
         F_sum = max(F_L + F_R, 1e-6)
-        left_hip_roll_id, left_hip_pitch_id, left_knee_id,left_anckle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_anckle_id = self.env.joint_indices
-        min_F=20
+        left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_anckle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_anckle_id = self.env.joint_indices
+        
         # Cambiar pierna cada switch interval
-        self.switch_timer += 1
-        if self.switch_timer >= self.switch_interval:
-            self.target_leg = 'left' if self.target_leg == 'right' else 'right'
-            self.switch_timer = 0
-            # DEBUG MEJORADO: Mostrar tiempo real además de steps
-            seconds_per_switch = self.switch_interval / self.frequency_simulation  
-            # Asumiendo 400 Hz
-            log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
+        if self.fixed_target_leg is None:
+            self.switch_timer += 1
+            if self.switch_timer >= self.switch_interval:
+                self.target_leg = 'left' if self.target_leg == 'right' else 'right'
+                self.switch_timer = 0
+                # DEBUG MEJORADO: Mostrar tiempo real además de steps
+                seconds_per_switch = self.switch_interval / self.frequency_simulation  
+                # Asumiendo 400 Hz
+                log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
         # Detectar qué pies están en contacto Ver si seleccionar min_F=20 0 27 0 30
-        left_down = self.env.contact_with_force(left_foot_id, min_F=min_F)
-        right_down = self.env.contact_with_force(right_foot_id, min_F=min_F)
+        left_down = self.env.contact_with_force(left_foot_id, min_F=self.min_F)
+        right_down = self.env.contact_with_force(right_foot_id, min_F=self.min_F)
 
         # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
         support_sign = +1.0 if (left_down and not right_down) else (-1.0 if (right_down and not left_down) else 0.0)
@@ -259,16 +264,30 @@ class SimpleProgressiveReward:
         if support_sign != 0.0:
             hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.3 / self.frequency_simulation)
 
-        target_is_right   = (self.target_leg == 'right')
-        target_foot_id    = right_foot_id if target_is_right else left_foot_id
-        target_foot_down  = right_down if target_is_right else left_down
-        support_foot_down = left_down if target_is_right else right_down
+        
+        # NUEVO: si estamos en left-only, el soporte debe ser el pie derecho
+        if self.fixed_target_leg == 'left':
+            # fuerza la semántica: soporte=right, objetivo=left
+            target_is_right = False
+            support_foot_down = self.env.contact_with_force(self.env.right_foot_link_id, min_F=self.min_F)
+            target_foot_down  = self.env.contact_with_force(self.env.left_foot_link_id,  min_F=self.min_F)
+        # target_is_right   = (self.target_leg == 'right') # Sera siempre false
+        # target_foot_id    = right_foot_id if target_is_right else left_foot_id
+        # target_foot_down  = right_down if target_is_right else left_down
+        # support_foot_down = left_down if target_is_right else right_down
 
 
         # ======== SHAPING POR CARGAS (romper toe-touch y cargar el soporte) ========
         # Cargas del pie de SOPORTE (esperado) y del pie OBJETIVO (debe ir al aire)
-        F_sup = F_L if target_is_right else F_R   # si objetivo=right, soporte=left (F_L)
-        F_tar = F_R if target_is_right else F_L
+        # F_sup = F_L if target_is_right else F_R   # si objetivo=right, soporte=left (F_L)
+        # F_tar = F_R if target_is_right else F_L
+        if self.fixed_target_leg == 'left':
+            F_sup = F_R      # soporte = pie derecho
+            F_tar = F_L      # objetivo = pie izquierdo
+            # Carga mínima en soporte (80%) y toe-touch estricto del objetivo
+            support_load_reward = np.clip((F_sup / F_sum - 0.80) / 0.20, 0.0, 1.0) * 1.2
+            toe_touch_pen = -0.8 if (0.0 < F_tar < self.min_F) else 0.0
+
 
         lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
         rpos = p.getLinkState(self.robot_id, right_foot_id)[0]
@@ -278,17 +297,17 @@ class SimpleProgressiveReward:
         midline_pen = 0.0 if (not support_foot_down) else -np.clip((ml_min - ml)/ml_min, 0.0, 1.0) * 0.6
 
         # (1) Penaliza doble apoyo fuerte
-        both_down_pen = -1.0 if (F_L >= min_F and F_R >= min_F) else 0.0
+        both_down_pen = -1.0 if (F_L >= self.min_F and F_R >= self.min_F) else 0.0
 
         # (2) Penaliza toe-touch (1–30 N) del pie objetivo
-        toe_touch_pen = -0.6 if (0.0 < F_tar < min_F) else 0.0
+        toe_touch_pen = -0.6 if (0.0 < F_tar < self.min_F) else 0.0
 
         # (3) Recompensa reparto de carga sano: ≥80% en el pie de soporte
         ratio = F_sup / F_sum
         support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
 
         # (4) Bonus por tiempo en apoyo simple sostenido (pie objetivo en aire “limpio”)
-        if (F_sup >= min_F) and (F_tar < 1.0):
+        if (F_sup >= self.min_F) and (F_tar < 1.0):
             # acumula ticks (~400 Hz ⇒ 0.30 s ≈ 120 ticks)
             self.single_support_ticks += 1
             ss_step = 0.05/ self.frequency_simulation
@@ -300,7 +319,8 @@ class SimpleProgressiveReward:
 
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
-        foot_z = p.getLinkState(self.robot_id, target_foot_id)[0][2]
+        # self.fixed_target_leg porque target foot es siempre left
+        foot_z = p.getLinkState(self.robot_id, left_foot_id)[0][2]
         clearance_target = 0.09  # 9 cm
         clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 1.5
 
@@ -324,8 +344,8 @@ class SimpleProgressiveReward:
         knee_bonus = soft_range_bonus(knee_ang, self.swing_knee_lo, self.swing_knee_hi, slope=0.20) * 1.0
         knee_bonus = 0.0 if target_foot_down else knee_bonus
 
-        # Cadera (roll) del swing — objetivo configurable, con meseta ± self.swing_hip_tol
-        hip_id  = right_hip_roll_id if target_is_right else left_hip_roll_id
+        # Cadera (pitch) del swing — objetivo configurable, con meseta ± self.swing_hip_tol
+        hip_id  = right_hip_pitch_id if target_is_right else left_hip_pitch_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
         hip_bonus = soft_center_bonus(abs(hip_ang), self.swing_hip_target, self.swing_hip_tol, slope=0.20) * 0.7
         hip_bonus = 0.0 if target_foot_down else hip_bonus
@@ -336,28 +356,36 @@ class SimpleProgressiveReward:
             knee_bonus = 0.0
             hip_bonus = 0.0
 
-        # Evaluar si está haciendo lo correcto
-        if self.target_leg == 'right':
-            # Quiero: pie izquierdo abajo, pie derecho arriba
-            if left_down and not right_down:
-                contacto_reward = 2.0  # ¡Perfecto!
-            elif left_down and right_down:
-                contacto_reward = 0.5  # Ambos abajo (transición)
-            else:
-                contacto_reward = -0.5  # Incorrecto
-        else:  # target_leg == 'left'
-            # Quiero: pie derecho abajo, pie izquierdo arriba
+        if self.fixed_target_leg == 'left':
             if right_down and not left_down:
-                contacto_reward = 2.0  # ¡Perfecto!
-            elif left_down and right_down:
-                contacto_reward = 0.5  # Ambos abajo (transición)
+                contacto_reward = 2.0
+            elif right_down and left_down:
+                contacto_reward = 0.3  # transición tolerada
             else:
-                contacto_reward = -0.5  # Incorrecto
+                contacto_reward = -0.8
+
+        # Evaluar si está haciendo lo correcto
+        # if self.target_leg == 'right':
+        #     # Quiero: pie izquierdo abajo, pie derecho arriba
+        #     if left_down and not right_down:
+        #         contacto_reward = 2.0  # ¡Perfecto!
+        #     elif left_down and right_down:
+        #         contacto_reward = 0.5  # Ambos abajo (transición)
+        #     else:
+        #         contacto_reward = -0.5  # Incorrecto
+        # else:  # target_leg == 'left'
+        #     # Quiero: pie derecho abajo, pie izquierdo arriba
+        #     if right_down and not left_down:
+        #         contacto_reward = 2.0  # ¡Perfecto!
+        #     elif left_down and right_down:
+        #         contacto_reward = 0.5  # Ambos abajo (transición)
+        #     else:
+        #         contacto_reward = -0.5  # Incorrecto
 
         # Suma total
         shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
         leg_reward = (contacto_reward + clearance_bonus + knee_bonus + hip_bonus
-+                      + shaping + hiproll_align_bonus + midline_pen)
+                      + shaping + hiproll_align_bonus + midline_pen)
         return leg_reward
     
     def zmp_and_smooth_reward(self):
@@ -401,7 +429,7 @@ class SimpleProgressiveReward:
         
         self.episode_count += 1
         self.recent_episodes.append(episode_reward)
-        has_fallen = (self.last_done_reason in ("fall", "tilt", "drift"))
+        has_fallen = (self.last_done_reason in self.bad_ending)
         
         # Mantener solo últimos 5 episodios
         if len(self.recent_episodes) > 5:
@@ -447,9 +475,9 @@ class SimpleProgressiveReward:
         
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
-        
+        self.dx = float(pos[0] - self.env.init_pos[0])
         # Caída
-        if pos[2] <= 0.5:
+        if pos[2] <= 0.7:
             self.last_done_reason = "fall"
             log_print("❌ Episode done: Robot fell")
             return True

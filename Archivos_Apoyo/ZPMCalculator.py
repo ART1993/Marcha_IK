@@ -47,7 +47,7 @@ class ZMPCalculator:
         # ===== HISTORIA MÍNIMA PARA ACELERACIÓN =====
         
         self.com_history = []
-        self.max_history = 3  # Solo 3 puntos para cálculo básico
+        self.max_history = 5  # Solo 3 puntos para cálculo básico
         
         print(f"🎯 Simplified ZMP Calculator initialized")
         print(f"   Stability margin: {self.stability_margin}m")
@@ -106,7 +106,7 @@ class ZMPCalculator:
         Si no hay suficiente historia, asumir aceleración cero.
         """
         
-        if len(self.com_history) < 3:
+        if len(self.com_history) < 5:
             return np.array([0.0, 0.0, 0.0])
         
         # Diferencias finitas de segundo orden: a = (pos[t] - 2*pos[t-1] + pos[t-2]) / dt^2
