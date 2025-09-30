@@ -42,7 +42,7 @@ class SimpleProgressiveReward:
         self.single_support_ticks = 0
         # --- Parámetros configurables (puedes sobreescribirlos desde env) ---
         # Cadera de la pierna en el aire (roll absoluto). Recomendado 0.3–0.5
-        self.swing_hip_target  = float(getattr(env, "swing_hip_target", 0.40))
+        self.swing_hip_target  = float(getattr(env, "swing_hip_target", 0.10))
         # Ventana suave para cadera y rodilla (ancho de tolerancia)
         self.swing_hip_tol     = float(getattr(env, "swing_hip_tol",  0.10))  # ±0.10 rad
         # Rodilla en el aire: rango recomendado 0.45–0.75
@@ -304,12 +304,12 @@ class SimpleProgressiveReward:
         #self.extra_reward_1
 
 
-        lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
-        rpos = p.getLinkState(self.robot_id, right_foot_id)[0]
-        ml = abs((rpos[1] - lpos[1]) if target_is_right else (lpos[1] - rpos[1]))  # eje Y
-        ml_min = 0.08  # 8 cm de separación deseable
-        support_foot_down = left_down if target_is_right else right_down
-        midline_pen = 0.0 if (not support_foot_down) else -np.clip((ml_min - ml)/ml_min, 0.0, 1.0) * 0.6
+        #lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
+        #rpos = p.getLinkState(self.robot_id, right_foot_id)[0]
+        #ml = abs((rpos[1] - lpos[1]) if target_is_right else (lpos[1] - rpos[1]))  # eje Y
+        #ml_min = 0.12  # 12 cm de separación deseable
+        #support_foot_down = left_down if target_is_right else right_down
+        #midline_pen = 0.0 if (not support_foot_down) else -np.clip((ml_min - ml)/ml_min, 0.0, 1.0) * 1.2 # Antes 0.6
 
         # (1) Penaliza doble apoyo fuerte
         both_down_pen = -1.0 if (F_L >= self.min_F and F_R >= self.min_F) else 0.0
@@ -320,6 +320,19 @@ class SimpleProgressiveReward:
         # (3) Recompensa reparto de carga sano: ≥80% en el pie de soporte
         ratio = F_sup / F_sum
         support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
+
+        # (2.5) Penalización por casi-cruce entre el pie en swing y el pie de soporte
+        if (F_sup >= self.min_F) and (F_tar < self.min_F):
+            swing_id  = left_foot_id if (not target_is_right) else right_foot_id
+            stance_id = right_foot_id if (not target_is_right) else left_foot_id
+            dmin = 0.04  # 4 cm
+            close_pen = 0.0
+            cps = p.getClosestPoints(self.env.robot_id, self.env.robot_id, dmin, swing_id, stance_id)
+            if cps:  # hay algún punto más cerca que dmin
+                worst = min(cp[8] for cp in cps)  # cp[8] = distance
+                close_pen += -1.0 * max(0.0, (dmin - worst) / dmin)
+        else:
+            close_pen = 0.0
 
         # (4) Bonus por tiempo en apoyo simple sostenido (pie objetivo en aire “limpio”)
         if (F_sup >= self.min_F) and (F_tar < 1.0):
@@ -365,21 +378,38 @@ class SimpleProgressiveReward:
         #hip_bonus = soft_center_bonus(abs(hip_ang), self.swing_hip_target, self.swing_hip_tol, slope=0.20) * 0.7
         #hip_bonus = 0.0 if target_foot_down else hip_bonus
         # después (direccional):
-        desired_sign = +1.0  # pon -1.0 si en tu robot la flexión hacia delante es negativa
+        desired_sign = -1.0  # pon -1.0 si en tu robot la flexión hacia delante es negativa
         hip_bonus_dir = soft_center_bonus(desired_sign * hip_ang,
                                         self.swing_hip_target, self.swing_hip_tol,
                                         slope=0.20) * 0.7
         hip_bonus = 0.0 if target_foot_down else hip_bonus_dir
 
+        # ✅ Bonus geométrico: pie objetivo por delante de la pelvis/base (eje X)
         if not target_foot_down:
             tgt_foot_id = right_foot_id if target_is_right else left_foot_id
-            x_foot, _ = self._safe_get_link_xy(tgt_foot_id)
-            x_base, _ = self._safe_get_base_xy()
+            x_foot, y_foot = self._safe_get_link_xy(tgt_foot_id)
+            x_base, y_base = self._safe_get_base_xy()
             forward_margin = 0.03   # 3 cm por delante
             # sigmoide suave: 0 a 1 cuando el pie pasa por delante de la pelvis ~3cm
             forward_bonus = 1.0 / (1.0 + np.exp(-25.0 * ((x_foot - x_base) - forward_margin)))
+            # ✅ Penalización de velocidad lateral hacia la línea media cuando el pie está en el aire
+            # velocidad del link (vx, vy, vz) en índice 6 de getLinkState con computeLinkVelocity=1
+            v = p.getLinkState(self.env.robot_id, tgt_foot_id, computeLinkVelocity=1)[6]
+            vy = float(v[1])
+            toward_mid = (y_foot - y_base) * (-vy)  # >0 si te mueves hacia la línea media
+            corridor_pen = -0.2 * max(0.0, toward_mid)
         else:
             forward_bonus = 0.0
+            corridor_pen = 0.0
+
+        # ✅ Bono de hip ROLL del swing (abducción cómoda)
+        swing_roll_jid = (left_hip_roll_id if (not target_is_right) else right_hip_roll_id)
+        q_roll_swing = p.getJointState(self.robot_id, swing_roll_jid)[0]
+        roll_abd_center = 0.15  # ~8–10°
+        roll_abd_tol    = 0.08
+        roll_swing_bonus = soft_center_bonus(q_roll_swing, roll_abd_center, roll_abd_tol, slope=0.20) * 0.8
+        if target_foot_down or ratio < 0.70:
+            roll_swing_bonus = 0.0
 
         # ✅ Penalización por velocidad articular excesiva en la cadera del swing
         hip_vel = p.getJointState(self.robot_id, hip_id)[1]
@@ -388,16 +418,19 @@ class SimpleProgressiveReward:
         speed_pen = -kv * max(0.0, abs(hip_vel) - v_thresh)
 
         if ratio < 0.70:
-             clearance_bonus = 0.0
-             knee_bonus = 0.0
-             hip_bonus = 0.0
-             forward_bonus = 0.0
+            clearance_bonus = 0.0
+            knee_bonus = 0.0
+            hip_bonus = 0.0
+            forward_bonus = 0.0
+            forward_bonus = 0.0
+            corridor_pen  = 0.0
+            # roll_swing_bonus ya se pone a 0 arriba con ratio < 0.70
 
         # Suma total
-        # 
         shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
-        leg_reward = ( clearance_bonus + knee_bonus + hip_bonus + forward_bonus
-                      + shaping  + midline_pen + speed_pen)
+        leg_reward = (clearance_bonus + knee_bonus + hip_bonus
+                      + roll_swing_bonus + forward_bonus + corridor_pen + close_pen
+                      + shaping + speed_pen) # contacto_reward
         return leg_reward
     
     def zmp_and_smooth_reward(self):

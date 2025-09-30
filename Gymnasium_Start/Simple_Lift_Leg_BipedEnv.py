@@ -121,7 +121,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         self.left_foot_link_id = 3
         self.right_foot_link_id = 7
-        self.swing_hip_target = 0.35
+        self.swing_hip_target = 0.05
         self.swing_hip_tol=0.10 
 
         self.swing_knee_lo = 0.40
@@ -164,7 +164,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.euler = p.getEulerFromQuaternion(orn)
        
         u_final = np.clip(action, 0.0, 1.0)
-
+        # Probar los dos y ver cual da mejor resultados
         #delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
         #u_final = self.prev_action + delta
         #self.prev_action = u_final.copy()
@@ -651,8 +651,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.robot_id = p.loadURDF(
             self.urdf_path,
             [0, 0, 1.21],  # Altura inicial ligeramente mayor
-            # useFixedBase=False,
-            useFixedBase=False
+            useFixedBase=False,
+            #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
         robot_joint_info=self.robot_data._get_joint_info
@@ -904,15 +904,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     log_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
                 left_contact, right_contact = self.contacto_pies
-                both_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
-                both_print(f"   Left hip roll: {self.left_hip_roll_angle:.3f} rad ({math.degrees(self.left_hip_roll_angle):.1f}°)")
-                both_print(f"   Right hip roll: {self.right_hip_roll_angle:.3f} rad ({math.degrees(self.right_hip_roll_angle):.1f}°)")
-                both_print(f"   Left hip pitch: {self.left_hip_pitch_angle:.3f} rad ({math.degrees(self.left_hip_pitch_angle):.1f}°)")
-                both_print(f"   Right hip pitch: {self.right_hip_pitch_angle:.3f} rad ({math.degrees(self.right_hip_pitch_angle):.1f}°)")
-                both_print(f"   Left knee: {self.left_knee_angle:.3f} rad ({math.degrees(self.left_knee_angle):.1f}°)")
-                both_print(f"   Right knee: {self.right_knee_angle:.3f} rad ({math.degrees(self.right_knee_angle):.1f}°)")
-                both_print(f"   Left anckle: {self.left_anckle_angle:.3f} rad ({math.degrees(self.left_anckle_angle):.1f}°)")
-                both_print(f"   Right anckle: {self.right_anckle_angle:.3f} rad ({math.degrees(self.right_anckle_angle):.1f}°)")
+                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
+                log_print(f"   Left hip roll: {self.left_hip_roll_angle:.3f} rad ({math.degrees(self.left_hip_roll_angle):.1f}°)")
+                log_print(f"   Right hip roll: {self.right_hip_roll_angle:.3f} rad ({math.degrees(self.right_hip_roll_angle):.1f}°)")
+                log_print(f"   Left hip pitch: {self.left_hip_pitch_angle:.3f} rad ({math.degrees(self.left_hip_pitch_angle):.1f}°)")
+                log_print(f"   Right hip pitch: {self.right_hip_pitch_angle:.3f} rad ({math.degrees(self.right_hip_pitch_angle):.1f}°)")
+                log_print(f"   Left knee: {self.left_knee_angle:.3f} rad ({math.degrees(self.left_knee_angle):.1f}°)")
+                log_print(f"   Right knee: {self.right_knee_angle:.3f} rad ({math.degrees(self.right_knee_angle):.1f}°)")
+                log_print(f"   Left anckle: {self.left_anckle_angle:.3f} rad ({math.degrees(self.left_anckle_angle):.1f}°)")
+                log_print(f"   Right anckle: {self.right_anckle_angle:.3f} rad ({math.degrees(self.right_anckle_angle):.1f}°)")
                 log_print(f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
                 log_print(f"   R Hip rollflex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
                 log_print(f"   L Hip pitch flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
