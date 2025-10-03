@@ -15,7 +15,7 @@ from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
-from Archivos_Mejorados.RewardSystemSimple import SimpleProgressiveReward
+from Archivos_Recompensas.RewardSystemSimple import SimpleProgressiveReward
            
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
@@ -679,20 +679,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
-            self.joint_indices[0]: 0.00,   #   self.joint_indices[0] 'left_hip_roll_joint'
-            self.joint_indices[1]: -0.05,   # left_hip_pitch_joint
-            self.joint_indices[2]: 0.05,     # left_knee_joint
-            self.joint_indices[3]: 0.0,     # left_anckle_joint
-            self.joint_indices[4]: 0.00,   # right_hip_roll_joint
-            self.joint_indices[5]: -0.05,   # right_hip_pitch_joint
-            self.joint_indices[6]: 0.05,     # right_knee_joint
-            self.joint_indices[7]: 0.0     # right_anckle_joint
+            # Pierna izquierda
+            self.joint_indices[0]: +0.00,   #   self.joint_indices[0] 'left_hip_roll_joint'
+            self.joint_indices[1]: 0.0,   # left_hip_pitch_joint
+            self.joint_indices[2]: 0.0,     # left_knee_joint
+            self.joint_indices[3]: 0.05,     # left_anckle_joint
+            # pierna derecha
+            self.joint_indices[4]: -0.0,   # right_hip_roll_joint
+            self.joint_indices[5]: -0.0,   # right_hip_pitch_joint
+            self.joint_indices[6]: 0.0,     # right_knee_joint
+            self.joint_indices[7]: -0.0     # right_anckle_joint
         }
-        if self.fixed_target_leg == 'left':
-            initial_positions[self.joint_indices[4]] += +0.03  # right_hip_roll_joint: inclina pelvis hacia la derecha
-            initial_positions[self.joint_indices[6]] += +0.05  # right_knee_joint: ligera flexión para absorber carga
+        #if self.fixed_target_leg == 'left':
+            #initial_positions[self.joint_indices[4]] += +0.03  # right_hip_roll_joint: inclina pelvis hacia la derecha
+            #initial_positions[self.joint_indices[6]] += +0.05  # right_knee_joint: ligera flexión para absorber carga
             # Opcional: elevar un poco la cadera izquierda en pitch para facilitar clearance inicial
-            initial_positions[self.joint_indices[1]] += +0.03  # left_hip_pitch_joint
+            #initial_positions[self.joint_indices[1]] += +0.03  # left_hip_pitch_joint
         
         for joint_id, pos in initial_positions.items():
             p.resetJointState(self.robot_id, joint_id, pos)
@@ -767,29 +769,29 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
     def parametros_torque_pam(self):
         # Momentos de brazo calculados desde dimensiones reales
-        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.0503      # 5.03cm - basado en circunferencia del muslo
-        self.HIP_ROLL_FLEXOR_VARIATION = round(self.HIP_ROLL_FLEXOR_BASE_ARM/4.98, 4)     # ±1.01cm variación por ángulo
+        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.055      # 5.03cm - basado en circunferencia del muslo
+        self.HIP_ROLL_FLEXOR_VARIATION = 0.008     # ±1.01cm variación por ángulo
         
-        self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.0628    
-        self.HIP_ROLL_EXTENSOR_VARIATION = round(self.HIP_ROLL_EXTENSOR_BASE_ARM/4.98, 4)   
+        self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.052    
+        self.HIP_ROLL_EXTENSOR_VARIATION = 0.004 
 
         self.HIP_PITCH_FLEXOR_BASE_ARM = 0.045
-        self.HIP_PITCH_FLEXOR_VARIATION = round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.96, 4) 
+        self.HIP_PITCH_FLEXOR_VARIATION = 0.0085#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
         
-        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.055    
-        self.HIP_PITCH_EXTENSOR_VARIATION = round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.96, 4) 
+        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.054#0.0628    
+        self.HIP_PITCH_EXTENSOR_VARIATION = 0.007#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
 
         self.KNEE_FLEXOR_BASE_ARM = 0.0566     
-        self.KNEE_FLEXOR_VARIATION = round(self.KNEE_FLEXOR_BASE_ARM/5, 4)    
+        self.KNEE_FLEXOR_VARIATION = 0.010#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)    
 
-        self.KNEE_EXTENSOR_BASE_ARM = 0.0640     
-        self.KNEE_EXTENSOR_VARIATION = round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
+        self.KNEE_EXTENSOR_BASE_ARM = 0.0620#0.0640     
+        self.KNEE_EXTENSOR_VARIATION = 0.008#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
 
         self.ANCKLE_FLEXOR_BASE_ARM = 0.05     
-        self.ANCKLE_FLEXOR_VARIATION = round(self.ANCKLE_FLEXOR_BASE_ARM/4.2, 4)    
+        self.ANCKLE_FLEXOR_VARIATION = 0.0105#round(self.ANCKLE_FLEXOR_BASE_ARM/4.2, 4)    
 
-        self.ANCKLE_EXTENSOR_BASE_ARM = 0.055     
-        self.ANCKLE_EXTENSOR_VARIATION = round(self.ANCKLE_EXTENSOR_BASE_ARM/ 4.2, 4)
+        self.ANCKLE_EXTENSOR_BASE_ARM = 0.054#0.055     
+        self.ANCKLE_EXTENSOR_VARIATION = 0.0085#round(self.ANCKLE_EXTENSOR_BASE_ARM/ 4.2, 4)
 
         self.KP = 80.0   # Ganancia proporcional
         self.KD = 12.0   # Ganancia derivativa    
@@ -812,7 +814,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         Basado en geometría real: circunferencia muslo = 0.503m
         """
         # Flexor más efectivo cuando cadera está extendida (ángulo negativo)
-        angle_factor = np.cos(angle + np.pi/6)  # Desplazamiento para peak en extensión
+        angle_factor = np.cos(angle + np.pi/6.0)  # Desplazamiento para peak en extensión
         return self.HIP_ROLL_FLEXOR_BASE_ARM + self.HIP_ROLL_FLEXOR_VARIATION * angle_factor
     
     def hip_roll_extensor_moment_arm(self, angle):
@@ -822,7 +824,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         # Extensor más efectivo en flexión ligera-moderada
         angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
-        return self.HIP_ROLL_EXTENSOR_BASE_ARM + self.HIP_ROLL_EXTENSOR_VARIATION * angle_factor
+        R_raw = self.HIP_ROLL_EXTENSOR_BASE_ARM + self.HIP_ROLL_EXTENSOR_VARIATION * angle_factor
+        # theta_cut, slope = -0.15, 0.08
+        # sig = 1.0 / (1.0 + np.exp((angle - theta_cut)/slope))   # ~1 si angle << theta_cut
+        # atten = 0.60 + 0.40 * (1.0 - sig)  # → 0.60 en negativos, → 1.0 en positivos
+        return R_raw
     
     def hip_pitch_flexor_moment_arm(self, angle):
         """

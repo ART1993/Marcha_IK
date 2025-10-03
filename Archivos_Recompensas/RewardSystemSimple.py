@@ -224,16 +224,15 @@ class SimpleProgressiveReward:
             stability_reward = -0.5  # Inestable
         elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
             stability_reward = -5.0  # Inestable
-        # Pitch (erguido)
-        
-        # pitch_pen = - (abs(euler[1]) / np.deg2rad(30)) * (0.5 / self.frequency_simulation)
-
-        # # Roll con zona muerta
-        # roll_soft = np.deg2rad(8)
-        # roll_excess = max(0.0, abs(euler[0]) - roll_soft)
-        # roll_pen = - (roll_excess / np.deg2rad(20)) * (0.5 / self.frequency_simulation)
-        
-        return height_reward +  stability_reward
+    
+    # Guardarraíl adicional de roll (torso) para evitar extremos
+        torso_roll = euler[0]
+        guard_pen = self._roll_guardrail_pen(
+            torso_roll,
+            level_soft=0.20,
+            level_hard=self.max_tilt_by_level[self.level]
+        )
+        return height_reward + stability_reward + guard_pen
     
     def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
@@ -247,8 +246,12 @@ class SimpleProgressiveReward:
         leg_reward = self._calculate_leg_reward(step_count)
 
         zmp_reward = self.zmp_and_smooth_reward()
+
+        # Guardarraíl de tobillos (frena 'zarpazo de tobillo')
+        _,_,_, left_anckle_id, _,_,_, right_anckle_id = self.env.joint_indices
+        ankle_pen = self._ankle_guardrail_pen(left_anckle_id, right_anckle_id)
         
-        return base_reward + leg_reward + zmp_reward
+        return base_reward + leg_reward + zmp_reward + ankle_pen
     
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
@@ -334,23 +337,15 @@ class SimpleProgressiveReward:
         else:
             close_pen = 0.0
 
-        # (4) Bonus por tiempo en apoyo simple sostenido (pie objetivo en aire “limpio”)
-        if (F_sup >= self.min_F) and (F_tar < 1.0):
-            # acumula ticks (~400 Hz ⇒ 0.30 s ≈ 120 ticks)
-            self.single_support_ticks += 1
-            ss_step = 0.05/ self.frequency_simulation
-            ss_terminal = 0.5 if self.single_support_ticks == int(0.30 * self.frequency_simulation) else 0.0
-        else:
-            self.single_support_ticks = 0
-            ss_step = 0.0
-            ss_terminal = 0.0
+        # (4) BONUS por tiempo en apoyo simple con saturación (sin toe-touch)
+        ss_reward = self._single_support_dwell_reward(F_sup, F_tar, self.frequency_simulation)
 
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
         # self.fixed_target_leg porque target foot es siempre left
         foot_z = p.getLinkState(self.robot_id, left_foot_id)[0][2]
         clearance_target = 0.09  # 9 cm
-        clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 1.5
+        clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
 
         # === Helpers de rango suave ===
         def soft_range_bonus(x, lo, hi, slope=0.15):
@@ -384,24 +379,6 @@ class SimpleProgressiveReward:
                                         slope=0.20) * 0.7
         hip_bonus = 0.0 if target_foot_down else hip_bonus_dir
 
-        # ✅ Bonus geométrico: pie objetivo por delante de la pelvis/base (eje X)
-        if not target_foot_down:
-            tgt_foot_id = right_foot_id if target_is_right else left_foot_id
-            x_foot, y_foot = self._safe_get_link_xy(tgt_foot_id)
-            x_base, y_base = self._safe_get_base_xy()
-            forward_margin = 0.03   # 3 cm por delante
-            # sigmoide suave: 0 a 1 cuando el pie pasa por delante de la pelvis ~3cm
-            forward_bonus = 1.0 / (1.0 + np.exp(-25.0 * ((x_foot - x_base) - forward_margin)))
-            # ✅ Penalización de velocidad lateral hacia la línea media cuando el pie está en el aire
-            # velocidad del link (vx, vy, vz) en índice 6 de getLinkState con computeLinkVelocity=1
-            v = p.getLinkState(self.env.robot_id, tgt_foot_id, computeLinkVelocity=1)[6]
-            vy = float(v[1])
-            toward_mid = (y_foot - y_base) * (-vy)  # >0 si te mueves hacia la línea media
-            corridor_pen = -0.2 * max(0.0, toward_mid)
-        else:
-            forward_bonus = 0.0
-            corridor_pen = 0.0
-
         # ✅ Bono de hip ROLL del swing (abducción cómoda)
         swing_roll_jid = (left_hip_roll_id if (not target_is_right) else right_hip_roll_id)
         q_roll_swing = p.getJointState(self.robot_id, swing_roll_jid)[0]
@@ -421,16 +398,19 @@ class SimpleProgressiveReward:
             clearance_bonus = 0.0
             knee_bonus = 0.0
             hip_bonus = 0.0
-            forward_bonus = 0.0
-            forward_bonus = 0.0
-            corridor_pen  = 0.0
             # roll_swing_bonus ya se pone a 0 arriba con ratio < 0.70
 
         # Suma total
-        shaping = both_down_pen + toe_touch_pen + support_load_reward + ss_step + ss_terminal
+        support_load_reward = min(support_load_reward, 0.8)
+        shaping = both_down_pen + toe_touch_pen + support_load_reward +ss_reward
         leg_reward = (clearance_bonus + knee_bonus + hip_bonus
-                      + roll_swing_bonus + forward_bonus + corridor_pen + close_pen
+                      + roll_swing_bonus  + close_pen
                       + shaping + speed_pen) # contacto_reward
+        # Recompensa por pie de soporte 'plano' (planta paralela al suelo)
+        if F_sup >= self.min_F:
+            stance_foot_id = (right_foot_id if (F_R >= F_L) else left_foot_id)
+            flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
+            leg_reward += flat_reward
         return leg_reward
     
     def zmp_and_smooth_reward(self):
@@ -568,121 +548,6 @@ class SimpleProgressiveReward:
         
         return False
     
-    def _safe_get_link_xy(self, link_id, default=(0.0, 0.0)):
-        """Devuelve (x,y) globales de un link, o default si falla."""
-        try:
-            st = self.env.p.getLinkState(self.env.robot_id, link_id, computeForwardKinematics=True)
-            # st[0] = world position (x,y,z)
-            return float(st[0][0]), float(st[0][1])
-        except Exception:
-            return default
-        
-    def _safe_get_base_xy(self, default=(0.0, 0.0)):
-        """Devuelve (x,y) globales del base/pelvis si no hay pelvis_link_id."""
-        try:
-            pos, _ = self.env.p.getBasePositionAndOrientation(self.env.robot_id)
-            return float(pos[0]), float(pos[1])
-        except Exception:
-            return default
-        
-    def _safe_get_pelvis_roll(self, default=0.0):
-        """
-        Devuelve el roll (rad) de la pelvis o del base si no hay pelvis link.
-        Convención: euler XYZ de pybullet.
-        """
-        try:
-            if hasattr(self.env, "pelvis_link_id") and self.env.pelvis_link_id is not None:
-                _, orn, _, _, _, _ = self.env.p.getLinkState(self.env.robot_id, self.env.pelvis_link_id, computeForwardKinematics=True)
-            else:
-                _, orn = self.env.p.getBasePositionAndOrientation(self.env.robot_id)
-            roll, pitch, yaw = self.env.p.getEulerFromQuaternion(orn)
-            return float(roll), float(pitch), float(yaw)
-        except Exception:
-            return default
-        
-    def _safe_get_joint_angle(self, joint_name_candidates, default=0.0):
-        """
-        Lee el ángulo de una articulación por nombre (o lista de candidatos).
-        Intenta usar dicts comunes; si no existen, recurre a los joint states cacheados.
-        """
-        try:
-            # 1) Si existe un map nombre->índice
-            jmap = getattr(self.env, "joint_name_to_index", None)
-            if isinstance(joint_name_candidates, str):
-                joint_name_candidates = [joint_name_candidates]
-            if jmap:
-                for nm in joint_name_candidates:
-                    if nm in jmap:
-                        jidx = jmap[nm]
-                        js = self.env.p.getJointState(self.env.robot_id, jidx)
-                        return float(js[0])  # posición
-            # 2) Si el propio env expone getters
-            if hasattr(self.env, "get_joint_angle"):
-                for nm in joint_name_candidates:
-                    try:
-                        return float(self.env.get_joint_angle(nm))
-                    except Exception:
-                        pass
-            # 3) Último recurso: 0.0 (no rompas el entrenamiento)
-            return default
-        except Exception:
-            return default
-        
-    def extra_reward_1():
-        pass
-         # load = F_sup / max(F_L + F_R, 1e-6)
-        # r_support_window = 1.0 - min(1.0, abs(load - 0.72) / 0.10)  # [0..1], picos fuera de [0.62,0.82] => 0
-        # w_support = 0.30  # peso sugerido
-        # xL, yL = self._safe_get_link_xy(self.env.left_foot_link_id)
-        # if hasattr(self.env, "pelvis_link_id") and self.env.pelvis_link_id is not None:
-        #     xP, yP = self._safe_get_link_xy(self.env.pelvis_link_id)
-        # else:
-        #     xP, yP = self._safe_get_base_xy()
-
-        # #    Lateral: mantener |Δy| pequeño (σ≈4 cm). Sagital: favorecer xL >= xP - 3 cm.
-        # dy = abs(yL - yP)
-        # r_lat  = np.exp(- (dy / 0.04)**2 )  # [0..1]
-        # r_fwd  = 1.0 / (1.0 + np.exp(-12.0 * ( (xL - xP) + 0.03 )))  # sigmoide, umbral a -3cm
-        # r_corridor = 0.6 * r_lat + 0.4 * r_fwd
-        # w_corridor = 0.25  # peso sugerido
-
-        # # 3) LÍMITES SUAVES A ROLL DE PELVIS Y CADERA IZQUIERDA
-        # #    Pelvis levemente inclinada hacia el soporte (derecha): +2.5° ≈ 0.044 rad
-        # roll_pelvis = self._safe_get_pelvis_roll()
-        # r_pelvis_roll = np.exp(- ((roll_pelvis - 0.044) / 0.052)**2 )  # σ≈3°
-        # w_pelvis_roll = 0.20
-
-        # #    Penalización selectiva a aducción (roll) de cadera izquierda en swing
-        # #    Ajusta nombres a tus joints si es necesario.
-        # q_roll_L = self._safe_get_joint_angle([
-        #     "left_hip_roll_joint", "l_hip_roll", "hip_roll_left", "LHR"
-        # ], default=0.0)
-        # # margen muerto ±0.08 rad (~4.6°)
-        # over = max(0.0, abs(q_roll_L) - 0.08)
-        # pen_rollL = -0.15 * over  # lineal suave
-        # w_rollL = 1.0  # ya incluye magnitud, piensa esto como "activar" la pena
-
-        # # 4) COMBINAR EN LA RECOMPENSA TOTAL
-        # #    Suma ponderada; pesos pequeños para no "ahogar" el resto de tu shaping.
-        # r_patch = (
-        #     w_support      * r_support_window +
-        #     w_corridor     * r_corridor +
-        #     w_pelvis_roll  * r_pelvis_roll +
-        #     w_rollL        * pen_rollL
-        # )
-
-        # # >>> Añade r_patch a tu reward acumulada <<<
-        # reward += float(r_patch)
-
-        # # (Opcional) logging de depuración no intrusivo
-        # if getattr(self, "debug_reward_patch", False):
-        #     log_print(
-        #         f"[patch] load={load:.2f} r_sup={r_support_window:.2f} "
-        #         f"dy={dy:.3f} r_lat={r_lat:.2f} r_fwd={r_fwd:.2f} "
-        #         f"rollP={roll_pelvis:.3f} r_proll={r_pelvis_roll:.2f} "
-        #         f"qLroll={q_roll_L:.3f} penL={pen_rollL:.3f} -> add={r_patch:.3f}"
-        #     )
-    
     def get_info(self):
         """Info para debugging"""
         avg_reward = sum(self.recent_episodes) / len(self.recent_episodes) if self.recent_episodes else 0
@@ -709,4 +574,71 @@ class SimpleProgressiveReward:
             self.target_angles["level_3_left_support"]["right_knee"]     = (self.swing_knee_lo + self.swing_knee_hi)/2
             self.target_angles["level_3_right_support"]["left_hip_roll"] = self.swing_hip_target
             self.target_angles["level_3_right_support"]["left_knee"]     = (self.swing_knee_lo + self.swing_knee_hi)/2
+
+    # =========================
+    # NUEVOS HELPERS DE SHAPING
+    # =========================
+    def _soft_quadratic_penalty(self, x: float, lim: float, gain: float) -> float:
+        """
+        Penaliza 0 dentro de [-lim, lim] y cuadrática fuera (suave).
+        """
+        over = max(0.0, abs(float(x)) - float(lim))
+        return -float(gain) * (over ** 2)
+
+    def _roll_guardrail_pen(self, torso_roll: float, level_soft: float = 0.20, level_hard: float = 0.35) -> float:
+        """
+        Guardarraíl de roll (torso): 
+        - |roll| <= level_soft  -> 0
+        - level_soft..level_hard -> penalización cuadrática suave
+        - |roll| > level_hard   -> golpe extra
+        """
+        pen = self._soft_quadratic_penalty(torso_roll, lim=level_soft, gain=6.0)
+        if abs(torso_roll) > level_hard:
+            pen += -3.0
+        return pen
+
+    def _ankle_guardrail_pen(self, left_ankle_id: int, right_ankle_id: int) -> float:
+        """
+        Penaliza ángulos excesivos de tobillo (pitch) en ambos pies para
+        evitar la estrategia de 'zarpazo de tobillo'.
+        """
+        qL = p.getJointState(self.env.robot_id, left_ankle_id)[0]
+        qR = p.getJointState(self.env.robot_id, right_ankle_id)[0]
+        penL = self._soft_quadratic_penalty(qL, lim=0.22, gain=4.0)  # ~12.6°
+        penR = self._soft_quadratic_penalty(qR, lim=0.22, gain=4.0)
+        return penL + penR
+
+    def _single_support_dwell_reward(self, F_sup: float, F_tar: float, freq: float) -> float:
+        """
+        Recompensa por sostener apoyo simple sin 'toe-touch'.
+        Crece con el tiempo y satura para no incentivar posturas extremas.
+        """
+        if (F_sup >= self.min_F) and (F_tar < 1.0):
+            self.single_support_ticks += 1
+            t = self.single_support_ticks / float(freq)  # segundos
+            # Curva suave: ~+0.6 a los 0.6–0.8 s, luego satura
+            return 0.6 * (1.0 - np.exp(-2.2 * t))
+        else:
+            self.single_support_ticks = 0
+            return 0.0
+
+    def _foot_flat_reward(self, foot_link_id: int, only_if_contact: bool = True, target_roll: float = 0.0, target_pitch: float = 0.0) -> float:
+        """
+        Recompensa por pie 'plano' (link roll/pitch ~ 0) — se aplica típicamente al pie de soporte.
+        """
+        if only_if_contact:
+            if not self.env.contact_with_force(foot_link_id, min_F=self.min_F):
+                return 0.0
+        try:
+            _, orn, _, _, _, _ = p.getLinkState(self.env.robot_id, foot_link_id, computeForwardKinematics=True)
+            r, p, _ = self.env.p.getEulerFromQuaternion(orn)
+        except Exception:
+            return 0.0
+        def soft_center(x, c, tol=0.05, slope=0.10):
+            if x < c - tol: return max(0.0, 1.0 - (c - tol - x)/slope)
+            if x > c + tol: return max(0.0, 1.0 - (x - (c + tol))/slope)
+            return 1.0
+        r_bonus = soft_center(r, target_roll)
+        p_bonus = soft_center(p, target_pitch)
+        return 0.8 * 0.5 * (r_bonus + p_bonus)  # máx ≈ +0.8
 

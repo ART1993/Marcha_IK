@@ -34,27 +34,27 @@ def PAM_McKibben():
 
     return {
         # Caderas roll - Control antagónico completo
-        'left_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'left_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
-        'right_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'right_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        'left_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4), # probar con 0.035
+        'left_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.032, alpha0=np.pi/4),# de 0.035 a 0.032
+        'right_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4), # de 0.03 a 0.04
+        'right_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.032, alpha0=np.pi/4),
         # caderas pitch
         'left_hip_pitch_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'left_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        'left_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4),
         'right_hip_pitch_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'right_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4),
+        'right_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4),
         
         # Rodillas - Control antagónico completo
         'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.03, alpha0=np.pi/4),
-        'left_knee_extensor': PAMMcKibben(L0=0.5, r0=0.04, alpha0=np.pi/4),
+        'left_knee_extensor': PAMMcKibben(L0=0.5, r0=0.036, alpha0=np.pi/4),# de 0.04 a 0.036
         'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.03, alpha0=np.pi/4),
-        'right_knee_extensor': PAMMcKibben(L0=0.5, r0=0.04, alpha0=np.pi/4),
+        'right_knee_extensor': PAMMcKibben(L0=0.5, r0=0.036, alpha0=np.pi/4),
 
         # Tobillos - Control antagónico completo
-        'left_anckle_flexor': PAMMcKibben(L0=0.3, r0=0.04, alpha0=np.pi/4),
-        'left_anckle_extensor': PAMMcKibben(L0=0.3, r0=0.05, alpha0=np.pi/4),
-        'right_anckle_flexor': PAMMcKibben(L0=0.3, r0=0.04, alpha0=np.pi/4),
-        'right_anckle_extensor': PAMMcKibben(L0=0.3, r0=0.05, alpha0=np.pi/4),
+        'left_anckle_flexor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
+        'left_anckle_extensor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
+        'right_anckle_flexor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
+        'right_anckle_extensor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
     }
     
         # ---------- helper: co-contracción torque-neutral para cadera ----------
@@ -176,12 +176,12 @@ def calculate_robot_specific_joint_torques_16_pam(env, pam_pressures):
     joint_torques[7] = (pam_forces[14] * R_anckle_flex_R) + (-pam_forces[15] * R_anckle_ext_R) 
 
     # PAra reducir el movimiento agresivo del robot
-    # Para rodillas
-    joint_torques[2] -= env.DAMPING_COEFFICIENT * joint_velocities[2]
-    joint_torques[6] -= env.DAMPING_COEFFICIENT * joint_velocities[6]
-    #Para tobillos
-    joint_torques[3] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[3]
-    joint_torques[7] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[7]
+    # # Para rodillas
+    # joint_torques[2] -= env.DAMPING_COEFFICIENT * joint_velocities[2]
+    # joint_torques[6] -= env.DAMPING_COEFFICIENT * joint_velocities[6]
+    # #Para tobillos
+    # joint_torques[3] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[3]
+    # joint_torques[7] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[7]
     joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
