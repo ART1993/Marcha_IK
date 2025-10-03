@@ -449,6 +449,46 @@ class SimpleProgressiveReward:
             pass
         return zmp_term + smooth_pen
     
+    def hip_reward(self,left_hip_roll,left_hip_pitch, right_hip_roll, right_hip_pitch):
+        
+        if -0.5<left_hip_pitch<-0.2:
+            reward_hip_left=2
+            is_ok=True
+        elif -0.2 < left_hip_pitch < 0.2:
+            reward_hip_left=0
+            is_ok=True
+        else:
+            is_ok=False
+            reward_hip_left=-2
+
+        if 0.2<abs(right_hip_pitch) and is_ok:
+            reward_hip_right=2
+        else:
+            reward_hip_right=-2
+
+        if left_hip_roll<-0.2:
+            reward_roll=-5
+        else:
+            reward_roll=0
+        
+        return reward_hip_left+ reward_hip_right +reward_roll
+    
+    def knee_reward(self, left_knee, right_knee):
+        
+        if left_knee<0.2:
+            reward_knee_left=0.5
+        elif 0.2<= left_knee < 0.4:
+            reward_knee_left=2
+        else:
+            reward_knee_left=-2
+
+        if 0.2<right_knee:
+            reward_knee_right=2
+        else:
+            reward_knee_right=-2
+        
+        return reward_knee_right+ reward_knee_left
+    
     def update_after_episode(self, episode_reward, success=None):
         """Actualizar nivel después de cada episodio"""
         
