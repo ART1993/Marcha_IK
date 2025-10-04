@@ -10,7 +10,7 @@ import math
 from collections import deque
 
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
-                                                    calculate_robot_specific_joint_torques_16_pam
+                                                    calculate_robot_specific_joint_torques_16_pam, calculate_robot_specific_joint_torques_2D
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
@@ -30,9 +30,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right hip pitch joint: 5
             - right knee joint: 6
             - right anckle joint: 7
+        Para el caso 2D se ha eliminado las articulaciones de roll
     """
     
-    def __init__(self, render_mode='human',enable_curriculum=False, print_env="ENV", fixed_target_leg="left"):
+    def __init__(self, render_mode='human',enable_curriculum=False, 
+                 print_env="ENV", fixed_target_leg="left", plane_mode2D=True):
+        
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -42,7 +45,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         super(Simple_Lift_Leg_BipedEnv, self).__init__()
 
         # ===== CONFIGURACIÓN BÁSICA =====
-        self.pam_muscles = PAM_McKibben()
+        self.pam_muscles = PAM_McKibben(plane_mode2D)
         self.render_mode = render_mode
         
         self.muscle_names = list(self.pam_muscles.keys())
@@ -55,10 +58,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self._balance_start_time = 0
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
-        self.urdf_path = "2_legged_human_like_robot16DOF.urdf"
+        
         self.frequency_simulation=400.0
         self.switch_interval=2000  # Intervalo para cambiar pierna objetivo en curriculum
         self.time_step = 1.0 / self.frequency_simulation
+        self.plane_mode2D=plane_mode2D
+        if self.plane_mode2D:
+            self.urdf_path="2_legged_human_like_robot12DOF_anckle.urdf"
+        else:
+            self.urdf_path = "2_legged_human_like_robot16DOF.urdf"
+        print(self.urdf_path)
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
         
         # Estados PAM básicos
@@ -82,10 +91,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # - 8: Estados articulares básicos (posiciones)
         # - 2: ZMP básico (x, y)
         # - 2: Contactos de pies (izq, der)
+        if self.plane_mode2D:
+            observation_dim=18
+        else:
+            observation_dim=20
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(20,),
+            shape=(observation_dim,),
             dtype=np.float32
         )
         
@@ -115,12 +128,20 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
-        self.joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
-                            'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
+        if self.plane_mode2D:
+            self.joint_indices = [0, 1, 2, 3, 4, 5]
+            self.joint_names = ['left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
+                                'right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
+            self.left_foot_link_id = 2
+            self.right_foot_link_id = 5
+        else:
+            self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
+            self.joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
+                                'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
+            self.left_foot_link_id = 3
+            self.right_foot_link_id = 7
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
-        self.left_foot_link_id = 3
-        self.right_foot_link_id = 7
+        
         self.swing_hip_target = 0.05
         self.swing_hip_tol=0.10 
 
@@ -203,9 +224,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #if self.simple_reward_system:
         # Joint indices [0,1,2,4,5,6]
         joint_states = self.obtener_estado_articulaciones()
-        
         done = self.simple_reward_system.is_episode_done(self.step_count)
-        reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
+        if self.plane_mode2D:
+            reward = self.simple_reward_system.calculate_reward_2d_walking(u_final, self.step_count)
+            done=getattr(self.simple_reward_system, "_episode_done", False)
+        else:
+            reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
         self._debug_joint_angles_and_pressures(u_final, joint_states, done)
         system_used = "PROGRESSIVE"
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
@@ -300,14 +324,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     def obtener_estado_articulaciones(self):
         joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
-        self.left_hip_roll_angle = joint_states[0][0]
-        self.left_hip_pitch_angle = joint_states[1][0]
-        self.left_knee_angle = joint_states[2][0]
-        self.left_anckle_angle = joint_states[3][0]
-        self.right_hip_roll_angle = joint_states[4][0]
-        self.right_hip_pitch_angle = joint_states[5][0]
-        self.right_knee_angle = joint_states[6][0]
-        self.right_anckle_angle = joint_states[7][0]
+        if self.plane_mode2D:
+            self.left_hip_pitch_angle = joint_states[0][0]
+            self.left_knee_angle = joint_states[1][0]
+            self.left_anckle_angle = joint_states[2][0]
+            self.right_hip_pitch_angle = joint_states[3][0]
+            self.right_knee_angle = joint_states[4][0]
+            self.right_anckle_angle = joint_states[5][0]
+        else:
+            self.left_hip_roll_angle = joint_states[0][0]
+            self.left_hip_pitch_angle = joint_states[1][0]
+            self.left_knee_angle = joint_states[2][0]
+            self.left_anckle_angle = joint_states[3][0]
+            self.right_hip_roll_angle = joint_states[4][0]
+            self.right_hip_pitch_angle = joint_states[5][0]
+            self.right_knee_angle = joint_states[6][0]
+            self.right_anckle_angle = joint_states[7][0]
         return joint_states
     
 
@@ -316,38 +348,65 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         ps = getattr(self, "pam_states", {}).get("pressures", None)
 
         # Ejemplos: mapea índices a nombres (ver mapeo más abajo)
-        if jt is not None:
-            info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
-            info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
-            info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
-            info["kpi"]["tau_LA"]   = float(jt[3])  # Right Anckle
-            info["kpi"]["tau_RHR"]   = float(jt[4])  # Right Hip Roll
-            info["kpi"]["tau_RHP"]    = float(jt[5])  # Right HIP Pitch
-            info["kpi"]["tau_RK"]    = float(jt[6])  # Right Knee
-            info["kpi"]["tau_RA"]    = float(jt[7])  # Right Anckle
+        if self.plane_mode2D:
+            if jt is not None:
+                info["kpi"]["tau_LHP"]   = float(jt[0])  # Left Hip Pitch
+                info["kpi"]["tau_LK"]    = float(jt[1])  # Left Knee
+                info["kpi"]["tau_LA"]   = float(jt[2])  # Right Anckle
+                info["kpi"]["tau_RHR"]   = float(jt[3])  # Right Hip PITCH
+                info["kpi"]["tau_RK"]    = float(jt[4])  # Right KNEE
+                info["kpi"]["tau_RA"]    = float(jt[5])  # Right Knee
 
-        if ps is not None:
-            info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
-            info["kpi"]["u_LHR_ext"]  = float(ps[1])   # PAM 1: extensor cadera izq (roll)
-            info["kpi"]["u_RHR_flex"] = float(ps[2])   # PAM 2: flexor cadera der (roll)
-            info["kpi"]["u_RHR_ext"]  = float(ps[3])   # PAM 3: extensor cadera der (roll)
-            info["kpi"]["u_LHP_flex"] = float(ps[4])   # PAM 4: flexor cadera izq (pitch)
-            info["kpi"]["u_LHP_ext"]  = float(ps[5])   # PAM 5: extensor cadera izq (pitch)
-            info["kpi"]["u_RHP_flex"] = float(ps[6])   # PAM 6: flexor cadera der (pitch)
-            info["kpi"]["u_RHP_ext"]  = float(ps[7])   # PAM 7: extensor cadera der (pitch)
-            info["kpi"]["u_LK_flex"]  = float(ps[8])   # PAM 8: flexor rodilla izq
-            info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
-            info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
-            info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
+            if ps is not None:
+                info["kpi"]["u_LHP_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (pitch)
+                info["kpi"]["u_LHP_ext"]  = float(ps[1])   # PAM 1: extensor cadera izq (pitch)
+                info["kpi"]["u_RHP_flex"] = float(ps[2])   # PAM 2: flexor cadera der (pitch)
+                info["kpi"]["u_RHP_ext"]  = float(ps[3])   # PAM 3: extensor cadera der (pitch)
+                info["kpi"]["u_LK_flex"] = float(ps[4])   # PAM 4: flexor rodilla izq
+                info["kpi"]["u_LK_ext"]  = float(ps[5])   # PAM 5: extensor rodilla izq
+                info["kpi"]["u_RK_flex"] = float(ps[6])   # PAM 6: flexor rodilla der
+                info["kpi"]["u_RK_ext"]  = float(ps[7])   # PAM 7: extensor rodilla der
+                info["kpi"]["u_LA_flex"]  = float(ps[8])   # PAM 8: flexor tobillo izq
+                info["kpi"]["u_LA_ext"]   = float(ps[9])   # PAM 9: extensor tobillo izq
+                info["kpi"]["u_RA_flex"]  = float(ps[10])  # PAM 10: flexor tobillo der
+                info["kpi"]["u_RA_ext"]   = float(ps[11])  # PAM 11: extensor tobillo der
+        else:
+            if jt is not None:
+                info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
+                info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
+                info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
+                info["kpi"]["tau_LA"]   = float(jt[3])  # Right Anckle
+                info["kpi"]["tau_RHR"]   = float(jt[4])  # Right Hip Roll
+                info["kpi"]["tau_RHP"]    = float(jt[5])  # Right HIP Pitch
+                info["kpi"]["tau_RK"]    = float(jt[6])  # Right Knee
+                info["kpi"]["tau_RA"]    = float(jt[7])  # Right Anckle
+
+            if ps is not None:
+                info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
+                info["kpi"]["u_LHR_ext"]  = float(ps[1])   # PAM 1: extensor cadera izq (roll)
+                info["kpi"]["u_RHR_flex"] = float(ps[2])   # PAM 2: flexor cadera der (roll)
+                info["kpi"]["u_RHR_ext"]  = float(ps[3])   # PAM 3: extensor cadera der (roll)
+                info["kpi"]["u_LHP_flex"] = float(ps[4])   # PAM 4: flexor cadera izq (pitch)
+                info["kpi"]["u_LHP_ext"]  = float(ps[5])   # PAM 5: extensor cadera izq (pitch)
+                info["kpi"]["u_RHP_flex"] = float(ps[6])   # PAM 6: flexor cadera der (pitch)
+                info["kpi"]["u_RHP_ext"]  = float(ps[7])   # PAM 7: extensor cadera der (pitch)
+                info["kpi"]["u_LK_flex"]  = float(ps[8])   # PAM 8: flexor rodilla izq
+                info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
+                info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
+                info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
+                info["kpi"]["u_LK_flex"]  = float(ps[12])   # PAM 12: flexor tobillo izq
+                info["kpi"]["u_LK_ext"]   = float(ps[13])   # PAM 13: extensor tobillo izq
+                info["kpi"]["u_RK_flex"]  = float(ps[14])  # PAM 14: flexor tobillo der
+                info["kpi"]["u_RK_ext"]   = float(ps[15])  # PAM 15: extensor tobillo der
 
 
-        if hasattr(self, "left_hip_roll_angle"):
-            info["kpi"]["q_LHR"] = self.left_hip_roll_angle
-            info["kpi"]["q_LHP"] = self.left_hip_pitch_angle
-            info["kpi"]["q_LK"]  = self.left_knee_angle
-            info["kpi"]["q_RHR"] = self.right_hip_roll_angle
-            info["kpi"]["q_RHP"] = self.right_hip_pitch_angle
-            info["kpi"]["q_RK"]  = self.right_knee_angle
+            if hasattr(self, "left_hip_roll_angle"):
+                info["kpi"]["q_LHR"] = self.left_hip_roll_angle
+                info["kpi"]["q_LHP"] = self.left_hip_pitch_angle
+                info["kpi"]["q_LK"]  = self.left_knee_angle
+                info["kpi"]["q_RHR"] = self.right_hip_roll_angle
+                info["kpi"]["q_RHP"] = self.right_hip_pitch_angle
+                info["kpi"]["q_RK"]  = self.right_knee_angle
         return info
     
 
@@ -376,7 +435,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.robot_id, 
                 foot_id,
                 lateralFriction=0.9,                #0.8,       
-                spinningFriction=0.2,                   #0.15,       
+                spinningFriction=0.2,               #0.15,       
                 rollingFriction=0.01,       
                 restitution=0.01,           
                 contactDamping=100,         
@@ -408,7 +467,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     def contact_normal_force(self, link_id:int)->float:
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)
-        return 0.0 if not cps else sum(cp[9] for cp in cps)
+        if not cps:
+            return 0.0
+        else:
+            forces=[cp[9] for cp in cps]
+            number_of_points=len(forces)
+            total_force=sum(forces)
+            contact_values=(number_of_points, total_force)
+            log_print(f"id_{link_id}","numero de contactos y fuerza total",contact_values)
+            return contact_values
     
     def debug_contacts_once(self):
         for name, lid in [("L_foot", self.left_foot_link_id), ("R_foot", self.right_foot_link_id)]:
@@ -506,7 +573,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
-        joint_torques = calculate_robot_specific_joint_torques_16_pam(self, pam_pressures)
+        if self.plane_mode2D:
+            joint_torques=calculate_robot_specific_joint_torques_2D(self, pam_pressures)
+        else:
+            joint_torques = calculate_robot_specific_joint_torques_16_pam(self, pam_pressures)
         joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
@@ -654,6 +724,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
+
+        if self.plane_mode2D:
+            self._enable_2d_mode()
+        
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
         robot_joint_info=self.robot_data._get_joint_info
         self.num_joints=p.getNumJoints(self.robot_id)
@@ -933,6 +1007,46 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
+
+    # Añade este método en la clase
+    def _enable_2d_mode(self):
+        """Restringe la base al plano X–Z y bloquea roll/yaw."""
+        # Asegúrate de tener una pose inicial
+        base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
+
+        # 1) Permite sólo movimiento en el plano X–Z (normal del plano = eje Y)
+        self.cid_planar = p.createConstraint(
+            parentBodyUniqueId=self.robot_id, parentLinkIndex=-1,
+            childBodyUniqueId=-1,         childLinkIndex=-1,
+            jointType=p.JOINT_PLANAR,
+            jointAxis=[0, 1, 0],          # normal del plano
+            parentFramePosition=[0, 0, 0],
+            childFramePosition=base_pos
+        )
+        p.changeConstraint(self.cid_planar, maxForce=1e9)
+
+        # 2) Bloquear yaw (eje Z) respecto al mundo
+        self.cid_lock_yaw = p.createConstraint(
+            parentBodyUniqueId=self.robot_id, parentLinkIndex=-1,
+            childBodyUniqueId=-1,         childLinkIndex=-1,
+            jointType=p.JOINT_GEAR,
+            jointAxis=[0, 0, 1],          # alinea eje Z
+            parentFramePosition=[0, 0, 0],
+            childFramePosition=base_pos
+        )
+        # gearRatio=0 fuerza orientación igual al mundo sobre ese eje
+        p.changeConstraint(self.cid_lock_yaw, gearRatio=0, erp=1.0, maxForce=1e9)
+
+        # 3) Bloquear roll (eje X) respecto al mundo
+        self.cid_lock_roll = p.createConstraint(
+            parentBodyUniqueId=self.robot_id, parentLinkIndex=-1,
+            childBodyUniqueId=-1,         childLinkIndex=-1,
+            jointType=p.JOINT_GEAR,
+            jointAxis=[1, 0, 0],          # alinea eje X
+            parentFramePosition=[0, 0, 0],
+            childFramePosition=base_pos
+        )
+        p.changeConstraint(self.cid_lock_roll, gearRatio=0, erp=1.0, maxForce=1e9)
 
     # Validación de robot:
     def validate_robot_specific_behavior(self, pam_pressures, joint_torques):
