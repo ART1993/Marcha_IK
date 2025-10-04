@@ -23,6 +23,15 @@ class SimpleCsvKpiCallback(BaseCallback):
     Lee info['kpi'] por step e info['ep_kpi'] al finalizar episodios
     y los vuelca a CSV en self.logs_dir.
     """
+
+    REWARD_COLUMNS = [
+        # Pon aquí los términos que quieras SIEMPRE en columnas del kpi_step.csv:
+        # Ejemplos típicos nivel 3 (ajusta a tu diseño):
+        "base", "leg", "zmp", "smooth",
+        "clearance", "knee_bonus", "hip_bonus",
+        "support_load", "toe_touch_pen", "both_down_pen",
+        "ss_reward", "stability", "drift", "height", "energy"
+    ]
     def __init__(self, logs_dir: str, verbose: int = 0):
         super().__init__(verbose)
         self.logs_dir = logs_dir
@@ -35,8 +44,19 @@ class SimpleCsvKpiCallback(BaseCallback):
         os.makedirs(self.logs_dir, exist_ok=True)
         self._step_f = open(os.path.join(self.logs_dir, "kpi_step.csv"), "w", newline="")
         self._ep_f   = open(os.path.join(self.logs_dir, "kpi_episode.csv"), "w", newline="")
+
+        # Campos base + extras ya presentes en info["kpi"] (si existen)
+        step_fields = [
+            "timesteps","env_idx","reward","roll","pitch",
+            "left_down","right_down","F_L","F_R","zmp_x","zmp_y",
+            # Extras útiles ya exportados por tu reward/env:
+            "zmp_margin_m","dP_norm","dTau_norm",
+            # Campo JSON opcional con el desglose de recompensas:
+            "reward_components_json"
+        ]
+
         self._step_writer = csv.DictWriter(self._step_f,
-            fieldnames=["timesteps","env_idx","reward","roll","pitch","left_down","right_down","F_L","F_R","zmp_x","zmp_y"])
+            fieldnames=step_fields)
         self._ep_writer = csv.DictWriter(self._ep_f,
             fieldnames=["timesteps","env_idx","ep_return","ep_len","done_reason"])
         self._step_writer.writeheader()

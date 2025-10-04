@@ -16,6 +16,7 @@ from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 
 from Archivos_Recompensas.RewardSystemSimple import SimpleProgressiveReward
+from Archivos_Recompensas.ModerateSpeedWalkingReward import ModerateSpeedWalkingReward
            
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
@@ -25,7 +26,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - left hip_roll joint: 0
             - left hip_pitch joint: 1
             - left knee joint: 2
-            - left anckle joint: 3
+            - left anckle joint: 3s
             - right hip joint: 4
             - right hip pitch joint: 5
             - right knee joint: 6
@@ -34,7 +35,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
     
     def __init__(self, render_mode='human',enable_curriculum=False, 
-                 print_env="ENV", fixed_target_leg="left", plane_mode2D=True):
+                 print_env="ENV", fixed_target_leg="left", tarea="walk"):
         
         
         """
@@ -43,9 +44,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Llamar al constructor padre pero sobrescribir configuración PAM
         super(Simple_Lift_Leg_BipedEnv, self).__init__()
-
+        self.plane_mode2D=False
         # ===== CONFIGURACIÓN BÁSICA =====
-        self.pam_muscles = PAM_McKibben(plane_mode2D)
+        self.pam_muscles = PAM_McKibben(self.plane_mode2D)
         self.render_mode = render_mode
         
         self.muscle_names = list(self.pam_muscles.keys())
@@ -62,7 +63,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.frequency_simulation=400.0
         self.switch_interval=2000  # Intervalo para cambiar pierna objetivo en curriculum
         self.time_step = 1.0 / self.frequency_simulation
-        self.plane_mode2D=plane_mode2D
         if self.plane_mode2D:
             self.urdf_path="2_legged_human_like_robot12DOF_anckle.urdf"
         else:
@@ -86,14 +86,20 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             dtype=np.float32
         )
         
-        # Observation space SIMPLIFICADO: 20 elementos total
-        # - 8: Estado del torso (pos, orient, velocidades)
-        # - 8: Estados articulares básicos (posiciones)
-        # - 2: ZMP básico (x, y)
-        # - 2: Contactos de pies (izq, der)
+        
         if self.plane_mode2D:
-            observation_dim=18
+            # Observation space SIMPLIFICADO: 20 elementos total
+            # - 8: Estado del torso (pos, orient, velocidades)
+            # - 6: Estados articulares básicos (posiciones)
+            # - 2: ZMP básico (x, y)
+            # - 2: Contactos de pies (izq, der)
+            observation_dim=17
         else:
+            # Observation space SIMPLIFICADO: 20 elementos total
+            # - 8: Estado del torso (pos, orient, velocidades)
+            # - 8: Estados articulares básicos (posiciones)
+            # - 2: ZMP básico (x, y)
+            # - 2: Contactos de pies (izq, der)
             observation_dim=20
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -144,9 +150,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.swing_hip_target = 0.05
         self.swing_hip_tol=0.10 
-
         self.swing_knee_lo = 0.40
         self.swing_knee_hi = 0.85
+
+        self.target_speed=0.3
+        self.task=tarea
         # Añadir tracking de pierna levantada
         self.fixed_target_leg = fixed_target_leg
         self.raised_leg = self.fixed_target_leg  # 'left' o 'right' - cuál pierna está levantada
@@ -255,10 +263,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['curriculum'] = curriculum_info  # Añadir sin reemplazar
             info['system_type'] = 'progressive'
             info['current_level'] = curriculum_info.get('level', 1)
-            F_L = self.contact_normal_force(self.left_foot_link_id)
-            F_R = self.contact_normal_force(self.right_foot_link_id)
+            ncl, F_L = self.contact_normal_force(self.left_foot_link_id)
+            ncr, F_R = self.contact_normal_force(self.right_foot_link_id)
             left_down, right_down = self.contacto_pies
-
+            lin_vel, _ = p.getBaseVelocity(self.robot_id)
+            vx = float(lin_vel[0])
             # ZMP (si está disponible)
             if self.zmp_calculator:
                 try:
@@ -279,6 +288,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             "F_R": float(F_R),
                             "zmp_x": float(zmp_x),
                             "zmp_y": float(zmp_y),
+                            'vx':vx,
+                            'speed_error':float(self.target_speed-vx)
                         }
             # Debug simple
             info = self.info_pam_torque(info)
@@ -318,7 +329,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             log_print(f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
             log_print(f"   Current level: {curriculum_info['level']}")
             log_print(f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
-            log_print(f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
+            if self.task !="walk":
+                log_print(f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
         
         return observation, reward, done, False, info
     
@@ -468,13 +480,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def contact_normal_force(self, link_id:int)->float:
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)
         if not cps:
-            return 0.0
+            return 0, 0.0
         else:
             forces=[cp[9] for cp in cps]
             number_of_points=len(forces)
             total_force=sum(forces)
             contact_values=(number_of_points, total_force)
-            log_print(f"id_{link_id}","numero de contactos y fuerza total",contact_values)
+            #log_print(f"id_{link_id}","numero de contactos y fuerza total",contact_values)
             return contact_values
     
     def debug_contacts_once(self):
@@ -577,7 +589,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             joint_torques=calculate_robot_specific_joint_torques_2D(self, pam_pressures)
         else:
             joint_torques = calculate_robot_specific_joint_torques_16_pam(self, pam_pressures)
-        joint_torques = self._apply_automatic_knee_control(joint_torques)
+        #joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
@@ -724,9 +736,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
-
-        if self.plane_mode2D:
-            self._enable_2d_mode()
         
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
         robot_joint_info=self.robot_data._get_joint_info
@@ -742,13 +751,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
-        if self.simple_reward_system is None:
-            self.simple_reward_system = SimpleProgressiveReward(self)
+        if self.task == "walk":
+            if self.simple_reward_system is None:
+                self.simple_reward_system = ModerateSpeedWalkingReward(
+                env=self
+                )
+            else:
+                self.simple_reward_system.env = self
+                self.simple_reward_system.robot_id = self.robot_id
         else:
-            # solo re-vincula IDs si cambiaron, sin perder contadores/racha
-            self.simple_reward_system.env = self
-            self.simple_reward_system.robot_id = self.robot_id
-            self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
+            if self.simple_reward_system is None:
+                self.simple_reward_system = SimpleProgressiveReward(self)
+            else:
+                # solo re-vincula IDs si cambiaron, sin perder contadores/racha
+                self.simple_reward_system.env = self
+                self.simple_reward_system.robot_id = self.robot_id
+                self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
@@ -808,12 +826,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.stepSimulation()
         
         # Obtener observación inicial
-        observation = self._get_single_leg_observation()
+        observation = self._get_simple_observation() if self.task == "walk" \
+                        else self._get_single_leg_observation()
         
         info = {
             'episode_reward': 0,
             'episode_length': 0,
-            'target_task': 'single_leg_balance'
+            'target_task': 'walking' if self.task == 'walk' else 'single_leg_balance'
         }
         
         print(f"🔄 Single leg balance environment reset - Ready for training")
@@ -1009,44 +1028,47 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 print(f"   ❌ Debug error: {e}")
 
     # Añade este método en la clase
-    def _enable_2d_mode(self):
-        """Restringe la base al plano X–Z y bloquea roll/yaw."""
-        # Asegúrate de tener una pose inicial
-        base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
+    # def _enable_2d_mode(self):
+    #     """Restringe la base al plano X–Z y bloquea roll/yaw."""
+    #     # Asegúrate de tener una pose inicial
+    #     base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
 
-        # 1) Permite sólo movimiento en el plano X–Z (normal del plano = eje Y)
-        self.cid_planar = p.createConstraint(
-            parentBodyUniqueId=self.robot_id, parentLinkIndex=-1,
-            childBodyUniqueId=-1,         childLinkIndex=-1,
-            jointType=p.JOINT_PLANAR,
-            jointAxis=[0, 1, 0],          # normal del plano
-            parentFramePosition=[0, 0, 0],
-            childFramePosition=base_pos
-        )
-        p.changeConstraint(self.cid_planar, maxForce=1e9)
+    #     # 1) Permite sólo movimiento en el plano X–Z (normal del plano = eje Y)
+    #     # Planar: movimiento X–Z; normal = Y
+    #     self.cid_planar = p.createConstraint(
+    #         self.robot_id, -1, -1, -1,
+    #         p.JOINT_PLANAR, [0,1,0],
+    #         [0,0,0], [0,0,0]
+    #     )
+    #     p.changeConstraint(self.cid_planar, maxForce=1e9)
 
-        # 2) Bloquear yaw (eje Z) respecto al mundo
-        self.cid_lock_yaw = p.createConstraint(
-            parentBodyUniqueId=self.robot_id, parentLinkIndex=-1,
-            childBodyUniqueId=-1,         childLinkIndex=-1,
-            jointType=p.JOINT_GEAR,
-            jointAxis=[0, 0, 1],          # alinea eje Z
-            parentFramePosition=[0, 0, 0],
-            childFramePosition=base_pos
-        )
-        # gearRatio=0 fuerza orientación igual al mundo sobre ese eje
-        p.changeConstraint(self.cid_lock_yaw, gearRatio=0, erp=1.0, maxForce=1e9)
+    #     self._lock_yaw_ok = False
+    #     self._lock_roll_ok = False
 
-        # 3) Bloquear roll (eje X) respecto al mundo
-        self.cid_lock_roll = p.createConstraint(
-            parentBodyUniqueId=self.robot_id, parentLinkIndex=-1,
-            childBodyUniqueId=-1,         childLinkIndex=-1,
-            jointType=p.JOINT_GEAR,
-            jointAxis=[1, 0, 0],          # alinea eje X
-            parentFramePosition=[0, 0, 0],
-            childFramePosition=base_pos
-        )
-        p.changeConstraint(self.cid_lock_roll, gearRatio=0, erp=1.0, maxForce=1e9)
+    #     # Bloquear yaw con GEAR (si no peta la build)
+    #     try:
+    #         self.cid_lock_yaw = p.createConstraint(
+    #             self.robot_id, -1, -1, -1,
+    #             p.JOINT_GEAR, [0,0,1],
+    #             [0,0,0], [0,0,0]
+    #         )
+    #         p.changeConstraint(self.cid_lock_yaw, gearRatio=0, erp=1.0, maxForce=1e9)
+    #         self._lock_yaw_ok = True
+    #     except Exception as e:
+    #         print("[2D] WARN: GEAR yaw falló, usaré PD virtual:", e)
+
+    #     # Bloquear roll con GEAR
+    #     try:
+    #         self.cid_lock_roll = p.createConstraint(
+    #             self.robot_id, -1, -1, -1,
+    #             p.JOINT_GEAR, [1,0,0],
+    #             [0,0,0], [0,0,0]
+    #         )
+    #         p.changeConstraint(self.cid_lock_roll, gearRatio=0, erp=1.0, maxForce=1e9)
+    #         self._lock_roll_ok = True
+    #     except Exception as e:
+    #         print("[2D] WARN: GEAR roll falló, usaré PD virtual:", e)
+    #     self._use_virtual_pd_2d = not (self._lock_yaw_ok and self._lock_roll_ok)
 
     # Validación de robot:
     def validate_robot_specific_behavior(self, pam_pressures, joint_torques):

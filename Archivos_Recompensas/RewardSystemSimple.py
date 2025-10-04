@@ -87,7 +87,7 @@ class SimpleProgressiveReward:
             },
             3: {
                 'description': 'Levantar piernas alternando',
-                'max_reward': 7.0,
+                'max_reward': 10.0,
                 'success_threshold': 999,    # Nivel final
                 'episodes_needed': 999,
                 'success_streak_needed': 999
@@ -162,7 +162,7 @@ class SimpleProgressiveReward:
         # Limitar reward según nivel
         
         
-        return max(-2.0, min(reward, max_reward))
+        return max(-10.0, min(reward, max_reward))
     
     def _level_1_reward(self,pos,euler):
         """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
@@ -267,50 +267,16 @@ class SimpleProgressiveReward:
         target_id = right_anckle_id if target_is_right else left_anckle_id
         stance_id = left_anckle_id  if target_is_right else right_anckle_id
         F_sup = F_R if (stance_id == right_anckle_id) else F_L
+        contact_support=contact_r
         F_tar = F_R if (target_id == right_anckle_id) else F_L
+        contact_target=contact_l
 
-        stance_ok, stance_q = self._stance_quality(stance_id, F_sum)  # 0..1 aprox
-        
-        
-        # Detectar qué pies están en contacto Ver si seleccionar min_F=20 0 27 0 30
-        left_down = (F_L>self.min_F) and contact_l>2 #self.env.contact_with_force(left_foot_id, min_F=self.min_F) Contacto bueno con suelo
-        right_down = (F_R>self.min_F) and contact_r>0 #self.env.contact_with_force(right_foot_id, min_F=self.min_F)
+        support_foot_down = (F_sup>self.min_F) and contact_support>2
+        target_foot_down  = (F_tar>self.min_F) and contact_target>0
 
-        
-
-        
-        # NUEVO: si estamos en left-only, el soporte debe ser el pie derecho
-        if self.fixed_target_leg == 'left':
-            # fuerza la semántica: soporte=right, objetivo=left
-            target_is_right = False
-            support_foot_down = right_down
-            target_foot_down  = left_down
-        # target_is_right   = (self.target_leg == 'right') # Sera siempre false
-        # target_foot_id    = right_foot_id if target_is_right else left_foot_id
-        # target_foot_down  = right_down if target_is_right else left_down
-        # support_foot_down = left_down if target_is_right else right_down
-
-
-        # ======== SHAPING POR CARGAS (romper toe-touch y cargar el soporte) ========
-        # Cargas del pie de SOPORTE (esperado) y del pie OBJETIVO (debe ir al aire)
-        # F_sup = F_L if target_is_right else F_R   # si objetivo=right, soporte=left (F_L)
-        # F_tar = F_R if target_is_right else F_L
-        if self.fixed_target_leg == 'left':
-            F_sup = F_R      # soporte = pie derecho
-            F_tar = F_L      # objetivo = pie izquierdo
-            # Carga mínima en soporte (80%) y toe-touch estricto del objetivo
-            support_load_reward = np.clip((F_sup / F_sum - 0.80) / 0.20, 0.0, 1.0) * 1.2
-            toe_touch_pen = -0.8 if (0.0 < F_tar < self.min_F) else 0.0
+        good_support= (support_foot_down and not target_foot_down)   
        
         #self.extra_reward_1
-
-
-        #lpos = p.getLinkState(self.robot_id, left_foot_id)[0]
-        #rpos = p.getLinkState(self.robot_id, right_foot_id)[0]
-        #ml = abs((rpos[1] - lpos[1]) if target_is_right else (lpos[1] - rpos[1]))  # eje Y
-        #ml_min = 0.12  # 12 cm de separación deseable
-        #support_foot_down = left_down if target_is_right else right_down
-        #midline_pen = 0.0 if (not support_foot_down) else -np.clip((ml_min - ml)/ml_min, 0.0, 1.0) * 1.2 # Antes 0.6
 
         # (1) Penaliza doble apoyo fuerte
         both_down_pen = -1.0 if (F_L >= self.min_F and F_R >= self.min_F) else 0.0
@@ -320,23 +286,13 @@ class SimpleProgressiveReward:
 
         # (3) Recompensa reparto de carga sano: ≥80% en el pie de soporte
         ratio = F_sup / F_sum
-        support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
-
-        # (2.5) Penalización por casi-cruce entre el pie en swing y el pie de soporte
-        if (F_sup >= self.min_F) and (F_tar <= 0):
-            swing_id  = left_anckle_id if (not target_is_right) else right_anckle_id
-            stance_id = right_anckle_id if (not target_is_right) else left_anckle_id
-            dmin = 0.04  # 4 cm
-            close_pen = 0.0
-            cps = p.getClosestPoints(self.env.robot_id, self.env.robot_id, dmin, swing_id, stance_id)
-            if cps:  # hay algún punto más cerca que dmin
-                worst = min(cp[8] for cp in cps)  # cp[8] = distance
-                close_pen += -1.0 * max(0.0, (dmin - worst) / dmin)
+        if good_support:
+            support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.2
         else:
-            close_pen = 0.0
+            support_load_reward= -1.2
 
         # (4) BONUS por tiempo en apoyo simple con saturación (sin toe-touch)
-        ss_reward = self._single_support_dwell_reward(F_sup, F_tar, self.frequency_simulation)
+        ss_reward = self._single_support_dwell_reward(F_sup, F_tar, good_support, self.frequency_simulation)
 
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
@@ -368,8 +324,7 @@ class SimpleProgressiveReward:
         # Cadera (pitch) del swing — objetivo configurable, con meseta ± self.swing_hip_tol
         hip_id  = right_hip_pitch_id if target_is_right else left_hip_pitch_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
-        #hip_bonus = soft_center_bonus(abs(hip_ang), self.swing_hip_target, self.swing_hip_tol, slope=0.20) * 0.7
-        #hip_bonus = 0.0 if target_foot_down else hip_bonus
+        
         # después (direccional):
         desired_sign = -1.0  # pon -1.0 si en tu robot la flexión hacia delante es negativa
         hip_bonus_dir = soft_center_bonus(desired_sign * hip_ang,
@@ -392,7 +347,7 @@ class SimpleProgressiveReward:
         kv = 0.15        # ganancia de penalización
         speed_pen = -kv * max(0.0, abs(hip_vel) - v_thresh)
 
-        if ratio < 0.70:
+        if not (support_foot_down and not target_foot_down):
             clearance_bonus = 0.0
             knee_bonus = 0.0
             hip_bonus = 0.0
@@ -402,13 +357,9 @@ class SimpleProgressiveReward:
         support_load_reward = min(support_load_reward, 0.8)
         shaping = both_down_pen + toe_touch_pen + support_load_reward +ss_reward
         leg_reward = (clearance_bonus + knee_bonus + hip_bonus
-                      + roll_swing_bonus  + close_pen
+                      + roll_swing_bonus 
                       + shaping + speed_pen) # contacto_reward
         # Recompensa por pie de soporte 'plano' (planta paralela al suelo)
-        if F_sup >= self.min_F:
-            stance_foot_id = (right_anckle_id if (F_R >= F_L) else left_anckle_id)
-            flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
-            leg_reward += flat_reward
         return leg_reward
     
     def zmp_and_smooth_reward(self):
@@ -446,21 +397,6 @@ class SimpleProgressiveReward:
         except Exception:
             pass
         return zmp_term + smooth_pen
-    
-    def _foot_contact_ok(self, foot_link_id, nmin=2):
-        """Pie en buen apoyo: suficiente fuerza y >= nmin puntos."""
-        n, F = self.env.contact_normal_force(foot_link_id)
-        return (F >= self.min_F) and (n >= nmin), n, F
-    
-    def _stance_quality(self, stance_id, F_sum, n_min=2):
-        """Calidad de apoyo del pie soporte = carga + 'planitud'."""
-        ok, n, F = self._foot_contact_ok(stance_id, nmin=n_min)
-        # ratio de carga sobre total (suavizado)
-        ratio = F / max(F_sum, 1e-6)
-        load = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0)   # >=80% ⇒ 1.0
-        flat = self._foot_flat_reward(stance_id, only_if_contact=True)  # 0..~0.8
-        # Combino 70% carga + 30% planitud, y escalo a ~[0..1.0]
-        return ok, (0.7 * load + 0.3 * (flat / 0.8))
     
     def hip_reward(self):
         left_hip_roll=self.env.left_hip_roll_angle
@@ -682,12 +618,12 @@ class SimpleProgressiveReward:
         penR = self._soft_quadratic_penalty(qR, lim=0.22, gain=4.0)
         return penL + penR
 
-    def _single_support_dwell_reward(self, F_sup: float, F_tar: float, freq: float) -> float:
+    def _single_support_dwell_reward(self, F_sup: float, F_tar: float, good_support:bool,freq: float) -> float:
         """
         Recompensa por sostener apoyo simple sin 'toe-touch'.
         Crece con el tiempo y satura para no incentivar posturas extremas.
         """
-        if (F_sup >= self.min_F) and (F_tar < 1.0):
+        if (F_sup >= self.min_F) and (F_tar < 1.0) and good_support:
             self.single_support_ticks += 1
             t = self.single_support_ticks / float(freq)  # segundos
             # Curva suave: ~+0.6 a los 0.6–0.8 s, luego satura
@@ -705,15 +641,15 @@ class SimpleProgressiveReward:
                 return 0.0
         try:
             _, orn, _, _, _, _ = p.getLinkState(self.env.robot_id, foot_link_id, computeForwardKinematics=True)
-            r, p, _ = self.env.p.getEulerFromQuaternion(orn)
+            roll, pitch, _ = p.getEulerFromQuaternion(orn)
         except Exception:
             return 0.0
         def soft_center(x, c, tol=0.05, slope=0.10):
             if x < c - tol: return max(0.0, 1.0 - (c - tol - x)/slope)
             if x > c + tol: return max(0.0, 1.0 - (x - (c + tol))/slope)
             return 1.0
-        r_bonus = soft_center(r, target_roll)
-        p_bonus = soft_center(p, target_pitch)
+        r_bonus = soft_center(roll, target_roll)
+        p_bonus = soft_center(pitch, target_pitch)
         return 0.8 * 0.5 * (r_bonus + p_bonus)  # máx ≈ +0.8
     
 
