@@ -202,8 +202,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             )
 
         p.stepSimulation()
-
-        # ✅ LLAMAR DEBUG OCASIONALMENTE
         
 
         
@@ -296,6 +294,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             log_print(f"   ZMP: ({kpi_dbg.get('zmp_x', 0.0):.3f}, {kpi_dbg.get('zmp_y', 0.0):.3f}) m")
             #curriculum_info = self.simple_reward_system.get_info()
             log_print(f"   Level: {info['curriculum'].get('level')}")
+            log_print(f"   COM→support: {kpi_dbg.get('com_dist_to_support', 0):.3f} m | ZMP margin: {kpi_dbg.get('zmp_margin_m', 0):+.3f} m | stable={kpi_dbg.get('com_stable_flag', 0)}")
     
             # Verificar si está cerca de límites
             max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
@@ -581,10 +580,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación  
-        obs.extend([self.init_pos[0], self.init_pos[2], euler[0], euler[1]])  # x, z, roll, pitch
+        obs.extend([self.init_pos[0],self.init_pos[1], self.init_pos[2], euler[0], euler[1]])  # x, z, roll, pitch
         
         # Velocidades
-        obs.extend([init_lin_vel[0], init_lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
+        obs.extend([init_lin_vel[0], self.init_pos[1], init_lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # Solo joints activos

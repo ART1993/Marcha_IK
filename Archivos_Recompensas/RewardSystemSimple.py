@@ -118,7 +118,7 @@ class SimpleProgressiveReward:
             self.max_tilt_by_level = {
                 1: 0.8,  # 
                 2: 0.7,  # 
-                3: 0.5   # 
+                3: 0.6   # 
             }
             both_print(f"   Max tilt: {np.degrees(self.max_tilt_by_level[3]):.1f}° (permisivo)")
         else:
@@ -133,7 +133,7 @@ class SimpleProgressiveReward:
         self.fixed_target_leg=self.target_leg
         self.switch_timer = 0
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
-        self.bad_ending=("fall", "tilt", "drift", "no_support")
+        self.bad_ending=("fall", "tilt", "drift", "no_support", "excessive support")
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
         self.min_F=20
@@ -224,7 +224,7 @@ class SimpleProgressiveReward:
         elif pitch < 0.4:
             stability_reward = 0.5  # Moderadamente estable
         elif pitch < self.max_tilt_by_level[self.level]:
-            stability_reward = -0.5  # Inestable
+            stability_reward = -5.5  # Inestable
         elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
             stability_reward = -5.0  # Inestable
     
@@ -234,12 +234,12 @@ class SimpleProgressiveReward:
             level_soft=0.15,
             level_hard=self.max_tilt_by_level[self.level]
         )
-        decouple_pen = self._hip_decoupling_pen()
-        asymm_term   = self._asymmetry_term()
-        comzmp_term  = self._com_zmp_stability_reward()
-        com_term     = self._com_projection_reward()
-        recompensa_com=decouple_pen+asymm_term+comzmp_term + com_term
-        return height_reward + stability_reward + guard_pen + recompensa_com
+        self._hip_decoupling_pen()
+        self._asymmetry_term()
+        self._com_zmp_stability_reward()
+        self._com_projection_reward()
+        # recompensa_com=decouple_pen+asymm_term+comzmp_term + com_term
+        return height_reward + stability_reward + guard_pen  #+ recompensa_com
     
     def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
@@ -702,7 +702,12 @@ class SimpleProgressiveReward:
         cross = (tau_LR*qd_LP + tau_LP*qd_LR + tau_RR*qd_RP + tau_RP*qd_RR)
         # Normaliza y recorta
         cross_norm = min(cross / 10.0, 1.5)
-        return -0.3 * cross_norm  # penalización máxima ~ -0.45
+        if self.env.step_count % (self.frequency_simulation//10)==0:
+            if cross_norm > 1.0:  # umbral “alto”
+                log_print(f"⚠️ Hip decoupling poor: cross={cross:.2f}, norm={cross_norm:.2f}")
+            else:
+                log_print(f"Hip decoupling: cross={cross:.2f}, norm={cross_norm:.2f}")
+        #return -0.3 * cross_norm  # penalización máxima ~ -0.45
     
     def _com_zmp_stability_reward(self):
         z = getattr(self.env, "zmp_calculator", None)
@@ -735,14 +740,14 @@ class SimpleProgressiveReward:
         tau_LP = abs(kpi.get("tau_LHP", 0.0)); tau_RP = abs(kpi.get("tau_RHP", 0.0))
         if double:
             sym = 1.0 - np.tanh(0.5*(abs(tau_LR - tau_RR) + abs(tau_LP - tau_RP)))
-            return 0.4 * sym  # +0.4 si muy simétrico
+            #return 0.4 * sym  # +0.4 si muy simétrico
         else:
             # Apoyo simple: refuerza que el roll del torso apunte al pie de soporte
             left_down  = bool(kpi.get("left_down", 0))
             right_down = bool(kpi.get("right_down", 0))
             torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
             support_sign = +1.0 if (left_down and not right_down) else (-1.0 if (right_down and not left_down) else 0.0)
-            return 0.2 * np.clip(support_sign * torso_roll/np.deg2rad(10), -1.0, 1.0)
+            #return 0.2 * np.clip(support_sign * torso_roll/np.deg2rad(10), -1.0, 1.0)
         
 
     def _com_projection_reward(self):
@@ -761,7 +766,10 @@ class SimpleProgressiveReward:
             dx = float(com_xy[0] - foot_xy[0]); dy = float(com_xy[1] - foot_xy[1])
             r = np.hypot(dx, dy)
             r0 = 0.08  # 8 cm
-            return 0.5 * np.exp(- (r / r0)**2 )
+            self.env.info["kpi"]["com_dist_to_support"] = float(r)      # distancia XY del COM al pie soporte (m)
+            self.env.info["kpi"]["com_stable_flag"]     = int(r < r0) # “cerca” si < 8 cm
+            #return 0.5 * np.exp(- (r / r0)**2 )
         except Exception:
-            return 0.0
+            pass
+            #return 0.0
 
