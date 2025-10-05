@@ -256,27 +256,26 @@ class SimpleProgressiveReward:
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
 
-        left_foot_id=self.env.left_foot_link_id
-        right_foot_id=self.env.right_foot_link_id
-        n_l,F_L = self.env.contact_normal_force(left_foot_id)
-        n_r,F_R = self.env.contact_normal_force(right_foot_id)
-        F_sum = max(F_L + F_R, 1e-6)
+        
         left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_anckle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_anckle_id = self.env.joint_indices
         
-        # Cambiar pierna cada switch interval
-        if self.fixed_target_leg is None:
-            self.switch_timer += 1
-            if self.switch_timer >= self.switch_interval:
-                self.target_leg = 'left' if self.target_leg == 'right' else 'right'
-                self.switch_timer = 0
-                # DEBUG MEJORADO: Mostrar tiempo real además de steps
-                seconds_per_switch = self.switch_interval / self.frequency_simulation  
-                # Asumiendo 400 Hz
-                log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
+        n_l,F_L = self.env.contact_normal_force(left_anckle_id)
+        n_r,F_R = self.env.contact_normal_force(right_anckle_id)
+        F_sum = max(F_L + F_R, 1e-6)
+        # # Cambiar pierna cada switch interval
+        # if self.fixed_target_leg is None:
+        #     self.switch_timer += 1
+        #     if self.switch_timer >= self.switch_interval:
+        #         self.target_leg = 'left' if self.target_leg == 'right' else 'right'
+        #         self.switch_timer = 0
+        #         # DEBUG MEJORADO: Mostrar tiempo real además de steps
+        #         seconds_per_switch = self.switch_interval / self.frequency_simulation  
+        #         # Asumiendo 400 Hz
+        #         log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
         # Detectar qué pies están en contacto Ver si seleccionar min_F=20 0 27 0 30
-        left_down = self.env.contact_with_force(left_foot_id, min_F=self.min_F, min_contacts=0)
-        right_down = self.env.contact_with_force(right_foot_id, min_F=self.min_F, min_contacts=2)
+        left_down = self.env.contact_with_force(left_anckle_id, min_F=self.min_F, min_contacts=0)
+        right_down = self.env.contact_with_force(right_anckle_id, min_F=self.min_F, min_contacts=2)
 
         
 
@@ -333,8 +332,8 @@ class SimpleProgressiveReward:
 
         # (2.5) Penalización por casi-cruce entre el pie en swing y el pie de soporte
         if (F_sup >= self.min_F) and (F_tar < self.min_F):
-            swing_id  = left_foot_id if (not target_is_right) else right_foot_id
-            stance_id = right_foot_id if (not target_is_right) else left_foot_id
+            swing_id  = left_anckle_id if (not target_is_right) else right_anckle_id
+            stance_id = right_anckle_id if (not target_is_right) else left_anckle_id
             dmin = 0.04  # 4 cm
             close_pen = 0.0
             cps = p.getClosestPoints(self.env.robot_id, self.env.robot_id, dmin, swing_id, stance_id)
@@ -350,7 +349,7 @@ class SimpleProgressiveReward:
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
         # self.fixed_target_leg porque target foot es siempre left
-        foot_z = p.getLinkState(self.robot_id, left_foot_id)[0][2]
+        foot_z = p.getLinkState(self.robot_id, left_anckle_id)[0][2]
         clearance_target = 0.09  # 9 cm
         clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
 
@@ -392,8 +391,7 @@ class SimpleProgressiveReward:
         roll_abd_center = 0.15  # ~8–10°
         roll_abd_tol    = 0.08
         roll_swing_bonus = soft_center_bonus(q_roll_swing, roll_abd_center, roll_abd_tol, slope=0.20) * 0.8
-        if target_foot_down or ratio < 0.70:
-            roll_swing_bonus = 0.0
+            
 
         # ✅ Penalización por velocidad articular excesiva en la cadera del swing
         hip_vel = p.getJointState(self.robot_id, hip_id)[1]
@@ -401,10 +399,11 @@ class SimpleProgressiveReward:
         kv = 0.15        # ganancia de penalización
         speed_pen = -kv * max(0.0, abs(hip_vel) - v_thresh)
 
-        if ratio < 0.70:
+        if ratio < 0.60:
             clearance_bonus = 0.0
             knee_bonus = 0.0
             hip_bonus = 0.0
+            roll_swing_bonus = 0.0
             # roll_swing_bonus ya se pone a 0 arriba con ratio < 0.70
 
         # Suma total
@@ -415,7 +414,7 @@ class SimpleProgressiveReward:
                       + shaping + speed_pen) # contacto_reward
         # Recompensa por pie de soporte 'plano' (planta paralela al suelo)
         if F_sup >= self.min_F:
-            stance_foot_id = (right_foot_id if (F_R >= F_L) else left_foot_id)
+            stance_foot_id = (right_anckle_id if (F_R >= F_L) else left_anckle_id)
             flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
             leg_reward += flat_reward
         return leg_reward
