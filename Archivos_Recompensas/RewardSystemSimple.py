@@ -167,10 +167,12 @@ class SimpleProgressiveReward:
     def _level_1_reward(self,pos,euler):
         """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
         self.dx = float(pos[0] - self.env.init_pos[0])
+        self.dy = float(pos[1] - self.env.init_pos[1])
         # Tolerancia sin penalización ±5 cm
         tol = 0.05
         # Penaliza deriva total fuera de tolerancia (suave; tope aprox -2.0)
         drift_pen = - np.clip(abs(self.dx) - tol, 0.0, 0.25) * 8.0
+        lateral_pen = - np.clip(abs(self.dy) - 0.03, 0.0, 0.25) * 10.0
         # Penaliza adicionalmente cuando la deriva es hacia atrás (dx < -tol)
         # tope aprox -1.6
         back_only_pen = - np.clip(-self.dx - tol, 0.0, 0.20) * 8.0
@@ -178,13 +180,13 @@ class SimpleProgressiveReward:
         height = pos[2]
         
         # Recompensa simple por altura
-        if height > 0.9:
+        if height > 0.8:
             height_reward= 1.0  # Buena altura
-        elif height > 0.8:
+        elif height > 0.7:
             height_reward= 0.8  # Altura mínima
-        elif height <= 0.8:
+        elif height <= 0.7:
             height_reward= -1.0  # Caída
-        elif height<= 0.7:       # and self.last_done_reason == self.bad_ending[0]:
+        elif height<= 0.5:       # and self.last_done_reason == self.bad_ending[0]:
             height_reward= -10
 
         pitch = euler[1]
@@ -192,22 +194,23 @@ class SimpleProgressiveReward:
 
         pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies
         if pie_izquierdo_contacto is False and pie_derecho_contacto:
-            contact_reward= 1.0
+            contact_reward= 2.0
         elif pie_izquierdo_contacto and pie_derecho_contacto:
             contact_reward= 0.1
         else:
-            contact_reward= -1.0
+            contact_reward= -2.0
 
         # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
-        support_sign = +1.0 if (pie_izquierdo_contacto and not pie_derecho_contacto) else (-1.0 if (pie_derecho_contacto and not pie_izquierdo_contacto) else 0.0)
+        # Afecta al roll de align bonus
+        support_sign = -1.0 if (pie_izquierdo_contacto and not pie_derecho_contacto) else (-1.0 if (pie_derecho_contacto and not pie_izquierdo_contacto) else 0.0)
         torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
         hiproll_align_bonus = 0.0
         if support_sign != 0.0:
-            hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.3 / self.frequency_simulation)
+            hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.2 / self.frequency_simulation)
 
         
 
-        return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + contact_reward
+        return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + contact_reward + lateral_pen
     
     def _level_2_reward(self,pos,euler):
         """NIVEL 2: Balance estable (recompensas 0-5)"""
@@ -231,7 +234,12 @@ class SimpleProgressiveReward:
             level_soft=0.15,
             level_hard=self.max_tilt_by_level[self.level]
         )
-        return height_reward + stability_reward + guard_pen
+        decouple_pen = self._hip_decoupling_pen()
+        asymm_term   = self._asymmetry_term()
+        comzmp_term  = self._com_zmp_stability_reward()
+        com_term     = self._com_projection_reward()
+        recompensa_com=decouple_pen+asymm_term+comzmp_term + com_term
+        return height_reward + stability_reward + guard_pen + recompensa_com
     
     def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
@@ -416,13 +424,10 @@ class SimpleProgressiveReward:
     def zmp_and_smooth_reward(self):
         zmp_term = 0.0
         try:
-            if hasattr(self.env, "zmp") and hasattr(self.env.zmp, "stability_margin_distance"):
-                margin = float(self.env.zmp.stability_margin_distance())  # metros (+ estable si >0)
-                # Escala: +0.5 en margen >= 5 cm; -0.5 si -5 cm
+            if hasattr(self.env, "zmp_calculator") and hasattr(self.env.zmp_calculator, "stability_margin_distance"):
+                margin = float(self.env.zmp_calculator.stability_margin_distance()) # Se medirá en metros
                 zmp_term = 0.7 * np.clip(margin / 0.05, -1.0, 1.0)
-                # Exporta KPI opcional
-                if hasattr(self.env, "info"):
-                    self.env.info["kpi"]["zmp_margin_m"] = margin
+                self.env.info["kpi"]["zmp_margin_m"] = margin
         except Exception:
             pass
 
@@ -540,9 +545,11 @@ class SimpleProgressiveReward:
         
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
+        # Penalizo deriva frente y lateral
         self.dx = float(pos[0] - self.env.init_pos[0])
+        self.dy = float(pos[1] - self.env.init_pos[1])
         # Caída
-        if pos[2] <= 0.7:
+        if pos[2] <= 0.5:
             self.last_done_reason = "fall"
             log_print("❌ Episode done: Robot fell")
             return True
@@ -565,7 +572,7 @@ class SimpleProgressiveReward:
             self._no_contact_steps += 1
         else:
             self._no_contact_steps = 0
-        if self._no_contact_steps >= int(0.20 * self.frequency_simulation):  # 0.2 s
+        if self._no_contact_steps >= int(0.50 * self.frequency_simulation):  # 0.2 s
             self.last_done_reason = "no_support"
             log_print("❌ Episode done: No foot support for too long")
             return True
@@ -573,7 +580,7 @@ class SimpleProgressiveReward:
             self.contact_both += 1
             if self.contact_both >int(0.80 * self.frequency_simulation):
                 self.last_done_reason = "excessive support"
-                log_print("❌ Episode done: No foot support for too long")
+                log_print("❌ Episode done: excessive support")
                 return True
         else:
             self.contact_both=0
@@ -682,4 +689,79 @@ class SimpleProgressiveReward:
         r_bonus = soft_center(r, target_roll)
         p_bonus = soft_center(pch, target_pitch)
         return 0.8 * 0.5 * (r_bonus + p_bonus)  # máx ≈ +0.8
+    
+    def _hip_decoupling_pen(self):
+        kpi = self.env.info.get("kpi", {})
+        # Torques (roll/pitch) y velocidades articulares correspondientes
+        tau_LR = abs(kpi.get("tau_LHR", 0.0));  qd_LP = abs(self.env.right_hip_pitch_angle if False else p.getJointState(self.env.robot_id, self.env.dict_joints["left_hip_pitch_joint"])[1])
+        tau_LP = abs(kpi.get("tau_LHP", 0.0));  qd_LR = abs(p.getJointState(self.env.robot_id, self.env.dict_joints["left_hip_roll_joint"])[1])
+
+        tau_RR = abs(kpi.get("tau_RHR", 0.0));  qd_RP = abs(p.getJointState(self.env.robot_id, self.env.dict_joints["right_hip_pitch_joint"])[1])
+        tau_RP = abs(kpi.get("tau_RHP", 0.0));  qd_RR = abs(p.getJointState(self.env.robot_id, self.env.dict_joints["right_hip_roll_joint"])[1])
+
+        cross = (tau_LR*qd_LP + tau_LP*qd_LR + tau_RR*qd_RP + tau_RP*qd_RR)
+        # Normaliza y recorta
+        cross_norm = min(cross / 10.0, 1.5)
+        return -0.3 * cross_norm  # penalización máxima ~ -0.45
+    
+    def _com_zmp_stability_reward(self):
+        z = getattr(self.env, "zmp_calculator", None)
+        if z:
+            margin = float(z.stability_margin_distance())  # m
+            # +0.7 si margen >= 5 cm; -0.7 si <= -5 cm
+            term = 0.7 * np.clip(margin/0.05, -1.0, 1.0)
+            # Exporta KPI
+            self.env.info["kpi"]["zmp_margin_m"] = margin
+        else:
+            # Fallback: usa COM estático
+            try:
+                com, _ = self.env.robot_data.get_center_of_mass
+                # Simple: dentro de la caja entre pies ± margen
+                term = 0.3 if self.env.zmp_calculator.is_stable(np.array(com[:2])) else -0.3
+            except Exception:
+                term = 0.0
+        return term
+    
+    def _asymmetry_term(self):
+        kpi = self.env.info.get("kpi", {})
+        F_L = float(kpi.get("F_L", 0.0)); F_R = float(kpi.get("F_R", 0.0))
+        F_sum = max(F_L + F_R, 1e-6)
+        load_ratio = F_L/F_sum, F_R/F_sum
+
+        # Si doble apoyo (ambos >= min_F), premia simetría de torques de cadera:
+        #min_F = getattr(self, "min_F", 30.0)
+        double = (F_L >= self.min_F and F_R >= self.min_F)
+        tau_LR = abs(kpi.get("tau_LHR", 0.0)); tau_RR = abs(kpi.get("tau_RHR", 0.0))
+        tau_LP = abs(kpi.get("tau_LHP", 0.0)); tau_RP = abs(kpi.get("tau_RHP", 0.0))
+        if double:
+            sym = 1.0 - np.tanh(0.5*(abs(tau_LR - tau_RR) + abs(tau_LP - tau_RP)))
+            return 0.4 * sym  # +0.4 si muy simétrico
+        else:
+            # Apoyo simple: refuerza que el roll del torso apunte al pie de soporte
+            left_down  = bool(kpi.get("left_down", 0))
+            right_down = bool(kpi.get("right_down", 0))
+            torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
+            support_sign = +1.0 if (left_down and not right_down) else (-1.0 if (right_down and not left_down) else 0.0)
+            return 0.2 * np.clip(support_sign * torso_roll/np.deg2rad(10), -1.0, 1.0)
+        
+
+    def _com_projection_reward(self):
+        """
+        Empuja la proyección del COM hacia el pie de soporte.
+        """
+        try:
+            env = self.env
+            kpi = env.info.get("kpi", {})
+            # fuerzas en pies para decidir soporte
+            F_L = float(kpi.get("F_L", 0.0)); F_R = float(kpi.get("F_R", 0.0))
+            left_id, right_id = env.left_foot_link_id, env.right_foot_link_id
+            support_id = left_id if (F_L >= F_R) else right_id
+            foot_xy = p.getLinkState(env.robot_id, support_id)[0][:2]
+            com_xy  = (float(kpi.get("com_x", 0.0)), float(kpi.get("com_y", 0.0)))
+            dx = float(com_xy[0] - foot_xy[0]); dy = float(com_xy[1] - foot_xy[1])
+            r = np.hypot(dx, dy)
+            r0 = 0.08  # 8 cm
+            return 0.5 * np.exp(- (r / r0)**2 )
+        except Exception:
+            return 0.0
 

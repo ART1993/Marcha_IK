@@ -82,10 +82,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # - 8: Estados articulares básicos (posiciones)
         # - 2: ZMP básico (x, y)
         # - 2: Contactos de pies (izq, der)
+        obs_dim=22
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(20,),
+            shape=(obs_dim,),
             dtype=np.float32
         )
         
@@ -241,11 +242,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             n_r, F_R = self.contact_normal_force(self.right_foot_link_id)
             left_down, right_down = self.contacto_pies
 
-            # ZMP (si está disponible)
+            # KPI ZMP ya existente
             if self.zmp_calculator:
                 try:
                     zmp_xy = self.zmp_calculator.calculate_zmp()
                     zmp_x, zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
+                    # COM (usa tu helper de Pybullet_Robot_Data)
+                    try:
+                        com_world, _m = self.robot_data.get_center_of_mass
+                        com_x, com_y, com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+                    except Exception:
+                        com_x = com_y = com_z = 0.0
                 except Exception:
                     zmp_x, zmp_y = 0.0, 0.0
             else:
@@ -261,6 +268,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             "F_R": float(F_R),
                             "zmp_x": float(zmp_x),
                             "zmp_y": float(zmp_y),
+                            "com_x": com_x,
+                            "com_y": com_y,
+                            "com_z": com_z,
                         }
             # Debug simple
             info = self.info_pam_torque(info)
@@ -281,7 +291,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             log_print(f"   Height: {self.pos[2]:.2f}m")
             log_print(f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
             #log_print(f"   Action source: {action_source}")
-            
+            kpi_dbg = info.get("kpi", {})
+            log_print(f"   COM: ({kpi_dbg.get('com_x', 0.0):.3f}, {kpi_dbg.get('com_y', 0.0):.3f}, {kpi_dbg.get('com_z', 0.0):.3f}) m  ")
+            log_print(f"   ZMP: ({kpi_dbg.get('zmp_x', 0.0):.3f}, {kpi_dbg.get('zmp_y', 0.0):.3f}) m")
             #curriculum_info = self.simple_reward_system.get_info()
             log_print(f"   Level: {info['curriculum'].get('level')}")
     
@@ -613,10 +625,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación
-        obs.extend([self.pos[0], self.pos[2], self.euler[0], self.euler[1]])  # x, z, roll, pitch
+        obs.extend([self.pos[0], self.pos[1], self.pos[2], self.euler[0], self.euler[1]])  # x, z, roll, pitch
         
         # Velocidades
-        obs.extend([lin_vel[0], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
+        obs.extend([lin_vel[0], self.pos[1], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         
@@ -1041,6 +1053,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         asymmetry = abs(left_activation - right_activation)
         if asymmetry < 0.5:  # Muy simétrico para equilibrio en una pierna
             warnings.append(f"Low asymmetry: {asymmetry:.2f} (may indicate poor single-leg balance)")
+        else:
+            log_print("Correct_asimetry")
         
         # ===== LOGGING CONDICIONAL =====
         

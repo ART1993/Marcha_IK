@@ -124,8 +124,10 @@ class PyBullet_Robot_Data:
         # Contribución del link base
         base_mass = self.link_info[-1]['mass']
         if base_mass > 0:
-            base_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
-            weighted_position += base_mass * np.array(base_pos)
+            base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
+            base_com_local = p.getDynamicsInfo(self.robot_id, -1)[3]  # pos inercial local
+            base_com_world = p.multiplyTransforms(base_pos, base_orn, base_com_local, [0,0,0,1])[0]
+            weighted_position += base_mass * np.array(base_com_world)
             total_mass += base_mass
         
         # Contribución de otros links
@@ -133,8 +135,10 @@ class PyBullet_Robot_Data:
             link_mass = self.link_info[joint_index]['mass']
             if link_mass > 0:
                 # getLinkState devuelve la posición del COM del link
-                link_state = p.getLinkState(self.robot_id, joint_index)
-                com_pos = np.array(link_state[0])
+                 # getLinkState: [2] = world COM position del link
+                ls = p.getLinkState(self.robot_id, joint_index, computeForwardKinematics=True)
+                # En quickstart guide veo que es 0
+                com_pos = np.array(ls[2] if ls[2] is not None else ls[0])
                 
                 weighted_position += link_mass * com_pos
                 total_mass += link_mass

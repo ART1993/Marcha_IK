@@ -36,7 +36,9 @@ class SimpleCsvKpiCallback(BaseCallback):
         self._step_f = open(os.path.join(self.logs_dir, "kpi_step.csv"), "w", newline="")
         self._ep_f   = open(os.path.join(self.logs_dir, "kpi_episode.csv"), "w", newline="")
         self._step_writer = csv.DictWriter(self._step_f,
-            fieldnames=["timesteps","env_idx","reward","roll","pitch","left_down","right_down","F_L","F_R","zmp_x","zmp_y"])
+            fieldnames=["timesteps","env_idx","reward","roll","pitch",
+                        "left_down","right_down","F_L","F_R",
+                        "zmp_x","zmp_y","com_x","com_y","com_z"])
         self._ep_writer = csv.DictWriter(self._ep_f,
             fieldnames=["timesteps","env_idx","ep_return","ep_len","done_reason"])
         self._step_writer.writeheader()
@@ -60,6 +62,9 @@ class SimpleCsvKpiCallback(BaseCallback):
                     "F_R": kpi.get("F_R", 0.0),
                     "zmp_x": kpi.get("zmp_x", 0.0),
                     "zmp_y": kpi.get("zmp_y", 0.0),
+                    "com_x": kpi.get("com_x", 0.0),
+                    "com_y": kpi.get("com_y", 0.0),
+                    "com_z": kpi.get("com_z", 0.0),
                 }
                 self._step_writer.writerow(row)
         return True
@@ -312,7 +317,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== CHECKPOINT CALLBACK =====
         
         # Sistemas antagónicos se benefician de checkpoints más frecuentes
-        checkpoint_freq = 100000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
+        checkpoint_freq = 90000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
         
         checkpoint_callback = CheckpointCallback(
             save_freq=checkpoint_freq,
@@ -324,7 +329,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 50000 //self.n_envs
+        eval_freq = 30000 //self.n_envs
         
         eval_callback = EvalCallback(
             eval_env,
