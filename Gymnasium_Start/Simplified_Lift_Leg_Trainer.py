@@ -211,8 +211,8 @@ class Simplified_Lift_Leg_Trainer:
                     print_env="TRAIN"  # Para diferenciar en logs
                     
                 )
-                
-                env = Monitor(env, os.path.join(self.logs_dir, f"train_worker_{rank}"))
+                #Eliminado escribir , os.path.join(self.logs_dir, f"train_worker_{rank}" acelero entrenamiento
+                env = Monitor(env)
                 return env
             return _init
         

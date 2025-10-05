@@ -231,8 +231,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['curriculum'] = curriculum_info  # Añadir sin reemplazar
             info['system_type'] = 'progressive'
             info['current_level'] = curriculum_info.get('level', 1)
-            F_L = self.contact_normal_force(self.left_foot_link_id)
-            F_R = self.contact_normal_force(self.right_foot_link_id)
+            n_l, F_L = self.contact_normal_force(self.left_foot_link_id)
+            n_r, F_R = self.contact_normal_force(self.right_foot_link_id)
             left_down, right_down = self.contacto_pies
 
             # ZMP (si está disponible)
@@ -339,6 +339,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
             info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
             info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
+            info["kpi"]["u_RA_ext"]  = float(ps[12])   # PAM 7: extensor tobillo der (pitch)
+            info["kpi"]["u_LA_flex"]  = float(ps[13])   # PAM 8: flexor tobillo izq
+            info["kpi"]["u_LA_ext"]   = float(ps[14])   # PAM 9: extensor tobillo izq
+            info["kpi"]["u_RA_flex"]  = float(ps[15])  # PAM 10: flexor tobillo der
 
 
         if hasattr(self, "left_hip_roll_angle"):
@@ -396,19 +400,27 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
 
-    def contact_with_force(self, link_id, min_F=20.0):
+    def contact_with_force(self, link_id, min_F=20.0, min_contacts=2):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False
         # campo normalForce = índice 9 en PyBullet
-        totalF = sum(cp[9] for cp in cps)
+        fuerzas_puntos=[cp[9] for cp in cps]
+        num_contactos=len(fuerzas_puntos)
+        F_total=sum(fuerzas_puntos)
         if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundos aprox
-            log_print(f"Contact force on link {link_id}: {totalF:.2f} N")
-        return totalF > min_F
+            log_print(f"Contact force on link {link_id}: {F_total:.2f} N")
+        return (F_total > min_F) and (num_contactos>min_contacts)
     
     def contact_normal_force(self, link_id:int)->float:
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)
-        return 0.0 if not cps else sum(cp[9] for cp in cps)
+        if not cps:
+            return 0, 0.0
+        fuerzas_puntos=[cp[9] for cp in cps]
+        num_contactos=len(fuerzas_puntos)
+        F_total=sum(fuerzas_puntos)
+        fuerza_contacto_y_puntos=(num_contactos, F_total)
+        return fuerza_contacto_y_puntos
     
     def debug_contacts_once(self):
         for name, lid in [("L_foot", self.left_foot_link_id), ("R_foot", self.right_foot_link_id)]:

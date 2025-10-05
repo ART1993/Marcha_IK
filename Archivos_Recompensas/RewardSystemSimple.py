@@ -258,8 +258,8 @@ class SimpleProgressiveReward:
 
         left_foot_id=self.env.left_foot_link_id
         right_foot_id=self.env.right_foot_link_id
-        F_L = self.env.contact_normal_force(left_foot_id)
-        F_R = self.env.contact_normal_force(right_foot_id)
+        n_l,F_L = self.env.contact_normal_force(left_foot_id)
+        n_r,F_R = self.env.contact_normal_force(right_foot_id)
         F_sum = max(F_L + F_R, 1e-6)
         left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_anckle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_anckle_id = self.env.joint_indices
         
@@ -275,8 +275,8 @@ class SimpleProgressiveReward:
                 log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
         # Detectar qué pies están en contacto Ver si seleccionar min_F=20 0 27 0 30
-        left_down = self.env.contact_with_force(left_foot_id, min_F=self.min_F)
-        right_down = self.env.contact_with_force(right_foot_id, min_F=self.min_F)
+        left_down = self.env.contact_with_force(left_foot_id, min_F=self.min_F, min_contacts=0)
+        right_down = self.env.contact_with_force(right_foot_id, min_F=self.min_F, min_contacts=2)
 
         
 
@@ -285,8 +285,16 @@ class SimpleProgressiveReward:
         if self.fixed_target_leg == 'left':
             # fuerza la semántica: soporte=right, objetivo=left
             target_is_right = False
-            support_foot_down = self.env.contact_with_force(self.env.right_foot_link_id, min_F=self.min_F)
-            target_foot_down  = self.env.contact_with_force(self.env.left_foot_link_id,  min_F=self.min_F)
+            support_foot_down = right_down
+            target_foot_down  = left_down
+            F_sup = F_R      # soporte = pie derecho
+            F_tar = F_L      # objetivo = pie izquierdo
+        else:
+            target_is_right = True
+            support_foot_down = left_down
+            target_foot_down  = right_down
+            F_sup = F_L      # soporte = pie derecho
+            F_tar = F_R      # objetivo = pie izquierdo
         # target_is_right   = (self.target_leg == 'right') # Sera siempre false
         # target_foot_id    = right_foot_id if target_is_right else left_foot_id
         # target_foot_down  = right_down if target_is_right else left_down
@@ -298,8 +306,7 @@ class SimpleProgressiveReward:
         # F_sup = F_L if target_is_right else F_R   # si objetivo=right, soporte=left (F_L)
         # F_tar = F_R if target_is_right else F_L
         if self.fixed_target_leg == 'left':
-            F_sup = F_R      # soporte = pie derecho
-            F_tar = F_L      # objetivo = pie izquierdo
+            
             # Carga mínima en soporte (80%) y toe-touch estricto del objetivo
             support_load_reward = np.clip((F_sup / F_sum - 0.80) / 0.20, 0.0, 1.0) * 1.2
             toe_touch_pen = -0.8 if (0.0 < F_tar < self.min_F) else 0.0
