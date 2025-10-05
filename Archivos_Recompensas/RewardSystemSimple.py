@@ -117,8 +117,8 @@ class SimpleProgressiveReward:
         if self.enable_curriculum==False:
             self.max_tilt_by_level = {
                 1: 0.8,  # 
-                2: 0.8,  # 
-                3: 0.8   # 
+                2: 0.7,  # 
+                3: 0.5   # 
             }
             both_print(f"   Max tilt: {np.degrees(self.max_tilt_by_level[3]):.1f}° (permisivo)")
         else:
@@ -136,7 +136,7 @@ class SimpleProgressiveReward:
         self.bad_ending=("fall", "tilt", "drift", "no_support")
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
-        self.min_F=30
+        self.min_F=20
         both_print(f"🎯 Progressive System initialized:")
         both_print(f"   Switch interval: {self.switch_interval} steps ({switch_time_seconds:.1f}s)")
         both_print(f"   Frequency: {self.frequency_simulation} Hz")
@@ -215,7 +215,7 @@ class SimpleProgressiveReward:
         height_reward=self._level_1_reward(pos, euler)
         
         # Versión antigua
-        roll,pitch = abs(euler[0]) , abs(euler[1])  # roll + pitch
+        roll,pitch = euler[0] , abs(euler[1])  # roll + pitch
         if pitch < 0.2:
             stability_reward = 1.5  # Muy estable
         elif pitch < 0.4:
@@ -226,10 +226,9 @@ class SimpleProgressiveReward:
             stability_reward = -5.0  # Inestable
     
     # Guardarraíl adicional de roll (torso) para evitar extremos
-        torso_roll = euler[0]
         guard_pen = self._roll_guardrail_pen(
-            torso_roll,
-            level_soft=0.20,
+            roll,
+            level_soft=0.15,
             level_hard=self.max_tilt_by_level[self.level]
         )
         return height_reward + stability_reward + guard_pen
@@ -273,25 +272,20 @@ class SimpleProgressiveReward:
         #         # Asumiendo 400 Hz
         #         log_print(f"🔄 Target: Raise {self.target_leg} leg (every {seconds_per_switch:.1f}s)")
         
-        # Detectar qué pies están en contacto Ver si seleccionar min_F=20 0 27 0 30
-        left_down = self.env.contact_with_force(left_anckle_id, min_F=self.min_F, min_contacts=0)
-        right_down = self.env.contact_with_force(right_anckle_id, min_F=self.min_F, min_contacts=2)
-
-        
-
-        
         # NUEVO: si estamos en left-only, el soporte debe ser el pie derecho
         if self.fixed_target_leg == 'left':
             # fuerza la semántica: soporte=right, objetivo=left
             target_is_right = False
-            support_foot_down = right_down
-            target_foot_down  = left_down
+            target_is_left = not target_is_right
+            support_foot_down = self.env.contact_with_force(right_anckle_id, stable_foot=(not target_is_right), min_F=self.min_F)
+            target_foot_down  = self.env.contact_with_force(left_anckle_id, stable_foot= (not target_is_left), min_F=self.min_F)
             F_sup = F_R      # soporte = pie derecho
             F_tar = F_L      # objetivo = pie izquierdo
         else:
             target_is_right = True
-            support_foot_down = left_down
-            target_foot_down  = right_down
+            target_is_left = not target_is_right
+            support_foot_down = self.env.contact_with_force(left_anckle_id, stable_foot= (not target_is_left), min_F=self.min_F)
+            target_foot_down  = self.env.contact_with_force(right_anckle_id, stable_foot=(not target_is_right), min_F=self.min_F)
             F_sup = F_L      # soporte = pie derecho
             F_tar = F_R      # objetivo = pie izquierdo
         # target_is_right   = (self.target_leg == 'right') # Sera siempre false
@@ -425,7 +419,7 @@ class SimpleProgressiveReward:
             if hasattr(self.env, "zmp") and hasattr(self.env.zmp, "stability_margin_distance"):
                 margin = float(self.env.zmp.stability_margin_distance())  # metros (+ estable si >0)
                 # Escala: +0.5 en margen >= 5 cm; -0.5 si -5 cm
-                zmp_term = 0.5 * np.clip(margin / 0.05, -1.0, 1.0)
+                zmp_term = 0.7 * np.clip(margin / 0.05, -1.0, 1.0)
                 # Exporta KPI opcional
                 if hasattr(self.env, "info"):
                     self.env.info["kpi"]["zmp_margin_m"] = margin
@@ -673,11 +667,12 @@ class SimpleProgressiveReward:
         Recompensa por pie 'plano' (link roll/pitch ~ 0) — se aplica típicamente al pie de soporte.
         """
         if only_if_contact:
-            if not self.env.contact_with_force(foot_link_id, min_F=self.min_F):
+            # Pie de soporte "estable": F > F_min y múltiples puntos de contacto
+            if not self.env.contact_with_force(foot_link_id, stable_foot=True, min_F=self.min_F):
                 return 0.0
         try:
             _, orn, _, _, _, _ = p.getLinkState(self.env.robot_id, foot_link_id, computeForwardKinematics=True)
-            r, p, _ = self.env.p.getEulerFromQuaternion(orn)
+            r, pch, _ = p.getEulerFromQuaternion(orn)
         except Exception:
             return 0.0
         def soft_center(x, c, tol=0.05, slope=0.10):
@@ -685,6 +680,6 @@ class SimpleProgressiveReward:
             if x > c + tol: return max(0.0, 1.0 - (x - (c + tol))/slope)
             return 1.0
         r_bonus = soft_center(r, target_roll)
-        p_bonus = soft_center(p, target_pitch)
+        p_bonus = soft_center(pch, target_pitch)
         return 0.8 * 0.5 * (r_bonus + p_bonus)  # máx ≈ +0.8
 

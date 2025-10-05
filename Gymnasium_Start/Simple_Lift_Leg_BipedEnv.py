@@ -115,12 +115,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
-        self.joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
+        #self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
+        self.control_joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
                             'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
+        self.joint_names=self.control_joint_names
+        self.joint_indices=[i for i in range(len(self.joint_names))]
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
+        #ID Links de los pies (igual al de los tobillos)
         self.left_foot_link_id = 3
         self.right_foot_link_id = 7
+
         self.swing_hip_target = 0.05
         self.swing_hip_tol=0.10 
 
@@ -183,7 +187,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
-        torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
+        #torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
+        # En el caso que quiera reducir los torques a usar y por tanto los joints no fijos
+        torque_mapping = [(jid, joint_torques[i]) for i, jid in enumerate(self.joint_indices[:len(joint_torques)])]
 
         #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
         for joint_id, torque in torque_mapping:
@@ -299,7 +305,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         return observation, reward, done, False, info
     
     def obtener_estado_articulaciones(self):
-        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # rodillas
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # sólo 8 DOF controlados
         self.left_hip_roll_angle = joint_states[0][0]
         self.left_hip_pitch_angle = joint_states[1][0]
         self.left_knee_angle = joint_states[2][0]
@@ -400,7 +406,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
 
-    def contact_with_force(self, link_id, min_F=20.0, min_contacts=2):
+    def contact_with_force(self, link_id, stable_foot,min_F=20.0):
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)# -1 para el suelo
         if not cps: 
             return False
@@ -410,7 +416,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         F_total=sum(fuerzas_puntos)
         if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundos aprox
             log_print(f"Contact force on link {link_id}: {F_total:.2f} N")
-        return (F_total > min_F) and (num_contactos>min_contacts)
+        if stable_foot:
+            return (F_total > min_F) and (num_contactos>2)
+        else:
+            return (F_total > min_F) or (num_contactos>0)
     
     def contact_normal_force(self, link_id:int)->float:
         cps = p.getContactPoints(self.robot_id, self.plane_id, link_id, -1)
@@ -439,8 +448,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """Control automático de la rodilla levantada basado en altura"""
         
         # Determinar qué pierna está levantada basado en contactos
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
-        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
+        left_contact  = self.contact_with_force(link_id=self.left_foot_link_id,  stable_foot=True,  min_F= 20.0)
+        right_contact = self.contact_with_force(link_id=self.right_foot_link_id,  stable_foot=True,  min_F= 20.0)
 
         
         
@@ -521,6 +530,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         joint_torques = calculate_robot_specific_joint_torques_16_pam(self, pam_pressures)
         joint_torques = self._apply_automatic_knee_control(joint_torques)
 
+        base_lin_vel, base_ang_vel = p.getBaseVelocity(self.robot_id)
+        roll = self.euler[0]
+        roll_rate = base_ang_vel[0]
+
+        KPR = 120.0    # ganancia P (sube/baja según necesidad)
+        KDR = 8.0      # ganancia D
+
+        tau_roll = -KPR * roll - KDR * roll_rate  # torque correctivo: empuja hacia roll=0
+
+        # Índices de caderas-roll en joint_torques (3D): [LHR, LHP, LK, LA, RHR, RHP, RK, RA]
+        i_LHR = 0
+        i_RHR = 4
+
+        # Aplica par opuesto a cada lado para recentrar la pelvis
+        joint_torques[i_LHR] += tau_roll
+        joint_torques[i_RHR] -= tau_roll
+
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
 
@@ -555,9 +581,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
-        # Contactos
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
-        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
+        # Aquí sólo queremos saber si "hay algún contacto" → estable=False
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id, stable_foot=False, min_F=20.0)
+        right_contact=self.contact_with_force(link_id=self.right_foot_link_id, stable_foot=False, min_F=20.0)
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de rodillas
@@ -619,8 +645,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     @property
     def contacto_pies(self):
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id)
-        right_contact=self.contact_with_force(link_id=self.right_foot_link_id)
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id, stable_foot=False)
+        right_contact=self.contact_with_force(link_id=self.right_foot_link_id, stable_foot=True)
         return left_contact, right_contact
     
 
@@ -669,12 +695,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
         robot_joint_info=self.robot_data._get_joint_info
         self.num_joints=p.getNumJoints(self.robot_id)
-        self.joint_indices, self.joint_names=[],[]
+        all_indices, all_names=[],[]
         for j in range(self.num_joints):
-            self.joint_indices.append(robot_joint_info[j]['index'])
-            self.joint_names.append(robot_joint_info[j]['name'])
+            all_indices.append(robot_joint_info[j]['index'])
+            all_names.append(robot_joint_info[j]['name'])
             p.enableJointForceTorqueSensor(self.robot_id, jointIndex=robot_joint_info[j]['index'], enableSensor=True)
-        self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
+        self.dict_joints = {name: idx for name, idx in zip(all_names, all_indices)}
+        # Fijar los 8 índices en el orden esperado por el cálculo de torques
+        self.joint_names   = list(self.control_joint_names)
+        self.joint_indices = [self.dict_joints[n] for n in self.control_joint_names]
         
             
         
