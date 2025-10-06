@@ -120,7 +120,8 @@ class Simplified_Lift_Leg_Trainer:
                  n_envs=4,
                  learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
-                 enable_curriculum=True
+                 enable_curriculum=True,
+                 logger=None
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -128,6 +129,7 @@ class Simplified_Lift_Leg_Trainer:
         self.env_type = "simplified_lift_legs"
         self.total_timesteps = total_timesteps
         self.n_envs = n_envs
+        self.logger=logger
         self.learning_rate = learning_rate
         self.resume_from = resume_from
         self.enable_curriculum=enable_curriculum
@@ -135,12 +137,12 @@ class Simplified_Lift_Leg_Trainer:
 
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
-
-        log_print(f"🤖 simplified_lift_legs Trainer initialized")
-        log_print(f"   Target: Balance + Sentadillas con 6 PAMs")
-        log_print(f"   Timesteps: {self.total_timesteps:,}")
-        log_print(f"   Parallel envs: {self.n_envs}")
-        log_print(f"   Learning rate: {self.learning_rate}")
+        if self.logger:
+            self.logger.log("main",f"🤖 simplified_lift_legs Trainer initialized")
+            self.logger.log("main",f"   Target: Balance + Sentadillas con 6 PAMs")
+            self.logger.log("main",f"   Timesteps: {self.total_timesteps:,}")
+            self.logger.log("main",f"   Parallel envs: {self.n_envs}")
+            self.logger.log("main",f"   Learning rate: {self.learning_rate}")
 
         # MANTENER EN CONSOLA SOLO CONFIRMACIÓN
         print(f"🤖 Trainer ready")
@@ -204,15 +206,20 @@ class Simplified_Lift_Leg_Trainer:
         """
         
         config = self.env_configs
-        
-        log_print(f"🏗️ Creating training environment: {config['description']}")
-        
-        def make_env(rank=0):
+        n_envs_local = int(self.n_envs)
+        enable_curr_local = bool(self.enable_curriculum)
+        logger_local = (self.logger if (self.logger and n_envs_local == 1) else None)
+        if logger_local and n_envs_local==1:
+            self.logger.log("main",f"🏗️ Creating training environment: {config['description']}")
+        def make_env(logger=logger_local,
+                     enable_curriculum=enable_curr_local,
+                     n_envs=n_envs_local):
             def _init():
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
-                    render_mode='human' if self.n_envs == 1 else 'direct', 
-                    enable_curriculum=self.enable_curriculum,
+                    logger=logger,
+                    render_mode='human' if n_envs == 1 else 'direct', 
+                    enable_curriculum=enable_curriculum,
                     print_env="TRAIN"  # Para diferenciar en logs
                     
                 )
@@ -237,7 +244,8 @@ class Simplified_Lift_Leg_Trainer:
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
                                              enable_curriculum=False,  # Evaluación sin curriculum
-                                            print_env="EVAL"
+                                            print_env="EVAL",
+                                            logger=self.logger
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env
@@ -357,8 +365,9 @@ class Simplified_Lift_Leg_Trainer:
         print(f"🚀 Starting lift_leg training with RecurrentPPO...")
 
         # DETALLES AL LOG
-        log_print("🚀 Training session started")
-        log_print(f"   Resume: {resume}")
+        if self.logger:
+            self.logger.log("main","🚀 Training session started")
+            self.logger.log("main",f"   Resume: {resume}")
         
         # ===== PREPARACIÓN DEL ENTRENAMIENTO =====
         
@@ -537,7 +546,7 @@ class Simplified_Lift_Leg_Trainer:
     def _create_parallel_env(self, make_env, config):
         """Creación de entornos paralelos optimizada"""
         if self.n_envs > 1:
-            base_env = SubprocVecEnv([make_env(rank=i) for i in range(self.n_envs)])
+            base_env = SubprocVecEnv([make_env() for i in range(self.n_envs)])
             env = VecNormalize(base_env, 
                              norm_obs=True, 
                              norm_reward=True, 
@@ -555,7 +564,7 @@ class Simplified_Lift_Leg_Trainer:
     
     # Ya que he creado clase sin RL para testing, también creo con este un modelo de entrenamiento sin RL
 
-def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, learning_rate=3e-4):
+def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, learning_rate=3e-4,logger=None):
     """
     Función para crear fácilmente un entrenador SIN curriculum
     """
@@ -564,7 +573,8 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
         total_timesteps=total_timesteps,
         n_envs=n_envs,
         learning_rate=learning_rate,
-        enable_curriculum=False
+        enable_curriculum=False,
+        logger=logger
     )
     
     print(f"✅ Trainer created (NO CURRICULUM)")

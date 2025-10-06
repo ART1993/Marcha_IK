@@ -32,7 +32,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 7
     """
     
-    def __init__(self, render_mode='human',enable_curriculum=False, print_env="ENV", fixed_target_leg="left"):
+    def __init__(self, logger=None, render_mode='human',enable_curriculum=False, print_env="ENV", fixed_target_leg="left"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -44,6 +44,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN BÁSICA =====
         self.pam_muscles = PAM_McKibben()
         self.render_mode = render_mode
+        self.logger=logger
         
         self.muscle_names = list(self.pam_muscles.keys())
         
@@ -143,9 +144,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.enable_curriculum = enable_curriculum # Por si las moscas
         self.simple_reward_system = None
         self.print_env = print_env
-        log_print(f"🤖 Simplified Lift legs Environment initialized")
-        log_print(f"🤖 Environment initialized - Systems initiate in reset")
-        log_print(f"🤖 Using {self.num_active_pams=:} "
+        self.reawrd_step={}
+        self.n_episodes=0
+        if self.logger:
+            self.logger.log("main",f"🤖 Simplified Lift legs Environment initialized")
+            self.logger.log("main",f"🤖 Environment initialized - Systems initiate in reset")
+            self.logger.log("main",f"🤖 Using {self.num_active_pams=:} "
                   f"{enable_curriculum=:} [{self.print_env=:}]")
     
 # ========================================================================================================================================================================= #
@@ -213,6 +217,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
         self._debug_joint_angles_and_pressures(u_final, joint_states, done)
         system_used = "PROGRESSIVE"
+        self.debug_rewards()
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
@@ -279,39 +284,44 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                     "done_reason": getattr(self.simple_reward_system, "last_done_reason", None)
                                 }
                 episode_total = info['episode_reward']  # Ya calculado arriba
+                self.n_episodes+=1
                 
                 #self.simple_reward_system.update_after_episode(episode_total)
-                log_print(f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
+                if self.logger:
+                    self.logger.log("main",f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
         
         # CONSERVAR tu debug existente 
         if (self.step_count % (self.frequency_simulation//10) == 0 or done) and self.simple_reward_system:
-            log_print(f"🔍 Step {self.step_count} - Control Analysis:")
-            log_print(f"   Height: {self.pos[2]:.2f}m")
-            log_print(f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
-            #log_print(f"   Action source: {action_source}")
-            kpi_dbg = info.get("kpi", {})
-            log_print(f"   COM: ({kpi_dbg.get('com_x', 0.0):.3f}, {kpi_dbg.get('com_y', 0.0):.3f}, {kpi_dbg.get('com_z', 0.0):.3f}) m  ")
-            log_print(f"   ZMP: ({kpi_dbg.get('zmp_x', 0.0):.3f}, {kpi_dbg.get('zmp_y', 0.0):.3f}) m")
-            #curriculum_info = self.simple_reward_system.get_info()
-            log_print(f"   Level: {info['curriculum'].get('level')}")
-            log_print(f"   COM→support: {kpi_dbg.get('com_dist_to_support', 0):.3f} m | ZMP margin: {kpi_dbg.get('zmp_margin_m', 0):+.3f} m | stable={kpi_dbg.get('com_stable_flag', 0)}")
+            if self.logger:
+                self.logger.log("main",f"🔍 Step {self.step_count} - Control Analysis:")
+                self.logger.log("main",f"   Height: {self.pos[2]:.2f}m")
+                self.logger.log("main",f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
+                #logger.log(f"   Action source: {action_source}")
+                kpi_dbg = info.get("kpi", {})
+                self.logger.log("main",f"   COM: ({kpi_dbg.get('com_x', 0.0):.3f}, {kpi_dbg.get('com_y', 0.0):.3f}, {kpi_dbg.get('com_z', 0.0):.3f}) m  ")
+                self.logger.log("main",f"   ZMP: ({kpi_dbg.get('zmp_x', 0.0):.3f}, {kpi_dbg.get('zmp_y', 0.0):.3f}) m")
+                #curriculum_info = self.simple_reward_system.get_info()
+                self.logger.log("main",f"   Level: {info['curriculum'].get('level')}")
+                self.logger.log("main",f"   COM→support: {kpi_dbg.get('com_dist_to_support', 0):.3f} m | ZMP margin: {kpi_dbg.get('zmp_margin_m', 0):+.3f} m | stable={kpi_dbg.get('com_stable_flag', 0)}")
     
             # Verificar si está cerca de límites
             max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
             if abs(self.euler[0]) > max_allowed_tilt * 0.8 or abs(self.euler[1]) > max_allowed_tilt * 0.8:
-                log_print(f"   ⚠️ Approaching tilt limit! Max allowed: ±{math.degrees(max_allowed_tilt):.1f}°")
+                if self.logger:
+                    self.logger.log("main",f"   ⚠️ Approaching tilt limit! Max allowed: ±{math.degrees(max_allowed_tilt):.1f}°")
             
 
         # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
             #status = self.simple_reward_system.get_info()
             elapsed_time = self.step_count / self.frequency_simulation
-            #log_print(f" {action_source} action, reward={reward:.2f}")
-            log_print(f"Step {done=:}, is_valid={is_valid}")
-            log_print(f"🎮 Active system: {system_used} at step {self.step_count}")
-            log_print(f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
-            log_print(f"   Current level: {curriculum_info['level']}")
-            log_print(f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
-            log_print(f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
+            #logger.log(f" {action_source} action, reward={reward:.2f}")
+            if self.logger:
+                self.logger.log("main",f"Step {done=:}, is_valid={is_valid}")
+                self.logger.log("main",f"🎮 Active system: {system_used} at step {self.step_count}")
+                self.logger.log("main",f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
+                self.logger.log("main",f"   Current level: {curriculum_info['level']}")
+                self.logger.log("main",f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
+                self.logger.log("main",f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
         
         return observation, reward, done, False, info
     
@@ -426,7 +436,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         num_contactos=len(fuerzas_puntos)
         F_total=sum(fuerzas_puntos)
         if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundos aprox
-            log_print(f"Contact force on link {link_id}: {F_total:.2f} N")
+            if self.logger:
+                self.logger.log("main",f"Contact force on link {link_id}: {F_total:.2f} N")
         if stable_foot:
             return (F_total > min_F) and (num_contactos>2)
         else:
@@ -560,9 +571,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
-
-            log_print(f"Pierna de apoyo: {balance_info['support_leg']}")
-            log_print(f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
+            if self.logger:
+                self.logger.log("main",f"Pierna de apoyo: {balance_info['support_leg']}")
+                self.logger.log("main",f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
 
         return joint_torques
     
@@ -689,11 +700,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             enableConeFriction=1,        # Habilitar fricción cónica
             deterministicOverlappingPairs=1
         )
-        log_print(f"🔧 Contact friction CORRECTED for single leg balance:")
-        log_print(f"   Feet: μ=0.8 (moderate grip, less spinning)")
-        log_print(f"   Legs: μ=0.1 (very low resistance)")
-        log_print(f"   Ground: μ=0.6 (controlled)")
-        log_print(f"   Solver: Enhanced stability parameters")
+        if self.logger:
+            self.logger.log("main",f"🔧 Contact friction CORRECTED for single leg balance:")
+            self.logger.log("main",f"   Feet: μ=0.8 (moderate grip, less spinning)")
+            self.logger.log("main",f"   Legs: μ=0.1 (very low resistance)")
+            self.logger.log("main",f"   Ground: μ=0.6 (controlled)")
+            self.logger.log("main",f"   Solver: Enhanced stability parameters")
         
         # Cargar entorno
         self.plane_id = p.loadURDF("plane.urdf")
@@ -956,35 +968,47 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
-                for idx, state in zip(self.joint_indices, joint_states):
-                    pos, vel, reaction, applied = state
-                    Fx,Fy,Fz,Mx,My,Mz = reaction
-                    log_print(f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
-                               f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
-                left_contact, right_contact = self.contacto_pies
-                log_print(f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
-                log_print(f"   Left hip roll: {self.left_hip_roll_angle:.3f} rad ({math.degrees(self.left_hip_roll_angle):.1f}°)")
-                log_print(f"   Right hip roll: {self.right_hip_roll_angle:.3f} rad ({math.degrees(self.right_hip_roll_angle):.1f}°)")
-                log_print(f"   Left hip pitch: {self.left_hip_pitch_angle:.3f} rad ({math.degrees(self.left_hip_pitch_angle):.1f}°)")
-                log_print(f"   Right hip pitch: {self.right_hip_pitch_angle:.3f} rad ({math.degrees(self.right_hip_pitch_angle):.1f}°)")
-                log_print(f"   Left knee: {self.left_knee_angle:.3f} rad ({math.degrees(self.left_knee_angle):.1f}°)")
-                log_print(f"   Right knee: {self.right_knee_angle:.3f} rad ({math.degrees(self.right_knee_angle):.1f}°)")
-                log_print(f"   Left anckle: {self.left_anckle_angle:.3f} rad ({math.degrees(self.left_anckle_angle):.1f}°)")
-                log_print(f"   Right anckle: {self.right_anckle_angle:.3f} rad ({math.degrees(self.right_anckle_angle):.1f}°)")
-                log_print(f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
-                log_print(f"   R Hip rollflex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
-                log_print(f"   L Hip pitch flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
-                log_print(f"   R Hip pitch flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
-                log_print(f"   L knee flex/ext: {pam_pressures[8]:.3f} / {pam_pressures[9]:.3f}")
-                log_print(f"   R knee flex/ext: {pam_pressures[10]:.3f} / {pam_pressures[11]:.3f}")
-                log_print(f"   L anckle flex/ext: {pam_pressures[12]:.3f} / {pam_pressures[13]:.3f}")
-                log_print(f"   R anckle flex/ext: {pam_pressures[14]:.3f} / {pam_pressures[15]:.3f}")
-                log_print(f"   Contactos pie izquierdo: {left_contact}")
-                log_print(f"   Contactos pie derecho: {right_contact}")
-                #log_print(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
-            
+                if self.logger:
+                    self.logger.log("pressure", f"{self.step_count} para {self.n_episodes}" )
+                    for idx, state in zip(self.joint_indices, joint_states):
+                        pos, vel, reaction, applied = state
+                        Fx,Fy,Fz,Mx,My,Mz = reaction
+                        self.logger.log("main",f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
+                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
+                    left_contact, right_contact = self.contacto_pies
+                    self.logger.log("pressure",f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
+                    self.logger.log("pressure",f"   Left hip roll: {self.left_hip_roll_angle:.3f} rad ({math.degrees(self.left_hip_roll_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Right hip roll: {self.right_hip_roll_angle:.3f} rad ({math.degrees(self.right_hip_roll_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Left hip pitch: {self.left_hip_pitch_angle:.3f} rad ({math.degrees(self.left_hip_pitch_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Right hip pitch: {self.right_hip_pitch_angle:.3f} rad ({math.degrees(self.right_hip_pitch_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Left knee: {self.left_knee_angle:.3f} rad ({math.degrees(self.left_knee_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Right knee: {self.right_knee_angle:.3f} rad ({math.degrees(self.right_knee_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Left anckle: {self.left_anckle_angle:.3f} rad ({math.degrees(self.left_anckle_angle):.1f}°)")
+                    self.logger.log("pressure",f"   Right anckle: {self.right_anckle_angle:.3f} rad ({math.degrees(self.right_anckle_angle):.1f}°)")
+                    self.logger.log("pressure",f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
+                    self.logger.log("pressure",f"   R Hip rollflex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
+                    self.logger.log("pressure",f"   L Hip pitch flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
+                    self.logger.log("pressure",f"   R Hip pitch flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
+                    self.logger.log("pressure",f"   L knee flex/ext: {pam_pressures[8]:.3f} / {pam_pressures[9]:.3f}")
+                    self.logger.log("pressure",f"   R knee flex/ext: {pam_pressures[10]:.3f} / {pam_pressures[11]:.3f}")
+                    self.logger.log("pressure",f"   L anckle flex/ext: {pam_pressures[12]:.3f} / {pam_pressures[13]:.3f}")
+                    self.logger.log("pressure",f"   R anckle flex/ext: {pam_pressures[14]:.3f} / {pam_pressures[15]:.3f}")
+                    self.logger.log("pressure",f"   Contactos pie izquierdo: {left_contact}")
+                    self.logger.log("pressure",f"   Contactos pie derecho: {right_contact}")
+                    #logger.log(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
+                    self.logger.log("pressure","\n")
+
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
+
+    def debug_rewards(self):
+        if self.step_count % 10==0 and len(self.reawrd_step)>0:
+            if self.logger:
+                self.logger.log("rewards", f"{self.step_count} para {self.n_episodes}" )
+                for reward_name, reward_value in self.reawrd_step.items():
+                    self.logger.log("rewards",f"{reward_name} da una recompensa de {reward_value}")
+                self.logger.log("rewards","\n")
+            
 
     # Validación de robot:
     def validate_robot_specific_behavior(self, pam_pressures, joint_torques):
@@ -1053,22 +1077,24 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if asymmetry < 0.5:  # Muy simétrico para equilibrio en una pierna
             warnings.append(f"Low asymmetry: {asymmetry:.2f} (may indicate poor single-leg balance)")
         else:
-            log_print("Correct_asimetry")
+            if self.logger:
+                self.logger.log("main","Correct_asimetry")
         
         # ===== LOGGING CONDICIONAL =====
         
         if warnings and self.step_count % (self.frequency_simulation//10) == 0:  # Cada 0.5 segundos aprox
-            log_print(f"🤖 Robot-specific validation (Step {self.step_count}):")
-            for warning in warnings:
-                log_print(f"   ⚠️ {warning}")
-            
-            # Info adicional útil
-            log_print(f"   Total mass: 25kg, Height: 1.20m")
-            log_print(f"   Current torques: τ_cmd={[f'{t:.1f}' for t in joint_torques]} N⋅m")
+            if self.logger:
+                self.logger.log("main",f"🤖 Robot-specific validation (Step {self.step_count}):")
+                for warning in warnings:
+                    self.logger.log("main",f"   ⚠️ {warning}")
+                
+                # Info adicional útil
+                self.logger.log("main",f"   Total mass: 25kg, Height: 1.20m")
+                self.logger.log("main",f"   Current torques: τ_cmd={[f'{t:.1f}' for t in joint_torques]} N⋅m")
         
         return len(warnings) == 0
     
-def configure_robot_specific_pam_system(env):
+def configure_robot_specific_pam_system(env:Simple_Lift_Leg_BipedEnv):
     """
     Configurar el sistema PAM específicamente para tu robot.
     Llamar una vez después de crear el entorno.
@@ -1077,14 +1103,14 @@ def configure_robot_specific_pam_system(env):
     # Verificar que las dimensiones coinciden
     expected_mass = 25.0  # kg
     expected_height = 1.20  # m
-    
-    log_print("🤖 Configuring PAM system for your specific robot:")
-    log_print(f"   Expected mass: {expected_mass}kg")
-    log_print(f"   Expected height: {expected_height}m")
-    log_print(f"   PAM configuration: {env.num_active_pams} muscles "
-              f"(hips antagonistic + knees {'flex+ext'})")
-    log_print(f"   Moment arms: Hip 5.0-6.3cm, Knee 5.7cm")
-    log_print(f"   Passive springs: {env.PASSIVE_SPRING_STRENGTH} N⋅m (gravity-compensated)")
+    if env.logger:
+        env.logger.log("main","🤖 Configuring PAM system for your specific robot:")
+        env.logger.log("main",f"   Expected mass: {expected_mass}kg")
+        env.logger.log("main",f"   Expected height: {expected_height}m")
+        env.logger.log("main",f"   PAM configuration: {env.num_active_pams} muscles "
+                f"(hips antagonistic + knees {'flex+ext'})")
+        env.logger.log("main",f"   Moment arms: Hip 5.0-6.3cm, Knee 5.7cm")
+        env.logger.log("main",f"   Passive springs: {env.PASSIVE_SPRING_STRENGTH} N⋅m (gravity-compensated)")
     
     # Configurar parámetros específicos en el entorno
     env.robot_specific_configured = True
@@ -1093,8 +1119,8 @@ def configure_robot_specific_pam_system(env):
     
     # Reemplazar el método de cálculo de torques
     env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques_16_pam
-    
-    log_print("✅ Robot-specific PAM system configured!")
+    if env.logger:
+        env.logger.log("main","✅ Robot-specific PAM system configured!")
     
     return True
 

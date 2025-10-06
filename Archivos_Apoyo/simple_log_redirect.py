@@ -74,11 +74,62 @@ def both_print(*args, **kwargs):
     else:
         print(*args, **kwargs)
 
+class MultiLogRedirect:
+    """
+    Permite tener múltiples logs (por categorías) además del log global.
+    Ejemplo:
+        logger = MultiLogRedirect()
+        logger.log("reward", "Reward=2.3", step=512)
+        logger.log("pressure", "PAM1=2.1, PAM2=1.8", step=512)
+        logger.console("Entrenamiento activo")
+    """
+
+    def __init__(self, base_dir="./logs_lift_leg"):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.base_dir = base_dir
+        os.makedirs(base_dir, exist_ok=True)
+
+        # Archivo principal
+        self.global_file = os.path.join(base_dir, f"training_{timestamp}.txt")
+        self._handles = {"main": open(self.global_file, "w", encoding="utf-8")}
+        print(f"📝 Logging directory: {base_dir}")
+
+    def _get_handle(self, name: str):
+        """Obtiene o crea un handle de log específico"""
+        if name not in self._handles:
+            file_path = os.path.join(self.base_dir, f"{name}_log.txt")
+            self._handles[name] = open(file_path, "w", encoding="utf-8")
+        return self._handles[name]
+
+    def log(self, category: str, *args, step=None, **kwargs):
+        """Escribe solo en el archivo de categoría"""
+        handle = self._get_handle(category)
+        prefix = f"[{step:06d}] " if step is not None else ""
+        print(prefix, *args, **kwargs, file=handle)
+        handle.flush()
+
+    def both(self, category: str, *args, step=None, **kwargs):
+        """Escribe en consola y en el archivo de categoría"""
+        handle = self._get_handle(category)
+        prefix = f"[{step:06d}] " if step is not None else ""
+        print(prefix, *args, **kwargs)
+        print(prefix, *args, **kwargs, file=handle)
+        handle.flush()
+
+    def console(self, *args, **kwargs):
+        """Print normal en consola"""
+        print(*args, **kwargs)
+
+    def close(self):
+        for h in self._handles.values():
+            h.close()
+        self._handles.clear()
+
 # ===== EJEMPLO DE USO EN TUS ARCHIVOS =====
 
 if __name__ == "__main__":
     # Inicializar logging simple
-    logger = init_simple_logging()
+    logger1 = init_simple_logging()
     
     # Prints que VAN A CONSOLA (SB3 verbose, mensajes críticos)
     print("🚀 Training started")  # CONSOLA
@@ -94,4 +145,4 @@ if __name__ == "__main__":
     both_print("🎉 Training completed!")
     
     # Cerrar al final
-    logger.close()
+    logger1.close()

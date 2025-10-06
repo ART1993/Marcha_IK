@@ -52,14 +52,16 @@ class SimpleProgressiveReward:
             # MODO SIN CURRICULUM: sistema fijo y permisivo
             self.level = 3  # Siempre nivel 3
             self.level_progression_disabled = True
-            both_print(f"🎯 Progressive System: CURRICULUM DISABLED")
-            both_print(f"   Mode: Fixed basic balance (Level max only)")
+            if self.env.logger:
+                self.env.logger.log("main",f"🎯 Progressive System: CURRICULUM DISABLED")
+                self.env.logger.log("main",f"   Mode: Fixed basic balance (Level max only)")
         else:
             # MODO CON CURRICULUM: comportamiento normal
             self.level = 1
             self.level_progression_disabled = False
-            both_print(f"🎯 Progressive System: CURRICULUM ENABLED")
-            both_print(f"   Mode: Level progression 1→2→3")
+            if self.env.logger:
+                self.env.logger.log("main",f"🎯 Progressive System: CURRICULUM ENABLED")
+                self.env.logger.log("main",f"   Mode: Level progression 1→2→3")
         
         # ===== CONFIGURACIÓN SUPER SIMPLE =====
         self.episode_count = 0
@@ -118,9 +120,10 @@ class SimpleProgressiveReward:
             self.max_tilt_by_level = {
                 1: 0.8,  # 
                 2: 0.7,  # 
-                3: 0.6   # 
+                3: 0.7   # 
             }
-            both_print(f"   Max tilt: {np.degrees(self.max_tilt_by_level[3]):.1f}° (permisivo)")
+            if self.env.logger:
+                self.env.logger.log("main",f"   Max tilt: {np.degrees(self.max_tilt_by_level[3]):.1f}° (permisivo)")
         else:
             self.max_tilt_by_level = {
                 1: 0.8,  #  - muy permisivo para aprender básicos
@@ -137,10 +140,12 @@ class SimpleProgressiveReward:
         # Debug para confirmar configuración
         switch_time_seconds = self.switch_interval / self.frequency_simulation
         self.min_F=20
-        both_print(f"🎯 Progressive System initialized:")
-        both_print(f"   Switch interval: {self.switch_interval} steps ({switch_time_seconds:.1f}s)")
-        both_print(f"   Frequency: {self.frequency_simulation} Hz")
-        both_print(f"🎯 Simple Progressive System: Starting at Level {self.level}")
+        self.reawrd_step=self.env.reawrd_step
+        if self.env.logger:
+            self.env.logger.log("main",f"🎯 Progressive System initialized:")
+            self.env.logger.log("main",f"   Switch interval: {self.switch_interval} steps ({switch_time_seconds:.1f}s)")
+            self.env.logger.log("main",f"   Frequency: {self.frequency_simulation} Hz")
+            self.env.logger.log("main",f"🎯 Simple Progressive System: Starting at Level {self.level}")
     
     def calculate_reward(self, action, step_count):
         """
@@ -208,7 +213,13 @@ class SimpleProgressiveReward:
         if support_sign != 0.0:
             hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.2 / self.frequency_simulation)
 
-        
+        self.reawrd_step['height_reward'] = height_reward
+        self.reawrd_step['drift_pen'] = drift_pen
+        self.reawrd_step['back_only_pen'] = back_only_pen
+        self.reawrd_step['back_pitch_pen'] = back_pitch_pen
+        self.reawrd_step['hiproll_align_bonus'] = hiproll_align_bonus
+        self.reawrd_step['contact_reward']=contact_reward
+        self.reawrd_step['lateral_pen']=lateral_pen
 
         return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + contact_reward + lateral_pen
     
@@ -220,13 +231,13 @@ class SimpleProgressiveReward:
         # Versión antigua
         roll,pitch = euler[0] , abs(euler[1])  # roll + pitch
         if pitch < 0.2:
-            stability_reward = 1.5  # Muy estable
+            stability_reward = 2.5  # Muy estable
         elif pitch < 0.4:
             stability_reward = 0.5  # Moderadamente estable
         elif pitch < self.max_tilt_by_level[self.level]:
-            stability_reward = -5.5  # Inestable
+            stability_reward = -2.0  # Inestable
         elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
-            stability_reward = -5.0  # Inestable
+            stability_reward = -2.5  # Inestable
     
     # Guardarraíl adicional de roll (torso) para evitar extremos
         guard_pen = self._roll_guardrail_pen(
@@ -238,6 +249,10 @@ class SimpleProgressiveReward:
         self._asymmetry_term()
         self._com_zmp_stability_reward()
         self._com_projection_reward()
+
+        self.reawrd_step['guard_pen'] = guard_pen
+        self.reawrd_step['stability_reward'] = stability_reward
+
         # recompensa_com=decouple_pen+asymm_term+comzmp_term + com_term
         return height_reward + stability_reward + guard_pen  #+ recompensa_com
     
@@ -257,7 +272,7 @@ class SimpleProgressiveReward:
         # Guardarraíl de tobillos (frena 'zarpazo de tobillo')
         _,_,_, left_anckle_id, _,_,_, right_anckle_id = self.env.joint_indices
         ankle_pen = self._ankle_guardrail_pen(left_anckle_id, right_anckle_id)
-        
+        self.reawrd_step["ankle_pen"]=ankle_pen
         return base_reward + leg_reward + zmp_reward + ankle_pen
     
     def _calculate_leg_reward(self, step_count):
@@ -410,15 +425,24 @@ class SimpleProgressiveReward:
 
         # Suma total
         support_load_reward = min(support_load_reward, 0.8)
+        self.reawrd_step['both_down_pen']=both_down_pen
+        self.reawrd_step['toe_touch_pen']=toe_touch_pen
+        self.reawrd_step['support_load_reward']=support_load_reward
+        self.reawrd_step['ss_reward']=ss_reward
         shaping = both_down_pen + toe_touch_pen + support_load_reward +ss_reward
+        self.reawrd_step['clearance_bonus']=clearance_bonus
+        self.reawrd_step['knee_bonus']=knee_bonus
+        self.reawrd_step['hip_bonus']=hip_bonus
+        self.reawrd_step['speed_pen']=speed_pen
         leg_reward = (clearance_bonus + knee_bonus + hip_bonus
                       + roll_swing_bonus  + close_pen
                       + shaping + speed_pen) # contacto_reward
         # Recompensa por pie de soporte 'plano' (planta paralela al suelo)
-        if F_sup >= self.min_F:
+        if F_sup >= self.min_F and support_foot_down:
             stance_foot_id = (right_anckle_id if (F_R >= F_L) else left_anckle_id)
             flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
             leg_reward += flat_reward
+        self.reawrd_step['flat_reward']=flat_reward if support_foot_down else 0.0
         return leg_reward
     
     def zmp_and_smooth_reward(self):
@@ -452,6 +476,8 @@ class SimpleProgressiveReward:
                         self.env.info["kpi"]["dTau_norm"] = dtau
         except Exception:
             pass
+        self.reawrd_step['zmp_term'] =  zmp_term
+        self.reawrd_step['smooth_pen'] = smooth_pen
         return zmp_term + smooth_pen
     
     def hip_reward(self,left_hip_roll,left_hip_pitch, right_hip_roll, right_hip_pitch):
@@ -511,7 +537,8 @@ class SimpleProgressiveReward:
         if success is None:
             # Éxito si supera umbral y no hubo caída
             success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
-        log_print(f"{self.level_progression_disabled=:}, {self.enable_curriculum=:}")
+        if self.env.logger:
+            self.env.logger.log("main",f"{self.level_progression_disabled=:}, {self.enable_curriculum=:}")
         # Verificar si subir de nivel
         if self.level_progression_disabled is False:  # Necesitamos al menos 5 episodios
             #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
@@ -521,7 +548,8 @@ class SimpleProgressiveReward:
                 self.success_streak = self.success_streak + 1 if success else 0
 
                 # (Opcional) logging
-                both_print(f"🏁 Episode {self.episode_count}: "
+                if self.env.logger:
+                    self.env.logger.log("main",f"🏁 Episode {self.episode_count}: "
                         f"reward={episode_reward:.1f} | success={success} | "
                         f"streak={self.success_streak}/{cfg['success_streak_needed']}")
                 
@@ -532,11 +560,13 @@ class SimpleProgressiveReward:
                     old = self.level
                     self.level += 1
                     self.success_streak = 0
-                    both_print(f"🎉 LEVEL UP! {old} → {self.level}")
+                    if self.env.logger:
+                        self.env.logger.log("main",f"🎉 LEVEL UP! {old} → {self.level}")
                     self._apply_level_ranges()
         else:
             # MODO SIN CURRICULUM: solo logging básico
-            both_print(f"🏁 Episode {self.episode_count}: "
+            if self.env.logger:
+                self.env.logger.log("main",f"🏁 Episode {self.episode_count}: "
                     f"reward={episode_reward:.1f} | success={success} | "
                     f"fixed_level=3")
     
@@ -551,19 +581,22 @@ class SimpleProgressiveReward:
         # Caída
         if pos[2] <= 0.5:
             self.last_done_reason = "fall"
-            log_print("❌ Episode done: Robot fell")
+            if self.env.logger:
+                self.env.logger.log("main","❌ Episode done: Robot fell")
             return True
         
         if abs(self.dx) > 0.35:
             self.last_done_reason = "drift"
-            log_print("❌ Episode done: Excessive longitudinal drift")
+            if self.env.logger:
+                self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
             return True
         
         max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
         # Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
             self.last_done_reason = "tilt"
-            log_print("❌ Episode done: Robot tilted too much")
+            if self.env.logger:
+                self.env.logger.log("main","❌ Episode done: Robot tilted too much")
             return True
         
         # dentro de is_episode_done(...) tras calcular contactos:
@@ -574,13 +607,15 @@ class SimpleProgressiveReward:
             self._no_contact_steps = 0
         if self._no_contact_steps >= int(0.50 * self.frequency_simulation):  # 0.2 s
             self.last_done_reason = "no_support"
-            log_print("❌ Episode done: No foot support for too long")
+            if self.env.logger:
+                self.env.logger.log("main","❌ Episode done: No foot support for too long")
             return True
         if (pie_izquierdo_contacto and pie_derecho_contacto):
             self.contact_both += 1
             if self.contact_both >int(0.80 * self.frequency_simulation):
                 self.last_done_reason = "excessive support"
-                log_print("❌ Episode done: excessive support")
+                if self.env.logger:
+                    self.env.logger.log("main","❌ Episode done: excessive support")
                 return True
         else:
             self.contact_both=0
@@ -588,7 +623,8 @@ class SimpleProgressiveReward:
         max_steps = (200 + ((self.level-1) * 200))*10 if self.enable_curriculum else 6000 # 2000, 4000, 6000 steps
         if step_count >= max_steps:
             self.last_done_reason = "time"
-            log_print("⏰ Episode done: Max time reached")
+            if self.env.logger:
+                self.env.logger.log("main","⏰ Episode done: Max time reached")
             return True
         
         self.last_done_reason = None
@@ -641,7 +677,7 @@ class SimpleProgressiveReward:
         """
         pen = self._soft_quadratic_penalty(torso_roll, lim=level_soft, gain=6.0)
         if abs(torso_roll) > level_hard:
-            pen += -3.0
+            pen -= 9.0
         return pen
 
     def _ankle_guardrail_pen(self, left_ankle_id: int, right_ankle_id: int) -> float:
@@ -703,10 +739,11 @@ class SimpleProgressiveReward:
         # Normaliza y recorta
         cross_norm = min(cross / 10.0, 1.5)
         if self.env.step_count % (self.frequency_simulation//10)==0:
-            if cross_norm > 1.0:  # umbral “alto”
-                log_print(f"⚠️ Hip decoupling poor: cross={cross:.2f}, norm={cross_norm:.2f}")
-            else:
-                log_print(f"Hip decoupling: cross={cross:.2f}, norm={cross_norm:.2f}")
+            if self.env.logger:
+                if cross_norm > 1.0:  # umbral “alto”
+                    self.env.logger.log("main",f"⚠️ Hip decoupling poor: cross={cross:.2f}, norm={cross_norm:.2f}")
+                else:
+                    self.env.logger.log("main",f"Hip decoupling: cross={cross:.2f}, norm={cross_norm:.2f}")
         #return -0.3 * cross_norm  # penalización máxima ~ -0.45
     
     def _com_zmp_stability_reward(self):
@@ -714,7 +751,7 @@ class SimpleProgressiveReward:
         if z:
             margin = float(z.stability_margin_distance())  # m
             # +0.7 si margen >= 5 cm; -0.7 si <= -5 cm
-            term = 0.7 * np.clip(margin/0.05, -1.0, 1.0)
+            term = 0.7 * np.clip(margin/0.05, -5.0, 5.0)
             # Exporta KPI
             self.env.info["kpi"]["zmp_margin_m"] = margin
         else:
