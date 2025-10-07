@@ -978,18 +978,19 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         row_general[f"Forces_{name}_x"]=round(Fx,3)
                         row_general[f"Forces_{name}_y"]=round(Fy,3)
                         row_general[f"Forces_{name}_z"]=round(Fz,3)
-                    row_angles = {
-                                "step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),
-                                "Left hip roll":round(self.left_hip_roll_angle,3),
-                                "Right hip roll":round(self.right_hip_roll_angle,3),
-                                "Left hip pitch":round(self.left_hip_pitch_angle,3),
-                                "Left knee":round(self.left_knee_angle,3),
-                                "Right knee":round(self.right_knee_angle,3),
-                                "Left anckle":round(self.left_anckle_angle,3),
-                                "Right anckle":round(self.right_anckle_angle,3)
-                            }
+                    # row_angles = {
+                    #             "step": int(self.step_count),
+                    #             "episode": int(self.n_episodes),
+                    #             "t": round(self.step_count / self.frequency_simulation, 5),
+                    #             "Left hip roll":round(self.left_hip_roll_angle,3),
+                    #             "Right hip roll":round(self.right_hip_roll_angle,3),
+                    #             "Left hip pitch":round(self.left_hip_pitch_angle,3),
+                    #             "Right hip pitch":round(self.right_hip_pitch_angle,3),
+                    #             "Left knee":round(self.left_knee_angle,3),
+                    #             "Right knee":round(self.right_knee_angle,3),
+                    #             "Left anckle":round(self.left_anckle_angle,3),
+                    #             "Right anckle":round(self.right_anckle_angle,3)
+                    #         }
                     row_pressures={
                         "step": int(self.step_count),
                         "episode": int(self.n_episodes),
@@ -1012,7 +1013,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         "R Anckle ext":pam_pressures[15]
                     }
                     self.csvlog.write("pressures", row_pressures)
-                    self.csvlog.write("angles", row_angles)
+                    # self.csvlog.write("angles", row_angles)
                     self.csvlog.write("general_values", row_general)
 
             except Exception as e:
