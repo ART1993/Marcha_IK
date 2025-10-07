@@ -14,6 +14,7 @@ from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+from Archivos_Apoyo.CSVLogger import CSVLogger
 
 from Archivos_Recompensas.RewardSystemSimple import SimpleProgressiveReward
            
@@ -32,7 +33,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right anckle joint: 7
     """
     
-    def __init__(self, logger=None, render_mode='human',enable_curriculum=False, print_env="ENV", fixed_target_leg="left"):
+    def __init__(self, logger=None, render_mode='human',enable_curriculum=False, 
+                 print_env="ENV", fixed_target_leg="left",csvlog=None):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -45,6 +47,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.pam_muscles = PAM_McKibben()
         self.render_mode = render_mode
         self.logger=logger
+        self.csvlog = csvlog
         
         self.muscle_names = list(self.pam_muscles.keys())
         
@@ -290,7 +293,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 if self.logger:
                     self.logger.log("main",f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
         
-        # CONSERVAR tu debug existente 
+        # === CSVLogger: volcado per-step (~10 Hz) ===
         if (self.step_count % (self.frequency_simulation//10) == 0 or done) and self.simple_reward_system:
             if self.logger:
                 self.logger.log("main",f"🔍 Step {self.step_count} - Control Analysis:")
@@ -366,10 +369,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
             info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
             info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
-            info["kpi"]["u_RA_ext"]  = float(ps[12])   # PAM 7: extensor tobillo der (pitch)
-            info["kpi"]["u_LA_flex"]  = float(ps[13])   # PAM 8: flexor tobillo izq
-            info["kpi"]["u_LA_ext"]   = float(ps[14])   # PAM 9: extensor tobillo izq
-            info["kpi"]["u_RA_flex"]  = float(ps[15])  # PAM 10: flexor tobillo der
+            info["kpi"]["u_RA_ext"]  = float(ps[12])   # PAM 12: extensor tobillo der (pitch)
+            info["kpi"]["u_LA_flex"]  = float(ps[13])   # PAM 13: flexor tobillo izq
+            info["kpi"]["u_LA_ext"]   = float(ps[14])   # PAM 14: extensor tobillo izq
+            info["kpi"]["u_RA_flex"]  = float(ps[15])  # PAM 15: flexor tobillo der
 
 
         if hasattr(self, "left_hip_roll_angle"):
@@ -552,22 +555,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         joint_torques = calculate_robot_specific_joint_torques_16_pam(self, pam_pressures)
         joint_torques = self._apply_automatic_knee_control(joint_torques)
 
-        base_lin_vel, base_ang_vel = p.getBaseVelocity(self.robot_id)
-        roll = self.euler[0]
-        roll_rate = base_ang_vel[0]
+        # base_lin_vel, base_ang_vel = p.getBaseVelocity(self.robot_id)
+        # roll = self.euler[0]
+        # roll_rate = base_ang_vel[0]
 
-        KPR = 120.0    # ganancia P (sube/baja según necesidad)
-        KDR = 8.0      # ganancia D
+        # KPR = 120.0    # ganancia P (sube/baja según necesidad)
+        # KDR = 8.0      # ganancia D
 
-        tau_roll = -KPR * roll - KDR * roll_rate  # torque correctivo: empuja hacia roll=0
+        # tau_roll = -KPR * roll - KDR * roll_rate  # torque correctivo: empuja hacia roll=0
 
-        # Índices de caderas-roll en joint_torques (3D): [LHR, LHP, LK, LA, RHR, RHP, RK, RA]
-        i_LHR = 0
-        i_RHR = 4
+        # # Índices de caderas-roll en joint_torques (3D): [LHR, LHP, LK, LA, RHR, RHP, RK, RA]
+        # i_LHR = 0
+        # i_RHR = 4
 
-        # Aplica par opuesto a cada lado para recentrar la pelvis
-        joint_torques[i_LHR] += tau_roll
-        joint_torques[i_RHR] -= tau_roll
+        # # Aplica par opuesto a cada lado para recentrar la pelvis
+        # joint_torques[i_LHR] += tau_roll
+        # joint_torques[i_RHR] -= tau_roll
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
@@ -745,9 +748,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         initial_positions = {
             # Pierna izquierda
             self.joint_indices[0]: +0.00,   #   self.joint_indices[0] 'left_hip_roll_joint'
-            self.joint_indices[1]: 0.0,   # left_hip_pitch_joint
+            self.joint_indices[1]: 0.05,   # left_hip_pitch_joint
             self.joint_indices[2]: 0.0,     # left_knee_joint
-            self.joint_indices[3]: 0.05,     # left_anckle_joint
+            self.joint_indices[3]: 0.0,     # left_anckle_joint
             # pierna derecha
             self.joint_indices[4]: -0.0,   # right_hip_roll_joint
             self.joint_indices[5]: -0.0,   # right_hip_pitch_joint
@@ -948,14 +951,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle - np.pi/6)
         return self.ANCKLE_EXTENSOR_BASE_ARM + self.ANCKLE_EXTENSOR_VARIATION * angle_factor
-    
-    #ANtigua rodilla pasiva
-
-    def set_anckle_passive_pd(self, kp=2.0, kd=0.3):
-        for j in [self.jidx["L_anckle_roll"], self.jidx["R_anckle_roll"]]:
-            p.setJointMotorControl2(self.robot_id, j,
-                controlMode=p.POSITION_CONTROL,
-                targetPosition=0.0, positionGain=kp, velocityGain=kd, force=5.0)
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
@@ -968,46 +963,75 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
-                if self.logger:
-                    self.logger.log("pressure", f"{self.step_count} para {self.n_episodes}" )
-                    for idx, state in zip(self.joint_indices, joint_states):
+                if self.csvlog:
+                    row_general={"step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    for (name, idx), state in zip(self.dict_joints.items(), joint_states):
                         pos, vel, reaction, applied = state
                         Fx,Fy,Fz,Mx,My,Mz = reaction
-                        self.logger.log("main",f"Joint {idx}: q={pos:.3f}, vel=({vel:.3f}),τ_reaction=({Mx:.2f},{My:.2f},{Mz:.2f})," \
-                                f"Forces=({Fx:.3f},{Fy:.3f},{Fz:.3f})") # , τ_motor={applied:.2f} es cero siempre por lo que no importa
-                    left_contact, right_contact = self.contacto_pies
-                    self.logger.log("pressure",f"\n🔍 Biomechanical Debug (Step {self.step_count=:}):")
-                    self.logger.log("pressure",f"   Left hip roll: {self.left_hip_roll_angle:.3f} rad ({math.degrees(self.left_hip_roll_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Right hip roll: {self.right_hip_roll_angle:.3f} rad ({math.degrees(self.right_hip_roll_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Left hip pitch: {self.left_hip_pitch_angle:.3f} rad ({math.degrees(self.left_hip_pitch_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Right hip pitch: {self.right_hip_pitch_angle:.3f} rad ({math.degrees(self.right_hip_pitch_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Left knee: {self.left_knee_angle:.3f} rad ({math.degrees(self.left_knee_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Right knee: {self.right_knee_angle:.3f} rad ({math.degrees(self.right_knee_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Left anckle: {self.left_anckle_angle:.3f} rad ({math.degrees(self.left_anckle_angle):.1f}°)")
-                    self.logger.log("pressure",f"   Right anckle: {self.right_anckle_angle:.3f} rad ({math.degrees(self.right_anckle_angle):.1f}°)")
-                    self.logger.log("pressure",f"   L Hip roll flex/ext: {pam_pressures[0]:.3f} / {pam_pressures[1]:.3f}")
-                    self.logger.log("pressure",f"   R Hip rollflex/ext: {pam_pressures[2]:.3f} / {pam_pressures[3]:.3f}")
-                    self.logger.log("pressure",f"   L Hip pitch flex/ext: {pam_pressures[4]:.3f} / {pam_pressures[5]:.3f}")
-                    self.logger.log("pressure",f"   R Hip pitch flex/ext: {pam_pressures[6]:.3f} / {pam_pressures[7]:.3f}")
-                    self.logger.log("pressure",f"   L knee flex/ext: {pam_pressures[8]:.3f} / {pam_pressures[9]:.3f}")
-                    self.logger.log("pressure",f"   R knee flex/ext: {pam_pressures[10]:.3f} / {pam_pressures[11]:.3f}")
-                    self.logger.log("pressure",f"   L anckle flex/ext: {pam_pressures[12]:.3f} / {pam_pressures[13]:.3f}")
-                    self.logger.log("pressure",f"   R anckle flex/ext: {pam_pressures[14]:.3f} / {pam_pressures[15]:.3f}")
-                    self.logger.log("pressure",f"   Contactos pie izquierdo: {left_contact}")
-                    self.logger.log("pressure",f"   Contactos pie derecho: {right_contact}")
-                    #logger.log(f"[XHIP] eL={eL:.3f} appL={appL} | eR={eR:.3f} appR={appR}")
-                    self.logger.log("pressure","\n")
+                        row_general[f"q_{name}"]=round(pos,3)
+                        row_general[f"vel_{name}"]=round(vel,3)
+                        row_general[f"τ_reaction_{name}_x"]=round(Mx,2)
+                        row_general[f"τ_reaction_{name}_y"]=round(My,2)
+                        row_general[f"τ_reaction_{name}_z"]=round(Mz,2)
+                        row_general[f"Forces_{name}_x"]=round(Fx,3)
+                        row_general[f"Forces_{name}_y"]=round(Fy,3)
+                        row_general[f"Forces_{name}_z"]=round(Fz,3)
+                    row_angles = {
+                                "step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),
+                                "Left hip roll":round(self.left_hip_roll_angle,3),
+                                "Right hip roll":round(self.right_hip_roll_angle,3),
+                                "Left hip pitch":round(self.left_hip_pitch_angle,3),
+                                "Left knee":round(self.left_knee_angle,3),
+                                "Right knee":round(self.right_knee_angle,3),
+                                "Left anckle":round(self.left_anckle_angle,3),
+                                "Right anckle":round(self.right_anckle_angle,3)
+                            }
+                    row_pressures={
+                        "step": int(self.step_count),
+                        "episode": int(self.n_episodes),
+                        "t": round(self.step_count / self.frequency_simulation, 5),
+                        "L Hip roll flex":pam_pressures[0],
+                        "L Hip roll ext":pam_pressures[1],
+                        "R Hip roll flex":pam_pressures[2],
+                        "R Hip roll ext":pam_pressures[3],
+                        "L Hip pitch flex":pam_pressures[4],
+                        "L Hip pitch ext": pam_pressures[5],
+                        "R Hip pitch flex":pam_pressures[6],
+                        "R Hip pitch ext": pam_pressures[7],
+                        "L Knee flex":pam_pressures[8],
+                        "L Knee ext":pam_pressures[9],
+                        "R Knee flex":pam_pressures[10],
+                        "R Knee ext":pam_pressures[11],
+                        "L Anckle flex":pam_pressures[12],
+                        "L Anckle ext":pam_pressures[13],
+                        "R Anckle flex":pam_pressures[14],
+                        "R Anckle ext":pam_pressures[15]
+                    }
+                    self.csvlog.write("pressures", row_pressures)
+                    self.csvlog.write("angles", row_angles)
+                    self.csvlog.write("general_values", row_general)
 
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
 
     def debug_rewards(self):
         if self.step_count % 10==0 and len(self.reawrd_step)>0:
-            if self.logger:
-                self.logger.log("rewards", f"{self.step_count} para {self.n_episodes}" )
+            if self.csvlog:
+                row_rewards={
+                    "step":self.step_count,
+                    "episode":self.n_episodes,
+                    "t": round(self.step_count / self.frequency_simulation, 5),
+                }
                 for reward_name, reward_value in self.reawrd_step.items():
-                    self.logger.log("rewards",f"{reward_name} da una recompensa de {reward_value}")
-                self.logger.log("rewards","\n")
+                    row_rewards[reward_name]=reward_value
+                
+                self.csvlog.write("rewards", row_rewards)
+                
+
             
 
     # Validación de robot:

@@ -16,6 +16,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+from Archivos_Apoyo.CSVLogger import CSVLogger
 
 
 class SimpleCsvKpiCallback(BaseCallback):
@@ -46,8 +47,9 @@ class SimpleCsvKpiCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         # infos por cada env en este step
+        dones = self.locals.get("dones", [])
         infos = self.locals.get("infos", [])
-        for env_idx, info in enumerate(infos):
+        for env_idx, (d, info) in enumerate(zip(dones, infos)):
             kpi = info.get("kpi")
             if kpi:
                 row = {
@@ -67,6 +69,14 @@ class SimpleCsvKpiCallback(BaseCallback):
                     "com_z": kpi.get("com_z", 0.0),
                 }
                 self._step_writer.writerow(row)
+            if d and "ep_kpi" in info:
+                ep = info["ep_kpi"]
+                self._ep_writer.writerow({
+                    "timesteps": int(self.num_timesteps), "env_idx": env_idx,
+                    "ep_return": ep.get("ep_return", 0.0),
+                    "ep_len": ep.get("ep_len", 0),
+                    "done_reason": ep.get("done_reason", None),
+                })
         return True
 
     def _on_rollout_end(self) -> None:
@@ -121,7 +131,8 @@ class Simplified_Lift_Leg_Trainer:
                  learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
                  enable_curriculum=True,
-                 logger=None
+                 logger=None,
+                 csvlog=None
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -133,7 +144,7 @@ class Simplified_Lift_Leg_Trainer:
         self.learning_rate = learning_rate
         self.resume_from = resume_from
         self.enable_curriculum=enable_curriculum
-        
+        self.csvlog=csvlog
 
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
@@ -209,15 +220,18 @@ class Simplified_Lift_Leg_Trainer:
         n_envs_local = int(self.n_envs)
         enable_curr_local = bool(self.enable_curriculum)
         logger_local = (self.logger if (self.logger and n_envs_local == 1) else None)
+        # Se puede pasar puramente a csvlog
+        csvlog_local= (self.csvlog if (self.csvlog and n_envs_local == 1) else None)
         if logger_local and n_envs_local==1:
             self.logger.log("main",f"🏗️ Creating training environment: {config['description']}")
-        def make_env(logger=logger_local,
+        def make_env(logger=logger_local, csvlog=csvlog_local,
                      enable_curriculum=enable_curr_local,
                      n_envs=n_envs_local):
             def _init():
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
                     logger=logger,
+                    csvlog=csvlog,
                     render_mode='human' if n_envs == 1 else 'direct', 
                     enable_curriculum=enable_curriculum,
                     print_env="TRAIN"  # Para diferenciar en logs
@@ -239,13 +253,17 @@ class Simplified_Lift_Leg_Trainer:
             Crear entorno de evaluación.
        
         """
-        
+        eval_csvlog = CSVLogger(
+            timestamp=getattr(self.csvlog, "timestamp", None),  # reutiliza el TS si ya existe
+            only_workers=False                                  # ← importante: que escriba en main
+        )
         def make_eval_env():
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
                                              enable_curriculum=False,  # Evaluación sin curriculum
                                             print_env="EVAL",
-                                            logger=self.logger
+                                            logger=self.logger,
+                                            csvlog=eval_csvlog
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env
@@ -564,7 +582,7 @@ class Simplified_Lift_Leg_Trainer:
     
     # Ya que he creado clase sin RL para testing, también creo con este un modelo de entrenamiento sin RL
 
-def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, learning_rate=3e-4,logger=None):
+def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, learning_rate=3e-4,logger=None, csvlog=None):
     """
     Función para crear fácilmente un entrenador SIN curriculum
     """
@@ -574,7 +592,8 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
         n_envs=n_envs,
         learning_rate=learning_rate,
         enable_curriculum=False,
-        logger=logger
+        logger=logger,
+        csvlog=csvlog
     )
     
     print(f"✅ Trainer created (NO CURRICULUM)")
