@@ -13,8 +13,6 @@ from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
                                                     calculate_robot_specific_joint_torques_16_pam
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-from Archivos_Apoyo.simple_log_redirect import log_print, both_print
-from Archivos_Apoyo.CSVLogger import CSVLogger
 
 from Archivos_Recompensas.RewardSystemSimple import SimpleProgressiveReward
            
@@ -122,7 +120,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.plane_id = None
         #self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
         self.control_joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
-                            'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
+                                    'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
         self.joint_names=self.control_joint_names
         self.joint_indices=[i for i in range(len(self.joint_names))]
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
@@ -209,12 +207,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             )
 
         p.stepSimulation()
-        
+        system_used = "PROGRESSIVE"
 
         
         #if self.simple_reward_system:
         # Joint indices [0,1,2,4,5,6]
-        joint_states = self.obtener_estado_articulaciones()
+        self.joint_states_properties = self.obtener_estado_articulaciones()
         
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
@@ -234,12 +232,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             #'action_source': action_source,
             'episode_reward': self.episode_reward
         }
-
+        
         info, reward, done, is_valid, system_used = self.function_logger_kpi(info, reward, done, is_valid, system_used)
 
 
-        self._debug_joint_angles_and_pressures(info,u_final, joint_states, done)
-        system_used = "PROGRESSIVE"
+        self._debug_joint_angles_and_pressures(info, u_final, done)
+        
         self.debug_rewards()
         
         
@@ -652,7 +650,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         
-        joint_states = p.getJointStates(self.robot_id, self.joint_indices)
+        joint_states = self.joint_states_properties
         joint_positions = [state[0] for state in joint_states]
         obs.extend(joint_positions)
         
@@ -961,7 +959,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
-    def _debug_joint_angles_and_pressures(self, info, pam_pressures, joint_states, done):
+    def _debug_joint_angles_and_pressures(self, info, pam_pressures, done):
         """
             ✅ MÉTODO DE DEBUG para verificar la lógica biomecánica
         
@@ -974,7 +972,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_general={"step": int(self.step_count),
                                 "episode": int(self.n_episodes),
                                 "t": round(self.step_count / self.frequency_simulation, 5),}
-                    for (name, idx), state in zip(self.dict_joints.items(), joint_states):
+                    for (name, idx), state in zip(self.dict_joints.items(), self.joint_states_properties):
                         pos, vel, reaction, applied = state
                         Fx,Fy,Fz,Mx,My,Mz = reaction
                         row_general[f"q_{name}"]=round(pos,3)
@@ -992,45 +990,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_general[f"COM_z"]=round(info["kpi"]['com_z'],3)
                     row_general[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_general[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
-                    row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
-                    
-
-                    # row_angles = {
-                    #             "step": int(self.step_count),
-                    #             "episode": int(self.n_episodes),
-                    #             "t": round(self.step_count / self.frequency_simulation, 5),
-                    #             "Left hip roll":round(self.left_hip_roll_angle,3),
-                    #             "Right hip roll":round(self.right_hip_roll_angle,3),
-                    #             "Left hip pitch":round(self.left_hip_pitch_angle,3),
-                    #             "Right hip pitch":round(self.right_hip_pitch_angle,3),
-                    #             "Left knee":round(self.left_knee_angle,3),
-                    #             "Right knee":round(self.right_knee_angle,3),
-                    #             "Left anckle":round(self.left_anckle_angle,3),
-                    #             "Right anckle":round(self.right_anckle_angle,3)
-                    #         }
-                    # row_pressures={
-                    #     "step": int(self.step_count),
-                    #     "episode": int(self.n_episodes),
-                    #     "t": round(self.step_count / self.frequency_simulation, 5),
-                    #     "L Hip roll flex":pam_pressures[0],
-                    #     "L Hip roll ext":pam_pressures[1],
-                    #     "R Hip roll flex":pam_pressures[2],
-                    #     "R Hip roll ext":pam_pressures[3],
-                    #     "L Hip pitch flex":pam_pressures[4],
-                    #     "L Hip pitch ext": pam_pressures[5],
-                    #     "R Hip pitch flex":pam_pressures[6],
-                    #     "R Hip pitch ext": pam_pressures[7],
-                    #     "L Knee flex":pam_pressures[8],
-                    #     "L Knee ext":pam_pressures[9],
-                    #     "R Knee flex":pam_pressures[10],
-                    #     "R Knee ext":pam_pressures[11],
-                    #     "L Anckle flex":pam_pressures[12],
-                    #     "L Anckle ext":pam_pressures[13],
-                    #     "R Anckle flex":pam_pressures[14],
-                    #     "R Anckle ext":pam_pressures[15]
-                    # }
-                    # self.csvlog.write("pressures", row_pressures)
-                    # self.csvlog.write("angles", row_angles)
+                    #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("general_values", row_general)
 
             except Exception as e:

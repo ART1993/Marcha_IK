@@ -9,14 +9,11 @@ from collections import deque
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 from Archivos_Apoyo.Configuraciones_adicionales import split_cocontraction_torque_neutral
 
-class SingleLegActionType(Enum):
-    """Acciones para equilibrio en una pierna"""
-    BALANCE_LEFT_SUPPORT = "balance_left_support"    # Equilibrio con pie izquierdo
-    BALANCE_RIGHT_SUPPORT = "balance_right_support"  # Equilibrio con pie derecho
-    # Lo dejo en caso de que encuentre una forma más explicita de realizar la transición
-    TRANSITION = "transition"              # Transición entre piernas
-    TRANSITION_TO_LEFT = "transition_to_left"        # Transición hacia apoyo izquierdo
-    TRANSITION_TO_RIGHT = "transition_to_right"      # Transición hacia apoyo derecho
+class RewardMode(Enum):
+    PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
+    WALK3D = "walk3d"                # caminar en 3D (avance +X)
+    LIFT_LEG = "lift_leg"            # levantar una pierna estable
+    MARCH_IN_PLACE = "march_in_place" # alternar piernas en el sitio (ambos pies en el aire permitido)
     
 
 # =============================================================================
@@ -40,6 +37,16 @@ class SimpleProgressiveReward:
         self.enable_curriculum = env.enable_curriculum
         self.robot_id = env.robot_id
         self.single_support_ticks = 0
+        # === Modo de recompensa seleccionable desde el env (si no existe, progressive) ===
+        mode_str = getattr(env, "simple_reward_mode", "progressive")
+        try:
+            self.mode = RewardMode(mode_str)
+        except Exception:
+            self.mode = RewardMode.PROGRESSIVE
+        # Parametrización útil para modos nuevos
+        self.vx_target = float(getattr(env, "vx_target", 0.6))
+        self.allow_hops = bool(getattr(env, "allow_hops", False))
+
         # --- Parámetros configurables (puedes sobreescribirlos desde env) ---
         # Cadera de la pierna en el aire (roll absoluto). Recomendado 0.3–0.5
         self.swing_hip_target  = float(getattr(env, "swing_hip_target", 0.10))
@@ -154,20 +161,27 @@ class SimpleProgressiveReward:
 
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
-        # self.
-        if self.level == 1 and self.enable_curriculum:
-            reward = self._level_1_reward(pos,euler)      # Solo supervivencia
-        elif self.level == 2 and self.enable_curriculum:
-            reward = self._level_2_reward(pos, euler)      # + balance estable
-        else:  # level == 3
-            reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
-        level = self.level if self.enable_curriculum else 3
-        max_reward = self.level_config[level]['max_reward']
-        
-        # Limitar reward según nivel
-        
-        
-        return max(-2.0, min(reward, max_reward))
+        # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
+        if getattr(self, "mode", RewardMode.PROGRESSIVE) == RewardMode.WALK3D:
+            return self.calculate_reward_walk3d(action, step_count)
+        if getattr(self, "mode", RewardMode.PROGRESSIVE) == RewardMode.LIFT_LEG:
+            return self.calculate_reward_lift_leg(action, step_count)
+        if getattr(self, "mode", RewardMode.PROGRESSIVE) == RewardMode.MARCH_IN_PLACE:
+            return self.calculate_reward_march_in_place(action, step_count)
+        else:
+            if self.level == 1 and self.enable_curriculum:
+                reward = self._level_1_reward(pos,euler)      # Solo supervivencia
+            elif self.level == 2 and self.enable_curriculum:
+                reward = self._level_2_reward(pos, euler)      # + balance estable
+            else:  # level == 3
+                reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
+            level = self.level if self.enable_curriculum else 3
+            max_reward = self.level_config[level]['max_reward']
+            
+            # Limitar reward según nivel
+            
+            
+            return max(-2.0, min(reward, max_reward))
     
     def _level_1_reward(self,pos,euler):
         """NIVEL 1: Solo mantenerse de pie (recompensas 0-3)"""
@@ -204,6 +218,8 @@ class SimpleProgressiveReward:
             contact_reward= 0.1
         else:
             contact_reward= -2.0
+
+        knee_reward = self.knee_reward(self.env.left_knee_angle, self.env.right_knee_angle)
 
         # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
         # Afecta al roll de align bonus
@@ -245,20 +261,32 @@ class SimpleProgressiveReward:
             level_soft=0.15,
             level_hard=self.max_tilt_by_level[self.level]
         )
-        self._hip_decoupling_pen()
-        self._asymmetry_term()
-        self._com_zmp_stability_reward()
-        self._com_projection_reward()
+        # Activar términos que ya tenías calculados
+        comz     = self._com_zmp_stability_reward()   # estabilidad COM/ZMP
+        comproj  = self._com_projection_reward()      # proyección COM dentro del soporte
+        #decouple = self._hip_decoupling_pen()         # desacoplo roll<->pitch
+        #anti_sway= self._roll_out_of_phase_bonus(w=0.15)
 
-        self.reawrd_step['guard_pen'] = guard_pen
-        self.reawrd_step['stability_reward'] = stability_reward
+        # Log por-step (si lo consumes en CSV)
+        self.reawrd_step["guard_pen"]      = guard_pen
+        self.reawrd_step["stability_reward"]= locals().get("stability_reward", 0.0)
+        #self.reawrd_step["decouple_pen"]   = decouple
+        self.reawrd_step["comz_term"]      = comz
+        self.reawrd_step["comproj_term"]   = comproj
+        #self.reawrd_step["anti_sway_bonus"]= anti_sway
 
-        # recompensa_com=decouple_pen+asymm_term+comzmp_term + com_term
-        return height_reward + stability_reward + guard_pen  #+ recompensa_com
+        return (
+            height_reward
+            + stability_reward
+            + guard_pen
+            + 0.40 * comz          # pesos prudentes
+            + 0.30 * comproj
+            #+ anti_sway
+            #- 0.30 * decouple
+        )
     
     def _level_3_reward(self,pos,euler, step_count):
         """NIVEL 3: Levantar piernas alternando (recompensas 0-8)"""
-        
         # Recompensa base (igual que nivel 2)
         base_reward = self._level_2_reward(pos,euler)
         if base_reward < 0:  # Si se cayó, no calcular más
@@ -266,14 +294,20 @@ class SimpleProgressiveReward:
         
         # + Recompensa por levantar pierna (NUEVA)
         leg_reward = self._calculate_leg_reward(step_count)
-
+        _,_,_, left_anckle_id, _,_,_, right_anckle_id = self.env.joint_indices
+        ankle_pen = self._ankle_guardrail_pen(left_anckle_id, right_anckle_id)
         zmp_reward = self.zmp_and_smooth_reward()
 
         # Guardarraíl de tobillos (frena 'zarpazo de tobillo')
-        _,_,_, left_anckle_id, _,_,_, right_anckle_id = self.env.joint_indices
-        ankle_pen = self._ankle_guardrail_pen(left_anckle_id, right_anckle_id)
+        # NEW: COM lateral en apoyo simple
+        com_lat_pen = self._com_lateral_pen_single_support(k=3.0)
+        self.reawrd_step["com_lat_pen"] = com_lat_pen
+        pam_pairs = [(self.env.muscle_names[2*i], self.env.muscle_names[2*i+1]) for i in range(len(self.env.control_joint_names))]
+        cocontr_pen = - self._cocontraction_pen(pam_pairs, lam=0.01)
+        self.reawrd_step["cocontr_pen"] = cocontr_pen
+        
         self.reawrd_step["ankle_pen"]=ankle_pen
-        return base_reward + leg_reward + zmp_reward + ankle_pen
+        return base_reward + leg_reward + zmp_reward + ankle_pen + com_lat_pen + cocontr_pen
     
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
@@ -506,17 +540,22 @@ class SimpleProgressiveReward:
     
     def knee_reward(self, left_knee, right_knee):
         
-        if left_knee<0.2:
-            reward_knee_left=0.5
+        if 0.1<left_knee<0.2:
+            reward_knee_left=1
         elif 0.2<= left_knee < 0.4:
             reward_knee_left=2
         else:
             reward_knee_left=-2
 
-        if 0.2<right_knee:
-            reward_knee_right=2
+        if 0.1<right_knee<0.2:
+            reward_knee_right=1
+        elif 0<=right_knee<=0.1:
+            reward_knee_right=0.5
         else:
             reward_knee_right=-2
+
+        self.reawrd_step['reward_knee_right'] =  reward_knee_right
+        self.reawrd_step['reward_knee_left'] =  reward_knee_left
         
         return reward_knee_right+ reward_knee_left
     
@@ -726,25 +765,69 @@ class SimpleProgressiveReward:
         p_bonus = soft_center(pch, target_pitch)
         return 0.8 * 0.5 * (r_bonus + p_bonus)  # máx ≈ +0.8
     
-    def _hip_decoupling_pen(self):
+    # Ver como hacer hip decoupling
+    # def _hip_decoupling_pen(self):
+    #     """
+    #         Penaliza el acoplamiento roll<->pitch en caderas mediante energía cruzada:
+    #         cross = |τ_roll * q̇_pitch| + |τ_pitch * q̇_roll|, normalizado por la energía propia.
+    #     """
+    #     lj_roll = self.env.dict_joints.get("left_hip_roll_joint")
+    #     lj_pitch= self.env.dict_joints.get("left_hip_pitch_joint")
+    #     rj_roll = self.env.dict_joints.get("right_hip_roll_joint")
+    #     rj_pitch= self.env.dict_joints.get("right_hip_pitch_joint")
+    #     def read_tau_qd(jid):
+    #         q, qd, reaction, applied = self.env.joint_states_properties[jid]  # asume helper tuyo; usa p.getJointState si no
+    #         return float(tau), float(qd)
+
+    #     # izquierda
+    #     tau_lr, qd_lr = read_tau_qd(lj_roll)
+    #     tau_lp, qd_lp = read_tau_qd(lj_pitch)
+    #     cross_L = abs(tau_lr * qd_lp) + abs(tau_lp * qd_lr)
+    #     self_L  = abs(tau_lr * qd_lr) + abs(tau_lp * qd_lp) + 1e-9
+
+    #     # derecha
+    #     tau_rr, qd_rr = read_tau_qd(rj_roll)
+    #     tau_rp, qd_rp = read_tau_qd(rj_pitch)
+    #     cross_R = abs(tau_rr * qd_rp) + abs(tau_rp * qd_rr)
+    #     self_R  = abs(tau_rr * qd_rr) + abs(tau_rp * qd_rp) + 1e-9
+
+    #     cross_norm = (cross_L / self_L + cross_R / self_R) * 0.5
+    #     return cross_norm  # NEW: ahora devuelve escalar usable
+    
+    # # NEW: bono si roll L/R están en anti-fase (reduce sway lateral)
+    # def _roll_out_of_phase_bonus(self, w: float = 0.15):
+    #     jl = self.env.dict_joints.get("left_hip_roll_joint")
+    #     jr = self.env.dict_joints.get("right_hip_roll_joint")
+    #     _, qdl, _, _ = self.env.joint_states_properties[jl]
+    #     _, qdr, _, _ = self.env.joint_states_properties[jr]
+    #     return w * (1.0 - np.tanh(abs(float(qdl) + float(qdr))))
+    
+    # NEW: penalización de COM lateral durante apoyo simple (COM cerca del pie de soporte)
+    def _com_lateral_pen_single_support(self, k: float = 3.0):
         kpi = self.env.info.get("kpi", {})
-        # Torques (roll/pitch) y velocidades articulares correspondientes
-        tau_LR = abs(kpi.get("tau_LHR", 0.0));  qd_LP = abs(self.env.right_hip_pitch_angle if False else p.getJointState(self.env.robot_id, self.env.dict_joints["left_hip_pitch_joint"])[1])
-        tau_LP = abs(kpi.get("tau_LHP", 0.0));  qd_LR = abs(p.getJointState(self.env.robot_id, self.env.dict_joints["left_hip_roll_joint"])[1])
-
-        tau_RR = abs(kpi.get("tau_RHR", 0.0));  qd_RP = abs(p.getJointState(self.env.robot_id, self.env.dict_joints["right_hip_pitch_joint"])[1])
-        tau_RP = abs(kpi.get("tau_RHP", 0.0));  qd_RR = abs(p.getJointState(self.env.robot_id, self.env.dict_joints["right_hip_roll_joint"])[1])
-
-        cross = (tau_LR*qd_LP + tau_LP*qd_LR + tau_RR*qd_RP + tau_RP*qd_RR)
-        # Normaliza y recorta
-        cross_norm = min(cross / 10.0, 1.5)
-        if self.env.step_count % (self.frequency_simulation//10)==0:
-            if self.env.logger:
-                if cross_norm > 1.0:  # umbral “alto”
-                    self.env.logger.log("main",f"⚠️ Hip decoupling poor: cross={cross:.2f}, norm={cross_norm:.2f}")
-                else:
-                    self.env.logger.log("main",f"Hip decoupling: cross={cross:.2f}, norm={cross_norm:.2f}")
-        #return -0.3 * cross_norm  # penalización máxima ~ -0.45
+        left_down  = bool(kpi.get("left_down", 0))
+        right_down = bool(kpi.get("right_down", 0))
+        if left_down ^ right_down:
+            # usa COM_y del KPI y la posición Y del pie de soporte
+            com_y = float(kpi.get("com_y", 0.0))
+            # estima pie de soporte por fuerza vertical promedio (o flags)
+            F_L = float(kpi.get("F_L", 0.0)); F_R = float(kpi.get("F_R", 0.0))
+            support = "left" if (F_L >= F_R) else "right"
+            foot_id = self.env.left_foot_link_id if support == "left" else self.env.right_foot_link_id
+            foot_pos = self.env.get_link_world_position(foot_id)  # asume helper; equiv. a p.getLinkState(...)[0]
+            foot_y = float(foot_pos[1])
+            return -k * abs(com_y - foot_y)
+        return 0.0
+    
+    # NEW: penalización de co-contracción PAM (producto flex*ext)
+    # Ver si hay que eliminar o no
+    def _cocontraction_pen(self, pairs, lam: float = 0.01):
+        ps = getattr(self.env, "pam_states", {}).get("pressures_by_name", {})
+        pen = 0.0
+        for flex, ext in pairs:
+            uf = float(ps.get(flex, 0.0)); ue = float(ps.get(ext, 0.0))
+            pen += uf * ue
+        return lam * pen
     
     def _com_zmp_stability_reward(self):
         z = getattr(self.env, "zmp_calculator", None)
@@ -777,14 +860,14 @@ class SimpleProgressiveReward:
         tau_LP = abs(kpi.get("tau_LHP", 0.0)); tau_RP = abs(kpi.get("tau_RHP", 0.0))
         if double:
             sym = 1.0 - np.tanh(0.5*(abs(tau_LR - tau_RR) + abs(tau_LP - tau_RP)))
-            #return 0.4 * sym  # +0.4 si muy simétrico
+            return 0.4 * sym  # +0.4 si muy simétrico
         else:
             # Apoyo simple: refuerza que el roll del torso apunte al pie de soporte
             left_down  = bool(kpi.get("left_down", 0))
             right_down = bool(kpi.get("right_down", 0))
             torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
             support_sign = +1.0 if (left_down and not right_down) else (-1.0 if (right_down and not left_down) else 0.0)
-            #return 0.2 * np.clip(support_sign * torso_roll/np.deg2rad(10), -1.0, 1.0)
+            return 0.2 * np.clip(support_sign * torso_roll/np.deg2rad(10), -1.0, 1.0)
         
 
     def _com_projection_reward(self):
@@ -805,8 +888,184 @@ class SimpleProgressiveReward:
             r0 = 0.08  # 8 cm
             self.env.info["kpi"]["com_dist_to_support"] = float(r)      # distancia XY del COM al pie soporte (m)
             self.env.info["kpi"]["com_stable_flag"]     = int(r < r0) # “cerca” si < 8 cm
-            #return 0.5 * np.exp(- (r / r0)**2 )
+            return 0.5 * np.exp(- (r / r0)**2 )
         except Exception:
-            pass
-            #return 0.0
+            return 0.0
+        
+    # ============================================================================================================================================= #
+    # ================================================= Nuevos metodos de recompensa para nuevas acciones ========================================= #
+    # ============================================================================================================================================= #
 
+    # ===================== NUEVO: Caminar 3D =====================
+    def calculate_reward_walk3d(self, action, step_count):
+        env = self.env
+        pos, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = euler
+        lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
+        vx = lin_vel[0]
+
+        # Contactos y fuerzas
+        F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
+        F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
+        Fmin = 40.0
+
+        # 1) Progreso hacia +X con cap
+        v_max = max(0.3, float(self.vx_target))
+        r_vel = max(0.0, min(vx / v_max, 1.0))
+
+        # 2) Postura
+        r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
+
+        # 3) Estabilidad (ZMP + suavidad interna ya implementada)
+        r_stab = self.zmp_and_smooth_reward(pos, euler, step_count)
+
+        # 4) Patrón de paso ligero: pie soporte claro + alternancia
+        support_now = 'L' if Ftot_L > Ftot_R else 'R'
+        if step_count == 1: self._last_support3d = support_now
+        switched = (support_now != getattr(self, "_last_support3d", support_now))
+        self._last_support3d = support_now
+        b_switch = 0.10 if switched else 0.0
+        b_contact = 0.10 if ((support_now=='L' and Ftot_L>Fmin and Ftot_R<0.5*Fmin) or
+                             (support_now=='R' and Ftot_R>Fmin and Ftot_L<0.5*Fmin)) else 0.0
+        r_foot = b_switch + b_contact
+
+        # 5) Suavidad/energía
+        u = np.clip(action, 0.0, 1.0)
+        if not hasattr(self, "_prev_u3d"): self._prev_u3d = np.zeros_like(u)
+        energy = float(np.mean(u)); delta_u = float(np.mean(np.abs(u - self._prev_u3d))); self._prev_u3d = u
+
+        # 6) Guardarraíles
+        pen_roll = self._roll_guardrail_pen(roll)
+        pen_ankle = self._ankle_guardrail_pen()
+
+        # 7) Caída / vuelos (si no se permiten)
+        fall = 0.0
+        z_base = pos[2]
+        if (z_base < 0.75) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
+            fall = 1.0; self.last_done_reason = "fall_3D"; self._episode_done = True
+        if not self.allow_hops and (Ftot_L < 10.0 and Ftot_R < 10.0):
+            fall += 0.3
+
+        # Pesos
+        w_v, w_post, w_stab, w_foot = 2.2, 0.6, 0.4, 0.3
+        w_en, w_du, w_guard, w_fall = 0.04, 0.08, 0.3, 5.0
+        reward = (w_v*r_vel + w_post*r_post + w_stab*r_stab + w_foot*r_foot
+                  - w_en*energy - w_du*delta_u - w_guard*(pen_roll + pen_ankle) - w_fall*fall)
+        return float(reward)
+    
+    # ===================== NUEVO: Levantar una pierna (simple) =====================
+    def calculate_reward_lift_leg(self, action, step_count):
+        env = self.env
+        pos, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = euler
+
+        # Pierna de soporte deseada (si el env lo indica); si no, inferimos
+        target_action = getattr(env, "single_leg_action", None)
+        if str(target_action).endswith("BALANCE_LEFT_SUPPORT"):
+            support_desired = 'L'
+        elif str(target_action).endswith("BALANCE_RIGHT_SUPPORT"):
+            support_desired = 'R'
+        else:
+            F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
+            F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
+            support_desired = 'L' if Ftot_L >= Ftot_R else 'R'
+
+        # Fuerzas
+        F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
+        F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
+        Fmin = 45.0
+
+        # 1) Estabilidad + soporte claro (una pierna)
+        r_stab = self.zmp_and_smooth_reward(pos, euler, step_count)
+        if support_desired == 'L':
+            r_support = 1.0 if (Ftot_L > Fmin and Ftot_R < 0.4*Fmin) else 0.0
+            swing_foot_id = env.right_foot_link_id
+        else:
+            r_support = 1.0 if (Ftot_R > Fmin and Ftot_L < 0.4*Fmin) else 0.0
+            swing_foot_id = env.left_foot_link_id
+
+        # 2) Clearance del pie en el aire (~10–15 cm)
+        ls = p.getLinkState(env.robot_id, swing_foot_id, computeForwardKinematics=1)
+        foot_z = ls[0][2]; base_z = pos[2]
+        clearance = max(0.0, min((foot_z - (base_z - 0.20)) / 0.15, 1.0))
+
+        # 3) Postura y pie soporte plano
+        r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
+        r_flat = self._foot_flat_reward()
+
+        # 4) Suavidad/energía
+        u = np.clip(action, 0.0, 1.0)
+        if not hasattr(self, "_prev_ulift"): self._prev_ulift = np.zeros_like(u)
+        energy = float(np.mean(u)); delta_u = float(np.mean(np.abs(u - self._prev_ulift))); self._prev_ulift = u
+
+        # 5) Caída
+        fall = 0.0
+        if (base_z < 0.75) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
+            fall = 1.0; self.last_done_reason = "fall_lift"; self._episode_done = True
+
+        # Pesos
+        w_stab, w_sup, w_clear, w_post, w_flat = 0.6, 0.8, 0.8, 0.4, 0.2
+        w_en, w_du, w_fall = 0.04, 0.08, 5.0
+        reward = (w_stab*r_stab + w_sup*r_support + w_clear*clearance + w_post*r_post + w_flat*r_flat
+                  - w_en*energy - w_du*delta_u - w_fall*fall)
+        return float(reward)
+    
+    # ===================== NUEVO: Marcha en el sitio (alternar piernas; se permiten “vuelos”) =====================
+    def calculate_reward_march_in_place(self, action, step_count):
+        env = self.env
+        pos, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = euler
+        lin_vel, _ = p.getBaseVelocity(env.robot_id)
+        vx, vy = lin_vel[0], lin_vel[1]
+
+        # Ancla de referencia para “no moverse del sitio”
+        if step_count == 1 or not hasattr(self, "_anchor_xy"):
+            self._anchor_xy = (pos[0], pos[1])
+            self._last_swing = None
+        ax, ay = self._anchor_xy
+        dx, dy = pos[0]-ax, pos[1]-ay
+
+        # Fuerzas (pueden ser ~0 si ambos pies están en el aire; aquí NO lo penalizamos)
+        F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
+        F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
+
+        # 1) Alternancia: premiar cambio de pie en swing (detectar pie más “ligero”)
+        swing_now = 'L' if Ftot_L < Ftot_R else 'R'
+        switched = (self._last_swing is not None and swing_now != self._last_swing)
+        self._last_swing = swing_now
+        r_alt = 1.0 if switched else 0.0
+
+        # 2) Clearance del pie en swing (~10–15 cm sobre base)
+        foot_id = env.left_foot_link_id if swing_now=='L' else env.right_foot_link_id
+        ls = p.getLinkState(env.robot_id, foot_id, computeForwardKinematics=1)
+        foot_z = ls[0][2]; base_z = pos[2]
+        clearance = max(0.0, min((foot_z - (base_z - 0.20)) / 0.15, 1.0))
+
+        # 3) Quedarse “en el sitio”: baja velocidad y baja deriva XY
+        r_stay = np.exp(- (abs(vx)+abs(vy)) / 0.3) * np.exp(- (abs(dx)+abs(dy)) / 0.25)
+
+        # 4) Postura (roll/pitch bajos). ZMP sólo tiene sentido con contacto; si ambos en el aire, lo omitimos
+        r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
+        r_stab = 0.0
+        if (Ftot_L > 10.0 or Ftot_R > 10.0):
+            r_stab = self.zmp_and_smooth_reward(pos, euler, step_count)
+
+        # 5) Suavidad/energía
+        u = np.clip(action, 0.0, 1.0)
+        if not hasattr(self, "_prev_umin"): self._prev_umin = np.zeros_like(u)
+        energy = float(np.mean(u)); delta_u = float(np.mean(np.abs(u - self._prev_umin))); self._prev_umin = u
+
+        # 6) Caída (permitimos “vuelo” —ambos pies en el aire— pero no caídas reales)
+        fall = 0.0
+        if (pos[2] < 0.75) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
+            fall = 1.0; self.last_done_reason = "fall_march"; self._episode_done = True
+
+        # Pesos
+        w_alt, w_clear, w_stay, w_post, w_stab = 0.9, 0.7, 0.9, 0.3, 0.3
+        w_en, w_du, w_fall = 0.04, 0.08, 5.0
+        reward = (w_alt*r_alt + w_clear*clearance + w_stay*r_stay + w_post*r_post + w_stab*r_stab
+                  - w_en*energy - w_du*delta_u - w_fall*fall)
+        return float(reward)
