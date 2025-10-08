@@ -218,9 +218,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
-        self._debug_joint_angles_and_pressures(u_final, joint_states, done)
-        system_used = "PROGRESSIVE"
-        self.debug_rewards()
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
@@ -230,7 +227,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         observation = self._get_simple_observation()
 
-        
         # Info simplificado
         info = {
             'step_count': self.step_count,
@@ -239,6 +235,74 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'episode_reward': self.episode_reward
         }
 
+        info, reward, done, is_valid, system_used = self.function_logger_kpi(info, reward, done, is_valid, system_used)
+
+
+        self._debug_joint_angles_and_pressures(info,u_final, joint_states, done)
+        system_used = "PROGRESSIVE"
+        self.debug_rewards()
+        
+        
+        
+        return observation, reward, done, False, info
+    
+    def obtener_estado_articulaciones(self):
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # sólo 8 DOF controlados
+        self.left_hip_roll_angle = joint_states[0][0]
+        self.left_hip_pitch_angle = joint_states[1][0]
+        self.left_knee_angle = joint_states[2][0]
+        self.left_anckle_angle = joint_states[3][0]
+        self.right_hip_roll_angle = joint_states[4][0]
+        self.right_hip_pitch_angle = joint_states[5][0]
+        self.right_knee_angle = joint_states[6][0]
+        self.right_anckle_angle = joint_states[7][0]
+        return joint_states
+    
+
+    def info_pam_torque(self, info):
+        jt = getattr(self, "pam_states", {}).get("joint_torques", None)
+        ps = getattr(self, "pam_states", {}).get("pressures", None)
+
+        # Ejemplos: mapea índices a nombres (ver mapeo más abajo)
+        if jt is not None:
+            info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
+            info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
+            info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
+            info["kpi"]["tau_LA"]   = float(jt[3])  # Right Anckle
+            info["kpi"]["tau_RHR"]   = float(jt[4])  # Right Hip Roll
+            info["kpi"]["tau_RHP"]    = float(jt[5])  # Right HIP Pitch
+            info["kpi"]["tau_RK"]    = float(jt[6])  # Right Knee
+            info["kpi"]["tau_RA"]    = float(jt[7])  # Right Anckle
+
+        if ps is not None:
+            info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
+            info["kpi"]["u_LHR_ext"]  = float(ps[1])   # PAM 1: extensor cadera izq (roll)
+            info["kpi"]["u_RHR_flex"] = float(ps[2])   # PAM 2: flexor cadera der (roll)
+            info["kpi"]["u_RHR_ext"]  = float(ps[3])   # PAM 3: extensor cadera der (roll)
+            info["kpi"]["u_LHP_flex"] = float(ps[4])   # PAM 4: flexor cadera izq (pitch)
+            info["kpi"]["u_LHP_ext"]  = float(ps[5])   # PAM 5: extensor cadera izq (pitch)
+            info["kpi"]["u_RHP_flex"] = float(ps[6])   # PAM 6: flexor cadera der (pitch)
+            info["kpi"]["u_RHP_ext"]  = float(ps[7])   # PAM 7: extensor cadera der (pitch)
+            info["kpi"]["u_LK_flex"]  = float(ps[8])   # PAM 8: flexor rodilla izq
+            info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
+            info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
+            info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
+            info["kpi"]["u_RA_ext"]  = float(ps[12])   # PAM 12: extensor tobillo der (pitch)
+            info["kpi"]["u_LA_flex"]  = float(ps[13])   # PAM 13: flexor tobillo izq
+            info["kpi"]["u_LA_ext"]   = float(ps[14])   # PAM 14: extensor tobillo izq
+            info["kpi"]["u_RA_flex"]  = float(ps[15])  # PAM 15: flexor tobillo der
+
+
+        if hasattr(self, "left_hip_roll_angle"):
+            info["kpi"]["q_LHR"] = self.left_hip_roll_angle
+            info["kpi"]["q_LHP"] = self.left_hip_pitch_angle
+            info["kpi"]["q_LK"]  = self.left_knee_angle
+            info["kpi"]["q_RHR"] = self.right_hip_roll_angle
+            info["kpi"]["q_RHP"] = self.right_hip_pitch_angle
+            info["kpi"]["q_RK"]  = self.right_knee_angle
+        return info
+    
+    def function_logger_kpi(self, info, reward, done, is_valid, system_used):
         if self.simple_reward_system:
             curriculum_info = self.simple_reward_system.get_info()  # Solo una llamada
             info['curriculum'] = curriculum_info  # Añadir sin reemplazar
@@ -325,64 +389,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.logger.log("main",f"   Current level: {curriculum_info['level']}")
                 self.logger.log("main",f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
                 self.logger.log("main",f"   Switch timer: {self.simple_reward_system.switch_timer}/{self.simple_reward_system.switch_interval}")
-        
-        return observation, reward, done, False, info
-    
-    def obtener_estado_articulaciones(self):
-        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # sólo 8 DOF controlados
-        self.left_hip_roll_angle = joint_states[0][0]
-        self.left_hip_pitch_angle = joint_states[1][0]
-        self.left_knee_angle = joint_states[2][0]
-        self.left_anckle_angle = joint_states[3][0]
-        self.right_hip_roll_angle = joint_states[4][0]
-        self.right_hip_pitch_angle = joint_states[5][0]
-        self.right_knee_angle = joint_states[6][0]
-        self.right_anckle_angle = joint_states[7][0]
-        return joint_states
-    
-
-    def info_pam_torque(self, info):
-        jt = getattr(self, "pam_states", {}).get("joint_torques", None)
-        ps = getattr(self, "pam_states", {}).get("pressures", None)
-
-        # Ejemplos: mapea índices a nombres (ver mapeo más abajo)
-        if jt is not None:
-            info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
-            info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
-            info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
-            info["kpi"]["tau_LA"]   = float(jt[3])  # Right Anckle
-            info["kpi"]["tau_RHR"]   = float(jt[4])  # Right Hip Roll
-            info["kpi"]["tau_RHP"]    = float(jt[5])  # Right HIP Pitch
-            info["kpi"]["tau_RK"]    = float(jt[6])  # Right Knee
-            info["kpi"]["tau_RA"]    = float(jt[7])  # Right Anckle
-
-        if ps is not None:
-            info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
-            info["kpi"]["u_LHR_ext"]  = float(ps[1])   # PAM 1: extensor cadera izq (roll)
-            info["kpi"]["u_RHR_flex"] = float(ps[2])   # PAM 2: flexor cadera der (roll)
-            info["kpi"]["u_RHR_ext"]  = float(ps[3])   # PAM 3: extensor cadera der (roll)
-            info["kpi"]["u_LHP_flex"] = float(ps[4])   # PAM 4: flexor cadera izq (pitch)
-            info["kpi"]["u_LHP_ext"]  = float(ps[5])   # PAM 5: extensor cadera izq (pitch)
-            info["kpi"]["u_RHP_flex"] = float(ps[6])   # PAM 6: flexor cadera der (pitch)
-            info["kpi"]["u_RHP_ext"]  = float(ps[7])   # PAM 7: extensor cadera der (pitch)
-            info["kpi"]["u_LK_flex"]  = float(ps[8])   # PAM 8: flexor rodilla izq
-            info["kpi"]["u_LK_ext"]   = float(ps[9])   # PAM 9: extensor rodilla izq
-            info["kpi"]["u_RK_flex"]  = float(ps[10])  # PAM 10: flexor rodilla der
-            info["kpi"]["u_RK_ext"]   = float(ps[11])  # PAM 11: extensor rodilla der
-            info["kpi"]["u_RA_ext"]  = float(ps[12])   # PAM 12: extensor tobillo der (pitch)
-            info["kpi"]["u_LA_flex"]  = float(ps[13])   # PAM 13: flexor tobillo izq
-            info["kpi"]["u_LA_ext"]   = float(ps[14])   # PAM 14: extensor tobillo izq
-            info["kpi"]["u_RA_flex"]  = float(ps[15])  # PAM 15: flexor tobillo der
-
-
-        if hasattr(self, "left_hip_roll_angle"):
-            info["kpi"]["q_LHR"] = self.left_hip_roll_angle
-            info["kpi"]["q_LHP"] = self.left_hip_pitch_angle
-            info["kpi"]["q_LK"]  = self.left_knee_angle
-            info["kpi"]["q_RHR"] = self.right_hip_roll_angle
-            info["kpi"]["q_RHP"] = self.right_hip_pitch_angle
-            info["kpi"]["q_RK"]  = self.right_knee_angle
-        return info
+        return info, reward, done, is_valid, system_used
     
 
     def _configure_contact_friction(self):
@@ -954,7 +961,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 
-    def _debug_joint_angles_and_pressures(self, pam_pressures, joint_states, done):
+    def _debug_joint_angles_and_pressures(self, info, pam_pressures, joint_states, done):
         """
             ✅ MÉTODO DE DEBUG para verificar la lógica biomecánica
         
@@ -978,6 +985,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         row_general[f"Forces_{name}_x"]=round(Fx,3)
                         row_general[f"Forces_{name}_y"]=round(Fy,3)
                         row_general[f"Forces_{name}_z"]=round(Fz,3)
+                        row_general[f"Pressure_{name}flexion"]=pam_pressures[idx*2]
+                        row_general[f"Pressure_{name}extension"]=pam_pressures[idx*2+1]
+                    row_general[f"COM_x"]=round(info["kpi"]['com_x'],3)
+                    row_general[f"COM_y"]=round(info["kpi"]['com_y'],3)
+                    row_general[f"COM_z"]=round(info["kpi"]['com_z'],3)
+                    row_general[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
+                    row_general[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
+                    row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
+                    
+
                     # row_angles = {
                     #             "step": int(self.step_count),
                     #             "episode": int(self.n_episodes),
@@ -991,28 +1008,28 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     #             "Left anckle":round(self.left_anckle_angle,3),
                     #             "Right anckle":round(self.right_anckle_angle,3)
                     #         }
-                    row_pressures={
-                        "step": int(self.step_count),
-                        "episode": int(self.n_episodes),
-                        "t": round(self.step_count / self.frequency_simulation, 5),
-                        "L Hip roll flex":pam_pressures[0],
-                        "L Hip roll ext":pam_pressures[1],
-                        "R Hip roll flex":pam_pressures[2],
-                        "R Hip roll ext":pam_pressures[3],
-                        "L Hip pitch flex":pam_pressures[4],
-                        "L Hip pitch ext": pam_pressures[5],
-                        "R Hip pitch flex":pam_pressures[6],
-                        "R Hip pitch ext": pam_pressures[7],
-                        "L Knee flex":pam_pressures[8],
-                        "L Knee ext":pam_pressures[9],
-                        "R Knee flex":pam_pressures[10],
-                        "R Knee ext":pam_pressures[11],
-                        "L Anckle flex":pam_pressures[12],
-                        "L Anckle ext":pam_pressures[13],
-                        "R Anckle flex":pam_pressures[14],
-                        "R Anckle ext":pam_pressures[15]
-                    }
-                    self.csvlog.write("pressures", row_pressures)
+                    # row_pressures={
+                    #     "step": int(self.step_count),
+                    #     "episode": int(self.n_episodes),
+                    #     "t": round(self.step_count / self.frequency_simulation, 5),
+                    #     "L Hip roll flex":pam_pressures[0],
+                    #     "L Hip roll ext":pam_pressures[1],
+                    #     "R Hip roll flex":pam_pressures[2],
+                    #     "R Hip roll ext":pam_pressures[3],
+                    #     "L Hip pitch flex":pam_pressures[4],
+                    #     "L Hip pitch ext": pam_pressures[5],
+                    #     "R Hip pitch flex":pam_pressures[6],
+                    #     "R Hip pitch ext": pam_pressures[7],
+                    #     "L Knee flex":pam_pressures[8],
+                    #     "L Knee ext":pam_pressures[9],
+                    #     "R Knee flex":pam_pressures[10],
+                    #     "R Knee ext":pam_pressures[11],
+                    #     "L Anckle flex":pam_pressures[12],
+                    #     "L Anckle ext":pam_pressures[13],
+                    #     "R Anckle flex":pam_pressures[14],
+                    #     "R Anckle ext":pam_pressures[15]
+                    # }
+                    # self.csvlog.write("pressures", row_pressures)
                     # self.csvlog.write("angles", row_angles)
                     self.csvlog.write("general_values", row_general)
 

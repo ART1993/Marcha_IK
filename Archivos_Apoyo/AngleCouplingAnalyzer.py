@@ -45,6 +45,9 @@ class AngleCouplingAnalyzer:
 
     def correlacion_entre_params(self, df:pd.DataFrame):
         return df.corr(numeric_only=True)
+
+    def correlacion_entre_dataframes(self,df1:pd.DataFrame,df2:pd.DataFrame):
+        return df1.corrwith(df2)
         
     def creacion_correlaciones(self, correlaciones, pamar_name, annot=True,
                                cell_w=0.45, cell_h=0.45,   # tamaño por celda (en pulgadas)
