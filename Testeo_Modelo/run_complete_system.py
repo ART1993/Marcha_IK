@@ -58,12 +58,12 @@ def main():
                 print("🎯 Entrenamiento COMPLETO (2M timesteps)")
             
             # Importar y ejecutar entrenamiento
-            from inicio_programa import train_single_leg_balance
+            from inicio_programa import train_balance_pure_rl
             
             print(f"🚀 Iniciando entrenamiento con {timesteps:,} timesteps...")
             start_time = time.time()
             
-            trainer, model = train_single_leg_balance(
+            trainer, model = train_balance_pure_rl(
                 total_timesteps=timesteps,
                 n_envs=4,
                 resume=True
