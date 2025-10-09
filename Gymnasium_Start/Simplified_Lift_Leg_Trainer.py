@@ -146,9 +146,9 @@ class Simplified_Lift_Leg_Trainer:
         self.learning_rate = learning_rate
         self.resume_from = resume_from
         self.csvlog=csvlog
-        self._simple_reward_mode = _simple_reward_mode
+        self.simple_reward_mode = _simple_reward_mode
         self.allow_hops = _allow_hops
-        self._vx_target=_vx_target
+        self.vx_target=_vx_target
 
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
@@ -158,9 +158,9 @@ class Simplified_Lift_Leg_Trainer:
             self.logger.log("main",f"   Timesteps: {self.total_timesteps:,}")
             self.logger.log("main",f"   Parallel envs: {self.n_envs}")
             self.logger.log("main",f"   Learning rate: {self.learning_rate}")
-            self.logger.log("main",f"   Metodo de recompensa: {self._simple_reward_mode}")
-            self.logger.log("main",f"   Permite saltos: {self._simple_reward_mode}")
-            self.logger.log("main",f"   Velocidad en caso de marcha: {self._vx_target}")
+            self.logger.log("main",f"   Metodo de recompensa: {self.simple_reward_mode}")
+            self.logger.log("main",f"   Permite saltos: {self.allow_hops}")
+            self.logger.log("main",f"   Velocidad en caso de marcha: {self.vx_target}")
 
         # MANTENER EN CONSOLA SOLO CONFIRMACIÓN
         print(f"🤖 Trainer ready")
@@ -228,11 +228,14 @@ class Simplified_Lift_Leg_Trainer:
         logger_local = (self.logger if (self.logger and n_envs_local == 1) else None)
         # Se puede pasar puramente a csvlog
         csvlog_local= (self.csvlog if (self.csvlog and n_envs_local == 1) else None)
+        _simple_reward_mode_local=self.simple_reward_mode
+        _allow_hops_local=self.allow_hops
+        _vx_target_local=self.vx_target
         if logger_local and n_envs_local==1:
             self.logger.log("main",f"🏗️ Creating training environment: {config['description']}")
         def make_env(logger=logger_local, csvlog=csvlog_local,
-                     n_envs=n_envs_local,_simple_reward_mode="progressive",
-                     _allow_hops=False, _vx_target=0.6):
+                     n_envs=n_envs_local,_simple_reward_mode=_simple_reward_mode_local,
+                     _allow_hops=_allow_hops_local, _vx_target=_vx_target_local):
             def _init():
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
@@ -270,7 +273,11 @@ class Simplified_Lift_Leg_Trainer:
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
                                             print_env="EVAL",
                                             logger=self.logger,
-                                            csvlog=eval_csvlog
+                                            csvlog=eval_csvlog,
+                                            simple_reward_mode=self.simple_reward_mode,
+                                            allow_hops=self.allow_hops,
+                                            vx_target=self.vx_target
+
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env

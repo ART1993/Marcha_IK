@@ -58,8 +58,10 @@ class Rutas_Archivos(Enum):
     _ignore_ = ['archivo', 'tmp_rutas', 'ruta_proyecto']
     ruta_proyecto=find_project_root()
     rutas_robots = {}
+    rutas_jsons = {}
     for archivo in listdir("Robots_Versiones"):
-        rutas_robots[archivo] = buscar_archivo(archivo, ruta_proyecto)
+        rutas_robots[archivo.split(".")[0]] = buscar_archivo(archivo, ruta_proyecto)
+        rutas_jsons[archivo.split(".")[0]] = buscar_archivo(archivo.replace(".urdf",".json"), ruta_proyecto)
     #ruta_KREI=buscar_archivo("WP5 RURACTIVE KREI List.xlsx", ruta_proyecto)
 
 

@@ -8,6 +8,8 @@ import pybullet_data
 import numpy as np
 import math
 from collections import deque
+from json import loads, load
+import os
 
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben,Rutas_Archivos, \
                                                     calculate_robot_specific_joint_torques_16_pam
@@ -34,7 +36,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
-                 vx_target: float = 0.6):
+                 vx_target: float = 0.6,
+                 robot_name="2_legged_human_like_robot16DOF"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -43,6 +46,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Llamar al constructor padre pero sobrescribir configuración PAM
         super(Simple_Lift_Leg_BipedEnv, self).__init__()
         self.robots_existentes=Rutas_Archivos.rutas_robots.value
+        self.rutas_json=Rutas_Archivos.rutas_jsons.value
+        self.urdf_path = self.robots_existentes.get(f"{robot_name}")
+        with open(self.rutas_json.get(f"{robot_name}"), 'r') as f:
+            json_file_robot_joint_info=load(f)
         # ===== CONFIGURACIÓN BÁSICA =====
         self.pam_muscles = PAM_McKibben()
         self.render_mode = render_mode
@@ -64,7 +71,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self._balance_start_time = 0
         # ===== CONFIGURACIÓN FÍSICA BÁSICA =====
         
-        self.urdf_path = "2_legged_human_like_robot16DOF.urdf"
+        
         self.frequency_simulation=400.0
         self.switch_interval=2000  # Intervalo para cambiar pierna objetivo en curriculum
         self.time_step = 1.0 / self.frequency_simulation
@@ -126,10 +133,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.robot_id = None
         self.plane_id = None
         #self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
-        self.control_joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_ankle_joint', 
-                                    'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_ankle_joint']
+        self.joint_indices=[]
+        self.control_joint_names=[]
+        for key, values in json_file_robot_joint_info.items():
+            self.joint_indices.append(values.get("index"))
+            self.control_joint_names.append(values.get("name"))
+        # self.control_joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_ankle_joint', 
+        #                             'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_ankle_joint']
         self.joint_names=self.control_joint_names
-        self.joint_indices=[i for i in range(len(self.joint_names))]
+        
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         #ID Links de los pies (igual al de los tobillos)
         self.left_foot_link_id = 3
@@ -730,17 +742,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
-        robot_joint_info=self.robot_data._get_joint_info
-        self.num_joints=p.getNumJoints(self.robot_id)
-        all_indices, all_names=[],[]
-        for j in range(self.num_joints):
-            all_indices.append(robot_joint_info[j]['index'])
-            all_names.append(robot_joint_info[j]['name'])
-            p.enableJointForceTorqueSensor(self.robot_id, jointIndex=robot_joint_info[j]['index'], enableSensor=True)
-        self.dict_joints = {name: idx for name, idx in zip(all_names, all_indices)}
-        # Fijar los 8 índices en el orden esperado por el cálculo de torques
-        self.joint_names   = list(self.control_joint_names)
-        self.joint_indices = [self.dict_joints[n] for n in self.control_joint_names]
+        # robot_joint_info=self.robot_data._get_joint_info
+        # self.num_joints=p.getNumJoints(self.robot_id)
+        # all_indices, all_names=[],[]
+        # for j in range(self.num_joints):
+        #     all_indices.append(robot_joint_info[j]['index'])
+        #     all_names.append(robot_joint_info[j]['name'])
+        #     p.enableJointForceTorqueSensor(self.robot_id, jointIndex=robot_joint_info[j]['index'], enableSensor=True)
+        # self.dict_joints = {name: idx for name, idx in zip(all_names, all_indices)}
+        # # Fijar los 8 índices en el orden esperado por el cálculo de torques
+        # self.joint_names   = list(self.control_joint_names)
+        # self.joint_indices = [self.dict_joints[n] for n in self.control_joint_names]
         
             
         
