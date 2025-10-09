@@ -3,6 +3,9 @@ import os
 import numpy as np
 from stable_baselines3.common.vec_env import VecNormalize
 import pybullet as p
+from pathlib import Path
+from enum import Enum
+from os import listdir
 
 from Archivos_Apoyo.dinamica_pam import PAMMcKibben
 
@@ -23,6 +26,38 @@ def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
                     print(f"⚠️ Warning: Could not load normalization stats: {e}")
                     print("   Continuing with fresh normalization...")
         return train_env
+
+def buscar_archivo(nombre_archivo, ruta_base="/", select_multiple=False):
+    for root, dirs, files in os.walk(ruta_base):
+        if select_multiple:
+            similar_files=[]
+            for f in files:
+                if nombre_archivo in f:
+                    similar_files.append(os.path.join(root, f))
+            return similar_files
+        else:
+            if nombre_archivo in files:
+                return os.path.join(root, nombre_archivo)
+    return None
+
+def find_project_root(marker_files=(".git", "pyproject.toml", "setup.py", "requirements.txt", ".gitignore")) -> Path:
+    try:
+        base = Path(__file__).resolve().parent  # funciona en scripts/módulos
+    except NameError:
+        base = Path.cwd().resolve()             # fallback para Jupyter/REPL
+
+    for parent in [base] + list(base.parents):
+        if any((parent / m).exists() for m in marker_files):
+            return parent
+    return base
+
+class Rutas_Archivos(Enum):
+    """
+    Contiene los nombres de las rutas de los archivos a usar sin extensiones
+    """
+    ruta_proyecto=find_project_root()
+    rutas_robots={archivo:buscar_archivo(archivo, ruta_proyecto) for archivo in listdir("Robots_Versiones")}
+    #ruta_KREI=buscar_archivo("WP5 RURACTIVE KREI List.xlsx", ruta_proyecto)
 
 
 # ===================================================================================================================================================================================================== #
