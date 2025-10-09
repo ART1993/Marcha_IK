@@ -70,7 +70,7 @@
   <link name="left_hip_roll_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.01"/>
+      <mass value="0.05"/>
       <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
     </inertial>
     <!-- visual/collision opcional (puede ser vacío si no quieres geometría) -->
@@ -82,7 +82,7 @@
     <child link="left_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="50" velocity="2.0"/>
+    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
   </joint>
 
   <!-- Link: Left Shin -->
@@ -109,22 +109,34 @@
     </collision>
   </link>
 
-  <!-- Joint 3: Left Ankle Joint -->
-  <joint name="left_anckle_roll_joint" type="revolute">
+  <!-- =======================
+       LEFT ANKLE: pitch -> roll
+  ======================== -->
+ <!-- left ankle pitch -->
+  <joint name="left_ankle_pitch_joint" type="revolute">
     <parent link="left_shin_link"/>
+    <child  link="left_ankle_pitch_link"/>
+    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.5" upper="0.5" effort="35" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+  <link name="left_ankle_pitch_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+    </inertial>
+  </link>
+
+  <!-- Left Ankle Joint roll -->
+  <joint name="left_anckle_roll_joint" type="revolute">
+    <parent link="left_ankle_pitch_link"/>
     <child link="left_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
     <limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/>
   </joint>
-
-  <!-- <joint name="left_anckle_pitch_joint" type="revolute">
-    <parent link="left_shin_link"/>
-    <child link="left_foot_link"/>
-    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/>
-  </joint> -->
 
   <!-- Link: Left Foot -->
   <link name="left_foot_link">
@@ -197,7 +209,7 @@
   <link name="right_hip_roll_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.01"/>
+      <mass value="0.05"/>
       <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
     </inertial>
     <!-- visual/collision opcional (puede ser vacío si no quieres geometría) -->
@@ -209,7 +221,7 @@
     <child link="right_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="50" velocity="2.0"/>
+    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
   </joint>
 
   <!-- Link: Right Shin -->
@@ -236,9 +248,29 @@
     </collision>
   </link>
 
+  <!-- =======================
+       RIGHT ANKLE: pitch -> roll
+  ======================== -->
+
+  <joint name="right_ankle_pitch_joint" type="revolute">
+    <parent link="right_shin_link"/>
+    <child  link="right_ankle_pitch_link"/>
+    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.5" upper="0.5" effort="35" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+  <link name="right_ankle_pitch_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+    </inertial>
+  </link>
+
   <!-- Joint 3: Right Ankle Joint -->
   <joint name="right_anckle_roll_joint" type="revolute">
-    <parent link="right_shin_link"/>
+    <parent link="right_ankle_pitch_link"/>
     <child link="right_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>

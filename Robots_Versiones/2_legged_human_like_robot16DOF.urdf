@@ -9,7 +9,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Increased width (0.6 along X-axis) -->
+        <box size="0.3 0.8 0.1"/>  <!-- Increased width (0.8 along X-axis) -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -82,7 +82,7 @@
     <child link="left_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="50" velocity="2.0"/>
+    <limit lower="0" upper="1.571" effort="50" velocity="6.0"/>
   </joint>
 
   <!-- Link: Left Shin -->
@@ -201,7 +201,7 @@
     <child link="right_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="50" velocity="2.0"/>
+    <limit lower="0" upper="1.571" effort="50" velocity="6.0"/>
   </joint>
 
   <!-- Link: Right Shin -->

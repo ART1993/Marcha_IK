@@ -55,8 +55,11 @@ class Rutas_Archivos(Enum):
     """
     Contiene los nombres de las rutas de los archivos a usar sin extensiones
     """
+    _ignore_ = ['archivo', 'tmp_rutas', 'ruta_proyecto']
     ruta_proyecto=find_project_root()
-    rutas_robots={archivo:buscar_archivo(archivo, ruta_proyecto) for archivo in listdir("Robots_Versiones")}
+    rutas_robots = {}
+    for archivo in listdir("Robots_Versiones"):
+        rutas_robots[archivo] = buscar_archivo(archivo, ruta_proyecto)
     #ruta_KREI=buscar_archivo("WP5 RURACTIVE KREI List.xlsx", ruta_proyecto)
 
 
