@@ -89,8 +89,8 @@
     </collision>
   </link>
 
-  <!-- Joint 3: Left Anckle Joint -->
-  <joint name="left_anckle_joint" type="revolute">
+  <!-- Joint 3: Left ankle Joint -->
+  <joint name="left_ankle_joint" type="revolute">
     <parent link="left_shin_link"/>
     <child link="left_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
@@ -199,8 +199,8 @@
     </collision>
   </link>
 
-  <!-- Joint 3: Right Anckle Joint -->
-  <joint name="right_anckle_joint" type="revolute">
+  <!-- Joint 3: Right ankle Joint -->
+  <joint name="right_ankle_joint" type="revolute">
     <parent link="right_shin_link"/>
     <child link="right_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>

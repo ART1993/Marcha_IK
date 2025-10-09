@@ -24,11 +24,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - left hip_roll joint: 0
             - left hip_pitch joint: 1
             - left knee joint: 2
-            - left anckle joint: 3
+            - left ankle joint: 3
             - right hip joint: 4
             - right hip pitch joint: 5
             - right knee joint: 6
-            - right anckle joint: 7
+            - right ankle joint: 7
     """
     
     def __init__(self, logger=None, render_mode='human',enable_curriculum=False, 
@@ -119,8 +119,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.robot_id = None
         self.plane_id = None
         #self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
-        self.control_joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_anckle_joint', 
-                                    'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_anckle_joint']
+        self.control_joint_names = ['left_hip_roll_joint','left_hip_pitch_joint', 'left_knee_joint', 'left_ankle_joint', 
+                                    'right_hip_roll_joint','right_hip_pitch_joint', 'right_knee_joint', 'right_ankle_joint']
         self.joint_names=self.control_joint_names
         self.joint_indices=[i for i in range(len(self.joint_names))]
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
@@ -249,11 +249,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.left_hip_roll_angle = joint_states[0][0]
         self.left_hip_pitch_angle = joint_states[1][0]
         self.left_knee_angle = joint_states[2][0]
-        self.left_anckle_angle = joint_states[3][0]
+        self.left_ankle_angle = joint_states[3][0]
         self.right_hip_roll_angle = joint_states[4][0]
         self.right_hip_pitch_angle = joint_states[5][0]
         self.right_knee_angle = joint_states[6][0]
-        self.right_anckle_angle = joint_states[7][0]
+        self.right_ankle_angle = joint_states[7][0]
         return joint_states
     
 
@@ -266,11 +266,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info["kpi"]["tau_LHR"]   = float(jt[0])  # Left Hip Roll
             info["kpi"]["tau_LHP"]   = float(jt[1])  # Left Hip Pitch
             info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
-            info["kpi"]["tau_LA"]   = float(jt[3])  # Right Anckle
+            info["kpi"]["tau_LA"]   = float(jt[3])  # Right ankle
             info["kpi"]["tau_RHR"]   = float(jt[4])  # Right Hip Roll
             info["kpi"]["tau_RHP"]    = float(jt[5])  # Right HIP Pitch
             info["kpi"]["tau_RK"]    = float(jt[6])  # Right Knee
-            info["kpi"]["tau_RA"]    = float(jt[7])  # Right Anckle
+            info["kpi"]["tau_RA"]    = float(jt[7])  # Right ankle
 
         if ps is not None:
             info["kpi"]["u_LHR_flex"] = float(ps[0])   # PAM 0: flexor cadera izq (roll)
@@ -549,11 +549,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             # joint_states[0] = left_hip_roll (joint 0)
             # joint_states[1] = left_hip_pitch (joint 1)
             # joint_states[2] = left_knee (joint 2)
-            # joint_states[3] = left_anckle (joint 3) 
+            # joint_states[3] = left_ankle (joint 3) 
             # joint_states[4] = right_hip_roll (joint 4)
             # joint_states[5] = right_hip_pitch (joint 5)
             # joint_states[6] = right_knee (joint 6)
-            # joint_states[7] = right_anckle (joint 7)
+            # joint_states[7] = right_ankle (joint 7)
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
@@ -699,9 +699,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
-            numSolverIterations=50,         # antes 20
+            numSolverIterations=80,         # antes 50  
             numSubSteps=6,
-            contactBreakingThreshold=0.0005,
+            contactBreakingThreshold=0.001, #subo de 0.0005 a 0.001
             erp=0.2,                    # antes 0.9
             contactERP=0.3,            # antes 0.95
             frictionERP=0.2,            # antes  0.9
@@ -755,12 +755,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.joint_indices[0]: +0.00,   #   self.joint_indices[0] 'left_hip_roll_joint'
             self.joint_indices[1]: 0.05,   # left_hip_pitch_joint
             self.joint_indices[2]: 0.0,     # left_knee_joint
-            self.joint_indices[3]: 0.0,     # left_anckle_joint
+            self.joint_indices[3]: 0.0,     # left_ankle_joint
             # pierna derecha
             self.joint_indices[4]: -0.0,   # right_hip_roll_joint
-            self.joint_indices[5]: -0.0,   # right_hip_pitch_joint
+            self.joint_indices[5]: -0.05,   # right_hip_pitch_joint
             self.joint_indices[6]: 0.0,     # right_knee_joint
-            self.joint_indices[7]: -0.0     # right_anckle_joint
+            self.joint_indices[7]: -0.0     # right_ankle_joint
         }
         #if self.fixed_target_leg == 'left':
             #initial_positions[self.joint_indices[4]] += +0.03  # right_hip_roll_joint: inclina pelvis hacia la derecha
@@ -788,7 +788,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self._configure_contact_friction()
         
-        # NO crear anckle_control ya que los tobillos están fijos
+        # NO crear ankle_control ya que los tobillos están fijos
         
         # ===== RESET DE VARIABLES =====
         
@@ -859,11 +859,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.KNEE_EXTENSOR_BASE_ARM = 0.0620#0.0640     
         self.KNEE_EXTENSOR_VARIATION = 0.008#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
 
-        self.ANCKLE_FLEXOR_BASE_ARM = 0.05     
-        self.ANCKLE_FLEXOR_VARIATION = 0.0105#round(self.ANCKLE_FLEXOR_BASE_ARM/4.2, 4)    
+        self.ankle_FLEXOR_BASE_ARM = 0.05     
+        self.ankle_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
 
-        self.ANCKLE_EXTENSOR_BASE_ARM = 0.054#0.055     
-        self.ANCKLE_EXTENSOR_VARIATION = 0.0085#round(self.ANCKLE_EXTENSOR_BASE_ARM/ 4.2, 4)
+        self.ankle_EXTENSOR_BASE_ARM = 0.054#0.055     
+        self.ankle_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
         self.KP = 80.0   # Ganancia proporcional
         self.KD = 12.0   # Ganancia derivativa    
@@ -939,23 +939,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         angle_factor = np.cos(angle - np.pi/6)
         return self.KNEE_EXTENSOR_BASE_ARM + self.KNEE_EXTENSOR_VARIATION * angle_factor
     
-    def anckle_flexor_moment_arm(self, angle):
+    def ankle_flexor_moment_arm(self, angle):
         """
         Momento de brazo del flexor de rodilla (isquiotibiales).
         Basado en geometría real: circunferencia pantorrilla = 0.377m
         """
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle + np.pi/6)
-        return self.ANCKLE_FLEXOR_BASE_ARM + self.ANCKLE_FLEXOR_VARIATION * angle_factor
+        return self.ankle_FLEXOR_BASE_ARM + self.ankle_FLEXOR_VARIATION * angle_factor
     
-    def anckle_extensor_moment_arm(self, angle):
+    def ankle_extensor_moment_arm(self, angle):
         """
         Momento de brazo del flexor de rodilla (isquiotibiales).
         Basado en geometría real: circunferencia pantorrilla = 0.377m
         """
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle - np.pi/6)
-        return self.ANCKLE_EXTENSOR_BASE_ARM + self.ANCKLE_EXTENSOR_VARIATION * angle_factor
+        return self.ankle_EXTENSOR_BASE_ARM + self.ankle_EXTENSOR_VARIATION * angle_factor
 
     # ===== MÉTODO DE DEBUG ADICIONAL =====
 

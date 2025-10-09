@@ -23,25 +23,70 @@
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
   </link>
+  <!-- ===============================================================
+                          LEFT HIP
+       ===============================================================
+   -->
 
-  <!-- Left Leg -->
-  <joint name="left_hip_roll_joint" type="revolute">
+<!-- (Opcional) Hip yaw comentado: descomenta si lo necesitas -->
+  <!--
+  <joint name="left_hip_yaw_joint" type="revolute">
     <parent link="base_link"/>
-    <child  link="left_hip_roll_link"/>
+    <child  link="left_hip_yaw_link"/>
     <origin xyz="0 0.25 -0.05" rpy="0 0 0"/>
-    <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.35" upper="0.35" effort="120" velocity="6.0"/>
-    <!-- <dynamics damping="0.2" friction="0.0"/> -->
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.5" upper="0.5" effort="120" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
   </joint>
+  <link name="left_hip_yaw_link">
+    <inertial><mass value="0.05"/>
+      <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+    </inertial>
+  </link>
+  -->
 
+  <!-- Hip pitch -->
   <joint name="left_hip_pitch_joint" type="revolute">
-    <parent link="left_hip_roll_link"/>
-    <child link="left_thigh_link"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <parent link="base_link"/>
+    <child link="left_hip_pitch_link"/>
+    <origin xyz="0 0.25 -0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
     <limit lower=" -1.2" upper="1.2" effort="120" velocity="6.0"/>
-    <!-- <dynamics damping="0.2" friction="0.0"/> -->
+    <dynamics damping="0.2" friction="0.0"/>
   </joint>
+
+  <link name="left_hip_pitch_link">
+    <inertial><mass value="0.05"/>
+      <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+    </inertial>
+  </link>
+
+  <!-- Hip Roll -->
+  <joint name="left_hip_roll_joint" type="revolute">
+    <parent link="left_hip_pitch_link"/>
+    <child  link="left_thigh_link"/>
+    <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/> <!-- roll -->
+    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <dynamics damping="0.15" friction="0.0"/>
+  </joint>
+
+  <!-- <link name="left_hip_roll_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link> -->
+
+  <!-- (opcional) si quieres aislar el muslo: -->
+  <!-- <joint name="left_hip_to_thigh" type="fixed">
+    <parent link="left_hip_roll_link"/>
+    <child  link="left_thigh_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint> -->
+
+  
 
   <!-- Link: Left Thigh -->
   <link name="left_thigh_link">
@@ -67,14 +112,9 @@
     </collision>
   </link>
 
-  <link name="left_hip_roll_link">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.05"/>
-      <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
-    </inertial>
-    <!-- visual/collision opcional (puede ser vacío si no quieres geometría) -->
-  </link>
+    <!-- =======================
+       LEFT Knee: pitch 
+      ======================== -->
 
   <!-- Joint 2: Left Knee Joint -->
   <joint name="left_knee_joint" type="revolute">
@@ -83,6 +123,7 @@
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
   <!-- Link: Left Shin -->
@@ -130,12 +171,13 @@
   </link>
 
   <!-- Left Ankle Joint roll -->
-  <joint name="left_anckle_roll_joint" type="revolute">
+  <joint name="left_ankle_roll_joint" type="revolute">
     <parent link="left_ankle_pitch_link"/>
     <child link="left_foot_link"/>
-    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/>
+    <limit lower="-0.35" upper="0.35" effort="35" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
   <!-- Link: Left Foot -->
@@ -162,25 +204,65 @@
     </collision>
   </link>
 
+  <!--
+    =====================================================
+                  RIGHT HIP
+    ===================================================== 
+   -->
+
+   <!-- (Opcional) Hip yaw comentado (derecha) -->
+  <!--
+  <joint name="right_hip_yaw_joint" type="revolute">
+    <parent link="base_link"/>
+    <child  link="right_hip_yaw_link"/>
+    <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.5" upper="0.5" effort="120" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+  <link name="right_hip_yaw_link">
+    <inertial><mass value="0.05"/>
+      <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+    </inertial>
+  </link>
+  -->
+
   <!-- Right Leg (same as left but mirrored) -->
   <joint name="right_hip_pitch_joint" type="revolute">
-    <parent link="right_hip_roll_link"/>
-    <child link="right_thigh_link"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>  
+    <parent link="base_link"/>
+    <child link="right_hip_pitch_link"/>
+    <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>  
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 -1 0"/>
     <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>
-    <!-- <dynamics damping="0.2" friction="0.0"/> -->
+    <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
+  <!-- Agregado para dar +1 DOF en el robot -->
+  <link name="right_hip_pitch_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
   <joint name="right_hip_roll_joint" type="revolute">
-    <parent link="base_link"/>
-    <child  link="right_hip_roll_link"/>
-    <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>
+    <parent link="right_hip_pitch_link"/>
+    <child  link="right_thigh_link"/>
+    <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.35" upper="0.35" effort="120" velocity="6.0"/>
-    <!-- <dynamics damping="0.2" friction="0.0"/> -->
+    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <dynamics damping="0.15" friction="0.0"/>
   </joint>
+
+  <!-- <link name="right_hip_roll_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link> -->
 
   <!-- Link: Right Thigh -->
   <link name="right_thigh_link">
@@ -205,15 +287,7 @@
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
   </link>
-  <!-- Agregado para dar +1 DOF en el robot -->
-  <link name="right_hip_roll_link">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.05"/>
-      <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
-    </inertial>
-    <!-- visual/collision opcional (puede ser vacío si no quieres geometría) -->
-  </link>
+  
 
   <!-- Joint 2: Right Knee Joint -->
   <joint name="right_knee_joint" type="revolute">
@@ -222,6 +296,7 @@
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
   <!-- Link: Right Shin -->
@@ -269,21 +344,14 @@
   </link>
 
   <!-- Joint 3: Right Ankle Joint -->
-  <joint name="right_anckle_roll_joint" type="revolute">
+  <joint name="right_ankle_roll_joint" type="revolute">
     <parent link="right_ankle_pitch_link"/>
     <child link="right_foot_link"/>
-    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/>
+    <limit lower="-0.35" upper="0.35" effort="35" velocity="6.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
   </joint>
-
-  <!-- <joint name="right_anckle_pitch_joint" type="revolute">
-    <parent link="right_shin_link"/>
-    <child link="right_foot_link"/>
-    <origin xyz="0 0 -0.5" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-0.21" upper="0.21" effort="35" velocity="6.0"/>
-  </joint> -->
 
   <!-- Link: Right Foot -->
   <link name="right_foot_link">

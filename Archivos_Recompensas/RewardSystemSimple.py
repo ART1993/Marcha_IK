@@ -294,8 +294,8 @@ class SimpleProgressiveReward:
         
         # + Recompensa por levantar pierna (NUEVA)
         leg_reward = self._calculate_leg_reward(step_count)
-        _,_,_, left_anckle_id, _,_,_, right_anckle_id = self.env.joint_indices
-        ankle_pen = self._ankle_guardrail_pen(left_anckle_id, right_anckle_id)
+        _,_,_, left_ankle_id, _,_,_, right_ankle_id = self.env.joint_indices
+        ankle_pen = self._ankle_guardrail_pen(left_ankle_id, right_ankle_id)
         zmp_reward = self.zmp_and_smooth_reward()
 
         # Guardarraíl de tobillos (frena 'zarpazo de tobillo')
@@ -313,10 +313,10 @@ class SimpleProgressiveReward:
         """Calcular recompensa por levantar pierna correctamente"""
 
         
-        left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_anckle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_anckle_id = self.env.joint_indices
+        left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_ankle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_ankle_id = self.env.joint_indices
         
-        n_l,F_L = self.env.contact_normal_force(left_anckle_id)
-        n_r,F_R = self.env.contact_normal_force(right_anckle_id)
+        n_l,F_L = self.env.contact_normal_force(left_ankle_id)
+        n_r,F_R = self.env.contact_normal_force(right_ankle_id)
         F_sum = max(F_L + F_R, 1e-6)
         # # Cambiar pierna cada switch interval
         # if self.fixed_target_leg is None:
@@ -334,15 +334,15 @@ class SimpleProgressiveReward:
             # fuerza la semántica: soporte=right, objetivo=left
             target_is_right = False
             target_is_left = not target_is_right
-            support_foot_down = self.env.contact_with_force(right_anckle_id, stable_foot=(not target_is_right), min_F=self.min_F)
-            target_foot_down  = self.env.contact_with_force(left_anckle_id, stable_foot= (not target_is_left), min_F=self.min_F)
+            support_foot_down = self.env.contact_with_force(right_ankle_id, stable_foot=(not target_is_right), min_F=self.min_F)
+            target_foot_down  = self.env.contact_with_force(left_ankle_id, stable_foot= (not target_is_left), min_F=self.min_F)
             F_sup = F_R      # soporte = pie derecho
             F_tar = F_L      # objetivo = pie izquierdo
         else:
             target_is_right = True
             target_is_left = not target_is_right
-            support_foot_down = self.env.contact_with_force(left_anckle_id, stable_foot= (not target_is_left), min_F=self.min_F)
-            target_foot_down  = self.env.contact_with_force(right_anckle_id, stable_foot=(not target_is_right), min_F=self.min_F)
+            support_foot_down = self.env.contact_with_force(left_ankle_id, stable_foot= (not target_is_left), min_F=self.min_F)
+            target_foot_down  = self.env.contact_with_force(right_ankle_id, stable_foot=(not target_is_right), min_F=self.min_F)
             F_sup = F_L      # soporte = pie derecho
             F_tar = F_R      # objetivo = pie izquierdo
         # target_is_right   = (self.target_leg == 'right') # Sera siempre false
@@ -383,8 +383,8 @@ class SimpleProgressiveReward:
 
         # (2.5) Penalización por casi-cruce entre el pie en swing y el pie de soporte
         if (F_sup >= self.min_F) and (F_tar < self.min_F):
-            swing_id  = left_anckle_id if (not target_is_right) else right_anckle_id
-            stance_id = right_anckle_id if (not target_is_right) else left_anckle_id
+            swing_id  = left_ankle_id if (not target_is_right) else right_ankle_id
+            stance_id = right_ankle_id if (not target_is_right) else left_ankle_id
             dmin = 0.04  # 4 cm
             close_pen = 0.0
             cps = p.getClosestPoints(self.env.robot_id, self.env.robot_id, dmin, swing_id, stance_id)
@@ -400,7 +400,7 @@ class SimpleProgressiveReward:
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
         # self.fixed_target_leg porque target foot es siempre left
-        foot_z = p.getLinkState(self.robot_id, left_anckle_id)[0][2]
+        foot_z = p.getLinkState(self.robot_id, left_ankle_id)[0][2]
         clearance_target = 0.09  # 9 cm
         clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
 
@@ -473,7 +473,7 @@ class SimpleProgressiveReward:
                       + shaping + speed_pen) # contacto_reward
         # Recompensa por pie de soporte 'plano' (planta paralela al suelo)
         if F_sup >= self.min_F and support_foot_down:
-            stance_foot_id = (right_anckle_id if (F_R >= F_L) else left_anckle_id)
+            stance_foot_id = (right_ankle_id if (F_R >= F_L) else left_ankle_id)
             flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
             leg_reward += flat_reward
         self.reawrd_step['flat_reward']=flat_reward if support_foot_down else 0.0

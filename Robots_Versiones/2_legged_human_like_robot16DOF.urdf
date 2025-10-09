@@ -30,7 +30,7 @@
     <child  link="left_hip_roll_link"/>
     <origin xyz="0 0.25 -0.05" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.35" upper="0.35" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
     <!-- <dynamics damping="0.2" friction="0.0"/> -->
   </joint>
 
@@ -110,7 +110,7 @@
   </link>
 
   <!-- Joint 3: Left Ankle Joint -->
-  <joint name="left_anckle_joint" type="revolute">
+  <joint name="left_ankle_joint" type="revolute">
     <parent link="left_shin_link"/>
     <child link="left_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
@@ -158,7 +158,7 @@
     <child  link="right_hip_roll_link"/>
     <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.35" upper="0.35" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
     <!-- <dynamics damping="0.2" friction="0.0"/> -->
   </joint>
 
@@ -229,7 +229,7 @@
   </link>
 
   <!-- Joint 3: Right Ankle Joint -->
-  <joint name="right_anckle_joint" type="revolute">
+  <joint name="right_ankle_joint" type="revolute">
     <parent link="right_shin_link"/>
     <child link="right_foot_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
