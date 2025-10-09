@@ -130,7 +130,6 @@ class Simplified_Lift_Leg_Trainer:
                  n_envs=4,
                  learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
-                 enable_curriculum=True,
                  logger=None,
                  csvlog=None
                  ):
@@ -143,7 +142,6 @@ class Simplified_Lift_Leg_Trainer:
         self.logger=logger
         self.learning_rate = learning_rate
         self.resume_from = resume_from
-        self.enable_curriculum=enable_curriculum
         self.csvlog=csvlog
 
         # Configurar el entorno y modelo según el tipo de sistema
@@ -218,14 +216,12 @@ class Simplified_Lift_Leg_Trainer:
         
         config = self.env_configs
         n_envs_local = int(self.n_envs)
-        enable_curr_local = bool(self.enable_curriculum)
         logger_local = (self.logger if (self.logger and n_envs_local == 1) else None)
         # Se puede pasar puramente a csvlog
         csvlog_local= (self.csvlog if (self.csvlog and n_envs_local == 1) else None)
         if logger_local and n_envs_local==1:
             self.logger.log("main",f"🏗️ Creating training environment: {config['description']}")
         def make_env(logger=logger_local, csvlog=csvlog_local,
-                     enable_curriculum=enable_curr_local,
                      n_envs=n_envs_local):
             def _init():
                 # Crear el entorno con la configuración apropiada
@@ -233,7 +229,6 @@ class Simplified_Lift_Leg_Trainer:
                     logger=logger,
                     csvlog=csvlog,
                     render_mode='human' if n_envs == 1 else 'direct', 
-                    enable_curriculum=enable_curriculum,
                     print_env="TRAIN"  # Para diferenciar en logs
                     
                 )
@@ -260,7 +255,6 @@ class Simplified_Lift_Leg_Trainer:
         def make_eval_env():
             def _init():
                 env = Simple_Lift_Leg_BipedEnv(render_mode='direct', 
-                                             enable_curriculum=False,  # Evaluación sin curriculum
                                             print_env="EVAL",
                                             logger=self.logger,
                                             csvlog=eval_csvlog
@@ -591,7 +585,6 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
         total_timesteps=total_timesteps,
         n_envs=n_envs,
         learning_rate=learning_rate,
-        enable_curriculum=False,
         logger=logger,
         csvlog=csvlog
     )
@@ -602,51 +595,3 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
     print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
     
     return trainer
-    
-
-# ===== FUNCIONES DE UTILIDAD =====
-
-def create_balance_leg_trainer(total_timesteps=2000000, n_envs=4, learning_rate=3e-4):
-    """
-    Función para crear fácilmente un entrenador simplificado
-    """
-    
-    trainer = Simplified_Lift_Leg_Trainer(
-        total_timesteps=total_timesteps,
-        n_envs=n_envs,
-        learning_rate=learning_rate,
-        enable_curriculum=True
-    )
-    
-    print(f"✅ Simplified Trainer created")
-    print(f"   Focus: Balance de pie + Sentadillas")
-    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
-    
-    return trainer
-
-def train_balance_and_lift_legs(total_timesteps=2000000, n_envs=4, resume=True):
-    """
-    Función principal para entrenar balance y sentadillas
-    """
-    
-    print("🎯 SIMPLIFIED lift_leg TRAINING")
-    print("=" * 60)
-    print("Objetivo específico:")
-    print("  ✅ Mantener equilibrio de pie estático")
-    print("  ✅ Realizar sentadillas controladas")
-    print("  ✅ Usar 6 músculos PAM antagónicos eficientemente")
-    print("=" * 60)
-    
-    trainer = create_balance_leg_trainer(
-        total_timesteps=total_timesteps,
-        n_envs=n_envs
-    )
-    
-    model = trainer.train(resume=resume)
-    
-    if model:
-        print("\n🎉 ¡Entrenamiento completado exitosamente!")
-        print(f"📁 Modelo guardado en: {trainer.model_dir}")
-        print(f"📊 Logs disponibles en: {trainer.logs_dir}")
-    
-    return trainer, model

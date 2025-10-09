@@ -31,7 +31,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             - right ankle joint: 7
     """
     
-    def __init__(self, logger=None, render_mode='human',enable_curriculum=False, 
+    def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None):
         
         """
@@ -142,7 +142,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
 
-        self.enable_curriculum = enable_curriculum # Por si las moscas
         self.simple_reward_system = None
         self.print_env = print_env
         self.reawrd_step={}
@@ -151,7 +150,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.logger.log("main",f"🤖 Simplified Lift legs Environment initialized")
             self.logger.log("main",f"🤖 Environment initialized - Systems initiate in reset")
             self.logger.log("main",f"🤖 Using {self.num_active_pams=:} "
-                  f"{enable_curriculum=:} [{self.print_env=:}]")
+                  f"[{self.print_env=:}]")
     
 # ========================================================================================================================================================================= #
 # ===================================================== Métodos de paso y control del entorno Enhanced_PAMIKBipedEnv ====================================================== #
