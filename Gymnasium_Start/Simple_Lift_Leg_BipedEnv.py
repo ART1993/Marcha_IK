@@ -9,7 +9,7 @@ import numpy as np
 import math
 from collections import deque
 
-from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben, \
+from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben,Rutas_Archivos, \
                                                     calculate_robot_specific_joint_torques_16_pam
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
@@ -32,7 +32,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
     
     def __init__(self, logger=None, render_mode='human', 
-                 print_env="ENV", fixed_target_leg="left",csvlog=None):
+                 print_env="ENV", fixed_target_leg="left",csvlog=None,
+                 simple_reward_mode="progressive",allow_hops:bool=False,
+                 vx_target: float = 0.6):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -40,12 +42,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Llamar al constructor padre pero sobrescribir configuración PAM
         super(Simple_Lift_Leg_BipedEnv, self).__init__()
-
+        self.robots_existentes=Rutas_Archivos.rutas_robots.value
         # ===== CONFIGURACIÓN BÁSICA =====
         self.pam_muscles = PAM_McKibben()
         self.render_mode = render_mode
         self.logger=logger
         self.csvlog = csvlog
+        # === Opciones de recompensa (leídas por RewardSystemSimple) ===
+        self.simple_reward_mode = simple_reward_mode    # "progressive" | "walk3d" | "lift_leg" | "march_in_place"
+        self.allow_hops = bool(allow_hops)              # permitir ambos pies en el aire (no-support permitido)
+        self.vx_target = float(vx_target)               # objetivo de velocidad para walk3d
+
         
         self.muscle_names = list(self.pam_muscles.keys())
         
@@ -751,15 +758,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
             # Pierna izquierda
-            self.joint_indices[0]: +0.00,   #   self.joint_indices[0] 'left_hip_roll_joint'
-            self.joint_indices[1]: 0.05,   # left_hip_pitch_joint
+            self.joint_indices[0]: 0.0,   #   self.joint_indices[0] 'left_hip_roll_joint'
+            self.joint_indices[1]: 0.0,   # left_hip_pitch_joint
             self.joint_indices[2]: 0.0,     # left_knee_joint
             self.joint_indices[3]: 0.0,     # left_ankle_joint
             # pierna derecha
-            self.joint_indices[4]: -0.0,   # right_hip_roll_joint
-            self.joint_indices[5]: -0.05,   # right_hip_pitch_joint
+            self.joint_indices[4]: 0.0,   # right_hip_roll_joint
+            self.joint_indices[5]: 0.0,   # right_hip_pitch_joint
             self.joint_indices[6]: 0.0,     # right_knee_joint
-            self.joint_indices[7]: -0.0     # right_ankle_joint
+            self.joint_indices[7]: 0.0     # right_ankle_joint
         }
         #if self.fixed_target_leg == 'left':
             #initial_positions[self.joint_indices[4]] += +0.03  # right_hip_roll_joint: inclina pelvis hacia la derecha

@@ -131,7 +131,10 @@ class Simplified_Lift_Leg_Trainer:
                  learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
                  logger=None,
-                 csvlog=None
+                 csvlog=None,
+                 _simple_reward_mode="progressive",  # Modo de recompensa por defecto
+                 _allow_hops=False,
+                 _vx_target=0.6
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -143,6 +146,9 @@ class Simplified_Lift_Leg_Trainer:
         self.learning_rate = learning_rate
         self.resume_from = resume_from
         self.csvlog=csvlog
+        self._simple_reward_mode = _simple_reward_mode
+        self.allow_hops = _allow_hops
+        self._vx_target=_vx_target
 
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
@@ -152,6 +158,9 @@ class Simplified_Lift_Leg_Trainer:
             self.logger.log("main",f"   Timesteps: {self.total_timesteps:,}")
             self.logger.log("main",f"   Parallel envs: {self.n_envs}")
             self.logger.log("main",f"   Learning rate: {self.learning_rate}")
+            self.logger.log("main",f"   Metodo de recompensa: {self._simple_reward_mode}")
+            self.logger.log("main",f"   Permite saltos: {self._simple_reward_mode}")
+            self.logger.log("main",f"   Velocidad en caso de marcha: {self._vx_target}")
 
         # MANTENER EN CONSOLA SOLO CONFIRMACIÓN
         print(f"🤖 Trainer ready")
@@ -222,14 +231,18 @@ class Simplified_Lift_Leg_Trainer:
         if logger_local and n_envs_local==1:
             self.logger.log("main",f"🏗️ Creating training environment: {config['description']}")
         def make_env(logger=logger_local, csvlog=csvlog_local,
-                     n_envs=n_envs_local):
+                     n_envs=n_envs_local,_simple_reward_mode="progressive",
+                     _allow_hops=False, _vx_target=0.6):
             def _init():
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
                     logger=logger,
                     csvlog=csvlog,
                     render_mode='human' if n_envs == 1 else 'direct', 
-                    print_env="TRAIN"  # Para diferenciar en logs
+                    print_env="TRAIN",  # Para diferenciar en logs
+                    simple_reward_mode=_simple_reward_mode,
+                    allow_hops=_allow_hops,
+                    vx_target=_vx_target
                     
                 )
                 #Eliminado escribir , os.path.join(self.logs_dir, f"train_worker_{rank}" acelero entrenamiento
@@ -594,4 +607,40 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
     print(f"   Expert help: 0% (assist=0 siempre)")
     print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
     
+    return trainer
+
+# ===== Helpers para lanzar entrenos por modo =====
+#Ejemplos de uso, (No parece buena idea usarlos así, mejor creo versiones mias
+def create_march_in_place_trainer(total_timesteps=1_500_000, n_envs=4, learning_rate=3e-4, logger=None, csvlog=None):
+    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, learning_rate=learning_rate, logger=logger, csvlog=csvlog)
+    original = trainer.create_training_env
+    def patched():
+        cfg = trainer.env_configs
+        def make_env(logger=None, csvlog=None, n_envs=n_envs):
+            return (lambda: Simple_Lift_Leg_BipedEnv(logger=logger, csvlog=csvlog,
+                                                     render_mode='human' if n_envs==1 else 'direct',
+                                                     print_env='TRAIN',
+                                                     simple_reward_mode='march_in_place',
+                                                     allow_hops=True,
+                                                     vx_target=0.0))
+        # adaptamos a la firma interna del trainer (_create_parallel_env espera make_env(rank)=>callable)
+        return trainer._create_parallel_env(make_env=lambda rank=0: make_env(logger, csvlog), config=cfg)
+    trainer.create_training_env = patched
+    return trainer
+
+
+def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-4, vx_target=0.6, logger=None, csvlog=None):
+    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, learning_rate=learning_rate, logger=logger, csvlog=csvlog)
+    original = trainer.create_training_env
+    def patched():
+        cfg = trainer.env_configs
+        def make_env(logger=None, csvlog=None, n_envs=n_envs, vx=vx_target):
+            return (lambda: Simple_Lift_Leg_BipedEnv(logger=logger, csvlog=csvlog,
+                                                     render_mode='human' if n_envs==1 else 'direct',
+                                                     print_env='TRAIN',
+                                                     simple_reward_mode='walk3d',
+                                                     allow_hops=False,
+                                                     vx_target=vx))
+        return trainer._create_parallel_env(make_env=lambda rank=0: make_env(logger, csvlog), config=cfg)
+    trainer.create_training_env = patched
     return trainer

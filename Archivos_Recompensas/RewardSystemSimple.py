@@ -591,14 +591,14 @@ class SimpleProgressiveReward:
             self._no_contact_steps += 1
         else:
             self._no_contact_steps = 0
-        if self._no_contact_steps >= int(0.50 * self.frequency_simulation):  # 0.2 s
+        if self._no_contact_steps >= int(0.50 * self.frequency_simulation):  # 0.5 s
             self.last_done_reason = "no_support"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: No foot support for too long")
             return True
         if (pie_izquierdo_contacto and pie_derecho_contacto):
             self.contact_both += 1
-            if self.contact_both >int(0.80 * self.frequency_simulation):
+            if self.contact_both >int(0.80 * self.frequency_simulation):# 0.8 s
                 self.last_done_reason = "excessive support"
                 if self.env.logger:
                     self.env.logger.log("main","❌ Episode done: excessive support")
@@ -606,7 +606,7 @@ class SimpleProgressiveReward:
         else:
             self.contact_both=0
         # Tiempo máximo (crece con nivel)
-        max_steps =  6000 # 2000, 4000, 6000 steps
+        max_steps =  6000 # 6000 steps
         if step_count >= max_steps:
             self.last_done_reason = "time"
             if self.env.logger:
