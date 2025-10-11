@@ -132,6 +132,7 @@ class Simplified_Lift_Leg_Trainer:
                  resume_from=None,
                  logger=None,
                  csvlog=None,
+                 robot_name="2_legged_human_like_robot16DOF",
                  _simple_reward_mode="progressive",  # Modo de recompensa por defecto
                  _allow_hops=False,
                  _vx_target=0.6
@@ -149,6 +150,7 @@ class Simplified_Lift_Leg_Trainer:
         self.simple_reward_mode = _simple_reward_mode
         self.allow_hops = _allow_hops
         self.vx_target=_vx_target
+        self.robot_name = robot_name
 
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
@@ -231,11 +233,13 @@ class Simplified_Lift_Leg_Trainer:
         _simple_reward_mode_local=self.simple_reward_mode
         _allow_hops_local=self.allow_hops
         _vx_target_local=self.vx_target
+        robot_name_local=self.robot_name
         if logger_local and n_envs_local==1:
             self.logger.log("main",f"🏗️ Creating training environment: {config['description']}")
         def make_env(logger=logger_local, csvlog=csvlog_local,
                      n_envs=n_envs_local,_simple_reward_mode=_simple_reward_mode_local,
-                     _allow_hops=_allow_hops_local, _vx_target=_vx_target_local):
+                     _allow_hops=_allow_hops_local, _vx_target=_vx_target_local,
+                     robot_name=robot_name_local):
             def _init():
                 # Crear el entorno con la configuración apropiada
                 env = Simple_Lift_Leg_BipedEnv(
@@ -245,7 +249,8 @@ class Simplified_Lift_Leg_Trainer:
                     print_env="TRAIN",  # Para diferenciar en logs
                     simple_reward_mode=_simple_reward_mode,
                     allow_hops=_allow_hops,
-                    vx_target=_vx_target
+                    vx_target=_vx_target,
+                    robot_name=robot_name
                     
                 )
                 #Eliminado escribir , os.path.join(self.logs_dir, f"train_worker_{rank}" acelero entrenamiento
@@ -276,7 +281,8 @@ class Simplified_Lift_Leg_Trainer:
                                             csvlog=eval_csvlog,
                                             simple_reward_mode=self.simple_reward_mode,
                                             allow_hops=self.allow_hops,
-                                            vx_target=self.vx_target
+                                            vx_target=self.vx_target,
+                                            robot_name=self.robot_name
 
                                             )  # Fase de evaluación es balance
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
@@ -357,7 +363,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== CHECKPOINT CALLBACK =====
         
         # Sistemas antagónicos se benefician de checkpoints más frecuentes
-        checkpoint_freq = 90000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
+        checkpoint_freq = 100000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
         
         checkpoint_callback = CheckpointCallback(
             save_freq=checkpoint_freq,
@@ -369,7 +375,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 30000 //self.n_envs
+        eval_freq = 25000 //self.n_envs
         
         eval_callback = EvalCallback(
             eval_env,

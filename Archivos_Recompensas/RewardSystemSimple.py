@@ -35,7 +35,6 @@ class SimpleProgressiveReward:
     def __init__(self, env):
         self.env=env
         self.frequency_simulation = env.frequency_simulation
-        self.switch_interval = env.switch_interval
         self.robot_id = env.robot_id
         self.single_support_ticks = 0
         # === Modo de recompensa seleccionable desde el env (si no existe, progressive) ===
@@ -131,12 +130,10 @@ class SimpleProgressiveReward:
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
         self.bad_ending=("fall", "tilt", "drift", "no_support", "excessive support")
         # Debug para confirmar configuración
-        switch_time_seconds = self.switch_interval / self.frequency_simulation
         self.min_F=20
         self.reawrd_step=self.env.reawrd_step
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
-            self.env.logger.log("main",f"   Switch interval: {self.switch_interval} steps ({switch_time_seconds:.1f}s)")
             self.env.logger.log("main",f"   Frequency: {self.frequency_simulation} Hz")
             self.env.logger.log("main",f"🎯 Simple Progressive System: Starting at Level {self.level}")
     

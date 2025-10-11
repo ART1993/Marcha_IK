@@ -88,7 +88,7 @@
     },
     "3": {
         "index": 3,
-        "name": "left_ankle_joint",
+        "name": "left_ankle_roll_joint",
         "type": 0,
         "damping": 0.0,
         "friction": 0.0,
@@ -204,7 +204,7 @@
     },
     "7": {
         "index": 7,
-        "name": "right_ankle_joint",
+        "name": "right_ankle_roll_joint",
         "type": 0,
         "damping": 0.0,
         "friction": 0.0,

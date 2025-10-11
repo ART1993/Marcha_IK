@@ -7,7 +7,9 @@ from pathlib import Path
 from enum import Enum
 from os import listdir
 
-from Archivos_Apoyo.dinamica_pam import PAMMcKibben
+from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20
+
+
 
 
 def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
@@ -70,32 +72,14 @@ class Rutas_Archivos(Enum):
 # ===================================================================================================================================================================================================== #
 
 
-def PAM_McKibben():
-
-    return {
-        # Caderas roll - Control antagónico completo
-        'left_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4), # probar con 0.035
-        'left_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.032, alpha0=np.pi/4),# de 0.035 a 0.032
-        'right_hip_roll_flexor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4), # de 0.03 a 0.04
-        'right_hip_roll_extensor': PAMMcKibben(L0=0.6, r0=0.032, alpha0=np.pi/4),
-        # caderas pitch
-        'left_hip_pitch_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'left_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4),
-        'right_hip_pitch_flexor': PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4),
-        'right_hip_pitch_extensor': PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4),
-        
-        # Rodillas - Control antagónico completo
-        'left_knee_flexor': PAMMcKibben(L0=0.5, r0=0.03, alpha0=np.pi/4),
-        'left_knee_extensor': PAMMcKibben(L0=0.5, r0=0.036, alpha0=np.pi/4),# de 0.04 a 0.036
-        'right_knee_flexor': PAMMcKibben(L0=0.5, r0=0.03, alpha0=np.pi/4),
-        'right_knee_extensor': PAMMcKibben(L0=0.5, r0=0.036, alpha0=np.pi/4),
-
-        # Tobillos - Control antagónico completo
-        'left_ankle_flexor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
-        'left_ankle_extensor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
-        'right_ankle_flexor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
-        'right_ankle_extensor': PAMMcKibben(L0=0.3, r0=0.035, alpha0=np.pi/4),
-    }
+def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_names=None):
+    if "2_legged_human_like_robot16DOF" in robot_name:
+        return Sistema_Musculos_PAM_16(control_joint_names)
+    elif "2_legged_human_like_robot20DOF" in robot_name:
+        return Sistema_Musculos_PAM_20(control_joint_names)
+    else:
+        raise ValueError(f"Robot '{robot_name}' no soportado para sistema PAM.")
+    
     
         # ---------- helper: co-contracción torque-neutral para cadera ----------
 def split_cocontraction_torque_neutral(Fco: float, Rf: float, Re: float, R_min: float = 1e-3):
