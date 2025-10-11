@@ -3,13 +3,13 @@
   <!-- Link: Base (Wider Waist) -->
   <link name="base_link">
     <inertial>
-      <mass value="6.0"/>
+      <mass value="5.0"/>
       <inertia ixx="0.325" ixy="0" ixz="0" iyy="0.050" iyz="0" izz="0.365"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Increased width (0.6 along X-axis) -->
+        <box size="0.3 0.6 0.1"/>  <!-- Increased width (0.6 along X-axis) -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.3 0.6 0.1"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
@@ -122,7 +122,7 @@
     <child link="left_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <limit lower="0" upper="1.571" effort="120" velocity="6.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
@@ -159,7 +159,7 @@
     <child  link="left_ankle_pitch_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-0.5" upper="0.5" effort="35" velocity="6.0"/>
+    <limit lower="-0.5" upper="0.5" effort="60" velocity="6.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
   <link name="left_ankle_pitch_link">
@@ -332,7 +332,7 @@
     <child  link="right_ankle_pitch_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-0.5" upper="0.5" effort="35" velocity="6.0"/>
+    <limit lower="-0.5" upper="0.5" effort="60" velocity="6.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
   <link name="right_ankle_pitch_link">

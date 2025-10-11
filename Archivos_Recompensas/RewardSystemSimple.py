@@ -6,7 +6,10 @@ from enum import Enum
 
 from collections import deque
 
-from Archivos_Recompensas.MetodosRecompensas import height_reward_method, contacto_pies_reward, knee_reward_method
+from Archivos_Recompensas.MetodosRecompensas import height_reward_method, contacto_pies_reward,\
+                                    knee_reward_method, hip_roll_align_reward, pitch_stability_rewards,\
+                                    com_zmp_stability_reward, com_projection_reward, seleccion_fuerzas, \
+                                    proximity_legs_penalization, soft_center_bonus, soft_range_bonus
 
 class RewardMode(Enum):
     PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
@@ -176,8 +179,9 @@ class SimpleProgressiveReward:
 
         height_reward= height_reward_method(pos[2])
 
-        pitch = euler[1]
-        back_pitch_pen = - np.clip(pitch - 0.05, 0.0, 0.30) * 6.0
+        torso_pitch = euler[1]
+        torso_roll = euler[0]
+        back_pitch_pen = - np.clip(torso_pitch - 0.05, 0.0, 0.30) * 6.0
 
         pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies
         #contacto_reward= contacto_pies_reward(pie_izquierdo_contacto, pie_derecho_contacto)
@@ -186,11 +190,7 @@ class SimpleProgressiveReward:
 
         # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
         # Afecta al roll de align bonus
-        support_sign = -1.0 if (pie_izquierdo_contacto and not pie_derecho_contacto) else (-1.0 if (pie_derecho_contacto and not pie_izquierdo_contacto) else 0.0)
-        torso_roll = p.getEulerFromQuaternion(p.getBasePositionAndOrientation(self.robot_id)[1])[0]
-        hiproll_align_bonus = 0.0
-        if support_sign != 0.0:
-            hiproll_align_bonus = np.clip(support_sign * torso_roll / np.deg2rad(10), -1.0, 1.0) * (0.2 / self.frequency_simulation)
+        hiproll_align_bonus = hip_roll_align_reward(pie_izquierdo_contacto, pie_derecho_contacto, torso_roll, self.frequency_simulation)
 
         self.reawrd_step['height_reward'] = height_reward
         self.reawrd_step['drift_pen'] = drift_pen
@@ -198,7 +198,6 @@ class SimpleProgressiveReward:
         self.reawrd_step['back_pitch_pen'] = back_pitch_pen
         self.reawrd_step['hiproll_align_bonus'] = hiproll_align_bonus
         #self.reawrd_step['contact_reward']=contacto_reward
-        self.reawrd_step['knee_reward']=knee_reward
         self.reawrd_step['lateral_pen']=lateral_pen
 
         return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + lateral_pen + knee_reward
@@ -210,14 +209,7 @@ class SimpleProgressiveReward:
         
 
         roll,pitch = euler[0] , abs(euler[1])  # roll + pitch
-        if pitch < 0.2:
-            stability_reward = 2.5  # Muy estable
-        elif pitch < 0.4:
-            stability_reward = 0.5  # Moderadamente estable
-        elif pitch < self.max_tilt_by_level[self.level]:
-            stability_reward = -2.0  # Inestable
-        elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
-            stability_reward = -2.5  # Inestable
+        stability_reward = pitch_stability_rewards(self, pitch)
     
     # Guardarraíl adicional de roll (torso) para evitar extremos
         guard_pen = self._roll_guardrail_pen(
@@ -226,8 +218,8 @@ class SimpleProgressiveReward:
             level_hard=self.max_tilt_by_level[self.level]
         )
         # Activar términos que ya tenías calculados
-        comz     = self._com_zmp_stability_reward()   # estabilidad COM/ZMP
-        comproj  = self._com_projection_reward()      # proyección COM dentro del soporte
+        comz     = com_zmp_stability_reward(self)   # estabilidad COM/ZMP
+        comproj  = com_projection_reward(self)      # proyección COM dentro del soporte
 
         # Log por-step (si lo consumes en CSV)
         self.reawrd_step["guard_pen"]      = guard_pen
@@ -273,39 +265,16 @@ class SimpleProgressiveReward:
     
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
-
-        
         left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_ankle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_ankle_id = self.env.joint_indices
         
         n_l,F_L = self.env.contact_normal_force(left_ankle_id)
         n_r,F_R = self.env.contact_normal_force(right_ankle_id)
         F_sum = max(F_L + F_R, 1e-6)
         
-        # NUEVO: si estamos en left-only, el soporte debe ser el pie derecho
-        if self.fixed_target_leg == 'left':
-            # fuerza la semántica: soporte=right, objetivo=left
-            target_is_right = False
-            target_is_left = not target_is_right
-            support_foot_down = self.env.contact_with_force(right_ankle_id, stable_foot=(not target_is_right), min_F=self.min_F)
-            target_foot_down  = self.env.contact_with_force(left_ankle_id, stable_foot= (not target_is_left), min_F=self.min_F)
-            F_sup = F_R      # soporte = pie derecho
-            F_tar = F_L      # objetivo = pie izquierdo
-        else:
-            target_is_right = True
-            target_is_left = not target_is_right
-            support_foot_down = self.env.contact_with_force(left_ankle_id, stable_foot= (not target_is_left), min_F=self.min_F)
-            target_foot_down  = self.env.contact_with_force(right_ankle_id, stable_foot=(not target_is_right), min_F=self.min_F)
-            F_sup = F_L      # soporte = pie derecho
-            F_tar = F_R      # objetivo = pie izquierdo
-    
-        if self.fixed_target_leg == 'left':
-            
-            # Carga mínima en soporte (80%) y toe-touch estricto del objetivo
-            support_load_reward = np.clip((F_sup / F_sum - 0.80) / 0.20, 0.0, 1.0) * 1.2
-            toe_touch_pen = -0.8 if (0.0 < F_tar < self.min_F) else 0.0
+        F_sup, F_tar, support_foot_down, target_foot_down, target_is_right = seleccion_fuerzas(self, F_L, F_R, left_ankle_id, right_ankle_id)
 
         # (1) Penaliza doble apoyo fuerte
-        both_down_pen = -1.0 if (F_L >= self.min_F and F_R >= self.min_F) else 0.0
+        both_down_pen = -1.0 if (F_sup >= self.min_F and F_tar >= self.min_F) else 0.0
 
         # (2) Penaliza toe-touch (1–30 N) del pie objetivo
         toe_touch_pen = -0.6 if (0.0 < F_tar < self.min_F) else 0.0
@@ -315,42 +284,18 @@ class SimpleProgressiveReward:
         support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
 
         # (2.5) Penalización por casi-cruce entre el pie en swing y el pie de soporte
-        if (F_sup >= self.min_F) and (F_tar < self.min_F):
-            swing_id  = left_ankle_id if (not target_is_right) else right_ankle_id
-            stance_id = right_ankle_id if (not target_is_right) else left_ankle_id
-            dmin = 0.04  # 4 cm
-            close_pen = 0.0
-            cps = p.getClosestPoints(self.env.robot_id, self.env.robot_id, dmin, swing_id, stance_id)
-            if cps:  # hay algún punto más cerca que dmin
-                worst = min(cp[8] for cp in cps)  # cp[8] = distance
-                close_pen += -1.0 * max(0.0, (dmin - worst) / dmin)
-        else:
-            close_pen = 0.0
+        close_pen = proximity_legs_penalization(self, F_sup, F_tar, left_ankle_id, right_ankle_id, target_is_right)
 
         # (4) BONUS por tiempo en apoyo simple con saturación (sin toe-touch)
         ss_reward = self._single_support_dwell_reward(F_sup, F_tar, self.frequency_simulation)
 
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
-        # self.fixed_target_leg porque target foot es siempre left
         foot_z = p.getLinkState(self.robot_id, left_ankle_id)[0][2]
         clearance_target = 0.09  # 9 cm
-        clearance_bonus = 0.0 if target_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
+        clearance_bonus = 0.0 if not support_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
 
-        # === Helpers de rango suave ===
-        def soft_range_bonus(x, lo, hi, slope=0.15):
-            """
-            Devuelve 1.0 dentro de [lo,hi]. Fuera, cae linealmente con pendiente 'slope' (rad^-1), acotado a [0,1].
-            """
-            if x < lo:
-                return max(0.0, 1.0 - (lo - x)/slope)
-            if x > hi:
-                return max(0.0, 1.0 - (x - hi)/slope)
-            return 1.0
-
-        def soft_center_bonus(x, center, tol, slope=0.15):
-            """Meseta alrededor de 'center' ± tol. Cae fuera con pendiente 'slope' (rad^-1)."""
-            return soft_range_bonus(x, center - tol, center + tol, slope=slope)
+        
         # Rodilla (rango recomendado 0.45–0.75 rad)
         knee_id  = right_knee_id if target_is_right else left_knee_id
         knee_ang = p.getJointState(self.robot_id, knee_id)[0]
@@ -445,101 +390,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['zmp_term'] =  zmp_term
         self.reawrd_step['smooth_pen'] = smooth_pen
         return zmp_term + smooth_pen
-    
-    def hip_reward(self,left_hip_roll,left_hip_pitch, right_hip_roll, right_hip_pitch):
-        
-        if -0.5<left_hip_pitch<-0.2:
-            reward_hip_left=2
-            is_ok=True
-        elif -0.2 < left_hip_pitch < 0.2:
-            reward_hip_left=0
-            is_ok=True
-        else:
-            is_ok=False
-            reward_hip_left=-2
 
-        if 0.2<abs(right_hip_pitch) and is_ok:
-            reward_hip_right=2
-        else:
-            reward_hip_right=-2
-
-        if left_hip_roll<-0.2:
-            reward_roll=-5
-        else:
-            reward_roll=0
-        
-        return reward_hip_left+ reward_hip_right +reward_roll
-    
-    def knee_reward_method(self, left_knee, right_knee):
-        
-        if 0.1<left_knee<0.2:
-            reward_knee_left=1
-        elif 0.2<= left_knee < 0.4:
-            reward_knee_left=2
-        else:
-            reward_knee_left=-2
-
-        if 0.1<right_knee<0.2:
-            reward_knee_right=1
-        elif 0<=right_knee<=0.1:
-            reward_knee_right=0.5
-        else:
-            reward_knee_right=-2
-
-        self.reawrd_step['reward_knee_right'] =  reward_knee_right
-        self.reawrd_step['reward_knee_left'] =  reward_knee_left
-        
-        return reward_knee_right+ reward_knee_left
-    
-    def update_after_episode(self, episode_reward, success=None):
-        """Actualizar nivel después de cada episodio"""
-        
-        self.episode_count += 1
-        self.recent_episodes.append(episode_reward)
-        has_fallen = (self.last_done_reason in self.bad_ending)
-        
-        # Mantener solo últimos 5 episodios
-        if len(self.recent_episodes) > 5:
-            self.recent_episodes.pop(0)
-
-        # Determinar éxito si no te lo pasan explícitamente
-        cfg = self.level_config[self.level]
-
-        if success is None:
-            # Éxito si supera umbral y no hubo caída
-            success = (episode_reward >= cfg['success_threshold']) and (not has_fallen)
-        if self.env.logger:
-            self.env.logger.log("main",f"{self.level_progression_disabled=:}")
-        # Verificar si subir de nivel
-        if self.level_progression_disabled is False:  # Necesitamos al menos 5 episodios
-            #avg_reward = sum(self.recent_episodes) / len(self.recent_episodes)
-            #config = self.level_config[self.level]
-            # Actualizar racha
-            if len(self.recent_episodes) >= 5:
-                self.success_streak = self.success_streak + 1 if success else 0
-
-                # (Opcional) logging
-                if self.env.logger:
-                    self.env.logger.log("main",f"🏁 Episode {self.episode_count}: "
-                        f"reward={episode_reward:.1f} | success={success} | "
-                        f"streak={self.success_streak}/{cfg['success_streak_needed']}")
-                
-                # Promoción de nivel si cumple racha y episodios mínimos
-                if (self.success_streak >= cfg['success_streak_needed']
-                    and self.episode_count >= cfg['episodes_needed']
-                    and self.level < 3):
-                    old = self.level
-                    self.level += 1
-                    self.success_streak = 0
-                    if self.env.logger:
-                        self.env.logger.log("main",f"🎉 LEVEL UP! {old} → {self.level}")
-                    self._apply_level_ranges()
-        else:
-            # MODO SIN CURRICULUM: solo logging básico
-            if self.env.logger:
-                self.env.logger.log("main",f"🏁 Episode {self.episode_count}: "
-                    f"reward={episode_reward:.1f} | success={success} | "
-                    f"fixed_level=3")
     
     def is_episode_done(self, step_count):
         """Criterios simples de terminación"""
@@ -571,19 +422,25 @@ class SimpleProgressiveReward:
             return True
         
         # dentro de is_episode_done(...) tras calcular contactos:
+        if self.mode == RewardMode.MARCH_IN_PLACE.value:
+            fin_simulacion_no_contacto = self.frequency_simulation
+            fin_simulacion_exceso_contacto = self.frequency_simulation//2  
+        else:
+            fin_simulacion_no_contacto = 0.5 * self.frequency_simulation  # 3 segundos de gracia
+            fin_simulacion_exceso_contacto = 0.8 * self.frequency_simulation
         pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
         if not (pie_izquierdo_contacto or pie_derecho_contacto):
             self._no_contact_steps += 1
         else:
             self._no_contact_steps = 0
-        if self._no_contact_steps >= int(0.50 * self.frequency_simulation):  # 0.5 s
+        if self._no_contact_steps >= fin_simulacion_no_contacto:  # 0.5 s
             self.last_done_reason = "no_support"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: No foot support for too long")
             return True
         if (pie_izquierdo_contacto and pie_derecho_contacto):
             self.contact_both += 1
-            if self.contact_both >int(0.80 * self.frequency_simulation):# 0.8 s
+            if self.contact_both >fin_simulacion_exceso_contacto:# 0.8 s
                 self.last_done_reason = "excessive support"
                 if self.env.logger:
                     self.env.logger.log("main","❌ Episode done: excessive support")
@@ -725,47 +582,6 @@ class SimpleProgressiveReward:
             uf = float(ps.get(flex, 0.0)); ue = float(ps.get(ext, 0.0))
             pen += uf * ue
         return lam * pen
-    
-    def _com_zmp_stability_reward(self):
-        z = getattr(self.env, "zmp_calculator", None)
-        if z:
-            margin = float(z.stability_margin_distance())  # m
-            # +0.7 si margen >= 5 cm; -0.7 si <= -5 cm
-            term = 0.7 * np.clip(margin/0.05, -5.0, 5.0)
-            # Exporta KPI
-            self.env.info["kpi"]["zmp_margin_m"] = margin
-        else:
-            # Fallback: usa COM estático
-            try:
-                com, _ = self.env.robot_data.get_center_of_mass
-                # Simple: dentro de la caja entre pies ± margen
-                term = 0.3 if self.env.zmp_calculator.is_stable(np.array(com[:2])) else -0.3
-            except Exception:
-                term = 0.0
-        return term
-        
-
-    def _com_projection_reward(self):
-        """
-        Empuja la proyección del COM hacia el pie de soporte.
-        """
-        try:
-            env = self.env
-            kpi = env.info.get("kpi", {})
-            # fuerzas en pies para decidir soporte
-            F_L = float(kpi.get("F_L", 0.0)); F_R = float(kpi.get("F_R", 0.0))
-            left_id, right_id = env.left_foot_link_id, env.right_foot_link_id
-            support_id = left_id if (F_L >= F_R) else right_id
-            foot_xy = p.getLinkState(env.robot_id, support_id)[0][:2]
-            com_xy  = (float(kpi.get("com_x", 0.0)), float(kpi.get("com_y", 0.0)))
-            dx = float(com_xy[0] - foot_xy[0]); dy = float(com_xy[1] - foot_xy[1])
-            r = np.hypot(dx, dy)
-            r0 = 0.08  # 8 cm
-            self.env.info["kpi"]["com_dist_to_support"] = float(r)      # distancia XY del COM al pie soporte (m)
-            self.env.info["kpi"]["com_stable_flag"]     = int(r < r0) # “cerca” si < 8 cm
-            return 0.5 * np.exp(- (r / r0)**2 )
-        except Exception:
-            return 0.0
         
     # ============================================================================================================================================= #
     # ================================================= Nuevos metodos de recompensa para nuevas acciones ========================================= #
@@ -793,7 +609,7 @@ class SimpleProgressiveReward:
         r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
 
         # 3) Estabilidad (ZMP + suavidad interna ya implementada)
-        r_stab = self.zmp_and_smooth_reward(pos, euler, step_count)
+        r_stab = self.zmp_and_smooth_reward()
 
         # 4) Patrón de paso ligero: pie soporte claro + alternancia
         support_now = 'L' if Ftot_L > Ftot_R else 'R'
@@ -853,7 +669,7 @@ class SimpleProgressiveReward:
         Fmin = 45.0
 
         # 1) Estabilidad + soporte claro (una pierna)
-        r_stab = self.zmp_and_smooth_reward(pos, euler, step_count)
+        r_stab = self.zmp_and_smooth_reward()
         if support_desired == 'L':
             r_support = 1.0 if (Ftot_L > Fmin and Ftot_R < 0.4*Fmin) else 0.0
             swing_foot_id = env.right_foot_link_id
@@ -926,7 +742,7 @@ class SimpleProgressiveReward:
         r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
         r_stab = 0.0
         if (Ftot_L > 10.0 or Ftot_R > 10.0):
-            r_stab = self.zmp_and_smooth_reward(pos, euler, step_count)
+            r_stab = self.zmp_and_smooth_reward() #porque se puso pos, euler, step_count
 
         # 5) Suavidad/energía
         u = np.clip(action, 0.0, 1.0)

@@ -611,43 +611,34 @@ def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, 
     
     print(f"✅ Trainer created (NO CURRICULUM)")
     print(f"   Focus: Balance básico con RL puro")
-    print(f"   Expert help: 0% (assist=0 siempre)")
+    print(f"   Accion personalizada (estirar hacia los lados)")
     print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
     
     return trainer
 
 # ===== Helpers para lanzar entrenos por modo =====
 #Ejemplos de uso, (No parece buena idea usarlos así, mejor creo versiones mias
-def create_march_in_place_trainer(total_timesteps=1_500_000, n_envs=4, learning_rate=3e-4, logger=None, csvlog=None):
-    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, learning_rate=learning_rate, logger=logger, csvlog=csvlog)
-    original = trainer.create_training_env
-    def patched():
-        cfg = trainer.env_configs
-        def make_env(logger=None, csvlog=None, n_envs=n_envs):
-            return (lambda: Simple_Lift_Leg_BipedEnv(logger=logger, csvlog=csvlog,
-                                                     render_mode='human' if n_envs==1 else 'direct',
-                                                     print_env='TRAIN',
-                                                     simple_reward_mode='march_in_place',
-                                                     allow_hops=True,
-                                                     vx_target=0.0))
-        # adaptamos a la firma interna del trainer (_create_parallel_env espera make_env(rank)=>callable)
-        return trainer._create_parallel_env(make_env=lambda rank=0: make_env(logger, csvlog), config=cfg)
-    trainer.create_training_env = patched
+def create_march_in_place_trainer(total_timesteps=1_500_000, n_envs=4, learning_rate=3e-4, 
+                                  logger=None, csvlog=None, robot_name="biped"):
+    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, 
+                                          learning_rate=learning_rate, logger=logger, 
+                                          csvlog=csvlog, robot_name=robot_name,_simple_reward_mode='march_in_place',
+                                          _allow_hops=True, _vx_target=0.0)
+    print(f"✅ Trainer created (NO CURRICULUM)")
+    print(f"   Focus: Balance básico con RL puro")
+    print(f"   Expert help: 0% (assist=0 siempre)")
+    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
+    
     return trainer
 
 
 def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-4, vx_target=0.6, logger=None, csvlog=None):
-    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, learning_rate=learning_rate, logger=logger, csvlog=csvlog)
-    original = trainer.create_training_env
-    def patched():
-        cfg = trainer.env_configs
-        def make_env(logger=None, csvlog=None, n_envs=n_envs, vx=vx_target):
-            return (lambda: Simple_Lift_Leg_BipedEnv(logger=logger, csvlog=csvlog,
-                                                     render_mode='human' if n_envs==1 else 'direct',
-                                                     print_env='TRAIN',
-                                                     simple_reward_mode='walk3d',
-                                                     allow_hops=False,
-                                                     vx_target=vx))
-        return trainer._create_parallel_env(make_env=lambda rank=0: make_env(logger, csvlog), config=cfg)
-    trainer.create_training_env = patched
+    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, 
+                                          learning_rate=learning_rate, logger=logger, 
+                                          csvlog=csvlog, _simple_reward_mode='walk3d',
+                                          allow_hops=False, _vx_target=vx_target)
+    print(f"✅ Trainer created (NO CURRICULUM)")
+    print(f"   Focus: Balance básico con RL puro")
+    print(f"   Expert help: 0% (assist=0 siempre)")
+    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
     return trainer

@@ -369,7 +369,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.n_episodes+=1
                 
-                #self.simple_reward_system.update_after_episode(episode_total)
                 if self.logger:
                     self.logger.log("main",f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
         
