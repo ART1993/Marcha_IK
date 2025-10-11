@@ -3,13 +3,13 @@
   <!-- Link: Base (Wider Waist) -->
   <link name="base_link">
     <inertial>
-      <mass value="6.0"/>
+      <mass value="5.0"/>
       <inertia ixx="0.325" ixy="0" ixz="0" iyy="0.050" iyz="0" izz="0.365"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Increased width (0.8 along X-axis) -->
+        <box size="0.3 0.6 0.1"/>  <!-- Increased width (0.6 along X-axis) -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.8 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.3 0.6 0.1"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
@@ -70,7 +70,7 @@
   <link name="left_hip_roll_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.01"/>
+      <mass value="0.05"/>
       <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
     </inertial>
     <!-- visual/collision opcional (puede ser vacío si no quieres geometría) -->
@@ -189,7 +189,7 @@
   <link name="right_hip_roll_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.01"/>
+      <mass value="0.05"/>
       <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
     </inertial>
     <!-- visual/collision opcional (puede ser vacío si no quieres geometría) -->

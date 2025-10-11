@@ -41,7 +41,6 @@ def quick_test_model(model_path= "./models_lift_leg/best_model.zip", duration=30
     print("🏗️ Creando entorno...")
     env = Simple_Lift_Leg_BipedEnv(
         render_mode='human',
-        enable_curriculum=False
     )
     
     vec_env = DummyVecEnv([lambda: env])

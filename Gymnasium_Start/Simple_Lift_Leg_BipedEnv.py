@@ -1121,7 +1121,7 @@ def configure_robot_specific_pam_system(env:Simple_Lift_Leg_BipedEnv):
     """
     
     # Verificar que las dimensiones coinciden
-    expected_mass = 25.0  # kg
+    expected_mass = 24.1  # kg
     expected_height = 1.20  # m
     if env.logger:
         env.logger.log("main","🤖 Configuring PAM system for your specific robot:")

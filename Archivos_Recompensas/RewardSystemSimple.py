@@ -6,8 +6,7 @@ from enum import Enum
 
 from collections import deque
 
-from Archivos_Apoyo.simple_log_redirect import log_print, both_print
-from Archivos_Apoyo.Configuraciones_adicionales import split_cocontraction_torque_neutral
+from Archivos_Recompensas.MetodosRecompensas import height_reward_method, contacto_pies_reward, knee_reward_method
 
 class RewardMode(Enum):
     PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
@@ -146,11 +145,11 @@ class SimpleProgressiveReward:
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
-        if getattr(self, "mode", RewardMode.PROGRESSIVE) == RewardMode.WALK3D:
+        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
             return self.calculate_reward_walk3d(action, step_count)
-        if getattr(self, "mode", RewardMode.PROGRESSIVE) == RewardMode.LIFT_LEG:
+        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.LIFT_LEG.value:
             return self.calculate_reward_lift_leg(action, step_count)
-        if getattr(self, "mode", RewardMode.PROGRESSIVE) == RewardMode.MARCH_IN_PLACE:
+        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.MARCH_IN_PLACE.value:
             return self.calculate_reward_march_in_place(action, step_count)
         else:
             reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
@@ -175,30 +174,15 @@ class SimpleProgressiveReward:
         # tope aprox -1.6
         back_only_pen = - np.clip(-self.dx - tol, 0.0, 0.20) * 8.0
 
-        height = pos[2]
-        
-        # Recompensa simple por altura
-        if height > 0.8:
-            height_reward= 1.0  # Buena altura
-        elif height > 0.7:
-            height_reward= 0.8  # Altura mínima
-        elif height <= 0.7:
-            height_reward= -1.0  # Caída
-        elif height<= 0.5:       # and self.last_done_reason == self.bad_ending[0]:
-            height_reward= -10
+        height_reward= height_reward_method(pos[2])
 
         pitch = euler[1]
         back_pitch_pen = - np.clip(pitch - 0.05, 0.0, 0.30) * 6.0
 
         pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies
-        if pie_izquierdo_contacto is False and pie_derecho_contacto:
-            contact_reward= 2.0
-        elif pie_izquierdo_contacto and pie_derecho_contacto:
-            contact_reward= 0.1
-        else:
-            contact_reward= -2.0
+        #contacto_reward= contacto_pies_reward(pie_izquierdo_contacto, pie_derecho_contacto)
 
-        knee_reward = self.knee_reward(self.env.left_knee_angle, self.env.right_knee_angle)
+        knee_reward = knee_reward_method(self, self.env.left_knee_angle, self.env.right_knee_angle)
 
         # === Bonus por 'usar' roll para recentrar COM sobre el soporte ===
         # Afecta al roll de align bonus
@@ -213,17 +197,18 @@ class SimpleProgressiveReward:
         self.reawrd_step['back_only_pen'] = back_only_pen
         self.reawrd_step['back_pitch_pen'] = back_pitch_pen
         self.reawrd_step['hiproll_align_bonus'] = hiproll_align_bonus
-        self.reawrd_step['contact_reward']=contact_reward
+        #self.reawrd_step['contact_reward']=contacto_reward
+        self.reawrd_step['knee_reward']=knee_reward
         self.reawrd_step['lateral_pen']=lateral_pen
 
-        return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + contact_reward + lateral_pen
+        return height_reward + drift_pen + back_only_pen +back_pitch_pen  + hiproll_align_bonus + lateral_pen + knee_reward
     
     def _level_2_reward(self,pos,euler):
         """NIVEL 2: Balance estable (recompensas 0-5)"""
         
         height_reward=self._level_1_reward(pos, euler)
         
-        # Versión antigua
+
         roll,pitch = euler[0] , abs(euler[1])  # roll + pitch
         if pitch < 0.2:
             stability_reward = 2.5  # Muy estable
@@ -485,7 +470,7 @@ class SimpleProgressiveReward:
         
         return reward_hip_left+ reward_hip_right +reward_roll
     
-    def knee_reward(self, left_knee, right_knee):
+    def knee_reward_method(self, left_knee, right_knee):
         
         if 0.1<left_knee<0.2:
             reward_knee_left=1
