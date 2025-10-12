@@ -116,9 +116,9 @@ class SimpleProgressiveReward:
 
         # Inclinación crítica - MÁS PERMISIVO según nivel
         self.max_tilt_by_level = {
-            1: 0.8,  # 
-            2: 0.7,  # 
-            3: 0.7   # 
+            1: 1.2,  # 
+            2: 1.1,  # 
+            3: 1.0   # 
         }
         if self.env.logger:
             self.env.logger.log("main",f"   Max tilt: {np.degrees(self.max_tilt_by_level[3]):.1f}° (permisivo)")
@@ -419,31 +419,31 @@ class SimpleProgressiveReward:
             return True
         
         # dentro de is_episode_done(...) tras calcular contactos:
-        if self.mode == RewardMode.MARCH_IN_PLACE.value:
-            fin_simulacion_no_contacto = self.frequency_simulation
-            fin_simulacion_exceso_contacto = self.frequency_simulation//2  
-        else:
-            fin_simulacion_no_contacto = 0.5 * self.frequency_simulation  # 3 segundos de gracia
-            fin_simulacion_exceso_contacto = 0.8 * self.frequency_simulation
-        pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
-        if not (pie_izquierdo_contacto or pie_derecho_contacto):
-            self._no_contact_steps += 1
-        else:
-            self._no_contact_steps = 0
-        if self._no_contact_steps >= fin_simulacion_no_contacto:  # 0.5 s
-            self.last_done_reason = "no_support"
-            if self.env.logger:
-                self.env.logger.log("main","❌ Episode done: No foot support for too long")
-            return True
-        if (pie_izquierdo_contacto and pie_derecho_contacto):
-            self.contact_both += 1
-            if self.contact_both >fin_simulacion_exceso_contacto:# 0.8 s
-                self.last_done_reason = "excessive support"
-                if self.env.logger:
-                    self.env.logger.log("main","❌ Episode done: excessive support")
-                return True
-        else:
-            self.contact_both=0
+        # if self.mode == RewardMode.MARCH_IN_PLACE.value:
+        #     fin_simulacion_no_contacto = self.frequency_simulation
+        #     fin_simulacion_exceso_contacto = self.frequency_simulation//2  
+        # else:
+        #     fin_simulacion_no_contacto = 0.5 * self.frequency_simulation  # 3 segundos de gracia
+        #     fin_simulacion_exceso_contacto = 0.8 * self.frequency_simulation
+        # pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
+        # if not (pie_izquierdo_contacto or pie_derecho_contacto):
+        #     self._no_contact_steps += 1
+        # else:
+        #     self._no_contact_steps = 0
+        # if self._no_contact_steps >= fin_simulacion_no_contacto:  # 0.5 s
+        #     self.last_done_reason = "no_support"
+        #     if self.env.logger:
+        #         self.env.logger.log("main","❌ Episode done: No foot support for too long")
+        #     return True
+        # if (pie_izquierdo_contacto and pie_derecho_contacto):
+        #     self.contact_both += 1
+        #     if self.contact_both >fin_simulacion_exceso_contacto:# 0.8 s
+        #         self.last_done_reason = "excessive support"
+        #         if self.env.logger:
+        #             self.env.logger.log("main","❌ Episode done: excessive support")
+        #         return True
+        # else:
+        #     self.contact_both=0
         # Tiempo máximo (crece con nivel)
         max_steps =  6000 # 6000 steps
         if step_count >= max_steps:
@@ -625,7 +625,7 @@ class SimpleProgressiveReward:
 
         # 6) Guardarraíles
         pen_roll = self._roll_guardrail_pen(roll)
-        pen_ankle = self._ankle_guardrail_pen()
+        pen_ankle = self._ankle_guardrail_pen(left_ankle_id=env.left_foot_link_id, right_ankle_id=env.right_foot_link_id)
 
         # 7) Caída / vuelos (si no se permiten)
         fall = 0.0
