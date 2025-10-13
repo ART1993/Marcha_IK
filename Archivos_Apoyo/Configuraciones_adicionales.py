@@ -106,14 +106,12 @@ def obtener_pam_forces_flexor_extensor(env, angulo_rad_articulacion, P, indice_f
                                        flexor_moment_function, extensor_moment_function):
     nombre_articulacion_flexor, nombre_articulacion_extensor=env.muscle_names[indice_flexor], env.muscle_names[indice_extensor]
     #Momentos de brazos de articulación
-    # R_flexion_articulacion = env.hip_flexor_moment_arm(angulo_rad_articulacion)
-    # R_extension_articulacion  = env.hip_extensor_moment_arm(angulo_rad_articulacion)
     R_flexion_articulacion = flexor_moment_function(angulo_rad_articulacion)
     R_extension_articulacion  = extensor_moment_function(angulo_rad_articulacion)
+    # epsilon
     eps_flex_L = eps_from(env,angulo_rad_articulacion, R_flexion_articulacion,nombre_articulacion_flexor)
     eps_ext_L  = eps_from(env, angulo_rad_articulacion, R_extension_articulacion, nombre_articulacion_extensor)
-    # pam_forces[0] = env.pam_muscles[flexor_cadera_L].force_model_new(P[0], eps_flex_L)  # flexor L
-    # pam_forces[1] = env.pam_muscles[extensor_cadera_L].force_model_new(P[1], eps_ext_L)   # extensor L
+    # pam forces
     pam_forces_flexor=env.pam_muscles[nombre_articulacion_flexor].force_model_new(P[indice_flexor], eps_flex_L)
     pam_forces_extensor =env.pam_muscles[nombre_articulacion_extensor].force_model_new(P[indice_extensor], eps_ext_L)
     return pam_forces_flexor, pam_forces_extensor, R_flexion_articulacion, R_extension_articulacion
@@ -170,13 +168,13 @@ def calculate_robot_specific_joint_torques_16_pam(env, pam_pressures):
     
     # Tobillo izquierdo 
     pam_forces[12], pam_forces[13], R_ankle_flex_L, R_ankle_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[3], P, 12, 13,
-                                                                                                    env.ankle_flexor_moment_arm,
-                                                                                                    env.ankle_extensor_moment_arm)
+                                                                                                    env.ankle_roll_flexor_moment_arm,
+                                                                                                    env.ankle_roll_extensor_moment_arm)
 
     # Tobillo derecho
     pam_forces[14], pam_forces[15], R_ankle_flex_R, R_ankle_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[7], P, 14, 15,
-                                                                                                    env.ankle_flexor_moment_arm,
-                                                                                                    env.ankle_extensor_moment_arm)
+                                                                                                    env.ankle_roll_flexor_moment_arm,
+                                                                                                    env.ankle_roll_extensor_moment_arm)
 
     # Convertir a torques articulares
     joint_torques = np.zeros(len(joint_states))
@@ -248,9 +246,7 @@ def calculate_robot_specific_joint_torques_20_pam(env, pam_pressures):
     
     """
         Calcular torques básicos de articulaciones desde presiones PAM.
-        
-        Este método reemplaza la parte inicial de _apply_pam_forces
-        antes del control automático de rodilla.
+        Se usa para robots de 20 PAMs
     """
     
     # Obtener estados articulares (solo joints activos: caderas y rodillas)
@@ -313,7 +309,10 @@ def calculate_robot_specific_joint_torques_20_pam(env, pam_pressures):
     pam_forces[18], pam_forces[19], R_ankle_roll_flex_R, R_ankle_roll_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[9], P, 18, 19,
                                                                                                     env.ankle_roll_flexor_moment_arm,
                                                                                                     env.ankle_roll_extensor_moment_arm)
-
+    
+    assert env.num_active_pams == env.action_space.shape[0] == 20, \
+    f"{env.num_active_pams=} {env.action_space.shape=}"
+    
     # Convertir a torques articulares
     joint_torques = np.zeros(len(joint_states))
     # TODO Ver que cambios tengo que aplicar para los torques ya queno tiene por que tener mismo torque en x que en y
@@ -353,7 +352,6 @@ def calculate_robot_specific_joint_torques_20_pam(env, pam_pressures):
     joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
-    
     env.pam_states = {
         'pressures': pam_pressures.copy(),
         'forces': np.abs(pam_forces),

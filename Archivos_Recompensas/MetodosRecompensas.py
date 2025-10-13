@@ -1,6 +1,8 @@
 import numpy as np
 import pybullet as p
 
+from dataclasses import dataclass
+
 """
     Aquí se crearán los métodos por los cuales se producen las distintas recompensas en RewardSystemSimple
     El objetivo es que se puedan reutilizar para distintos movimientos y así no tener que reescribir todo el código
@@ -15,9 +17,9 @@ def height_reward_method(height):
         return 1.0  # Buena altura
     elif height > 0.7:
         return 0.8  # Altura mínima
-    elif height <= 0.7:
+    elif height > 0.5:
         return -1.0  # Caída
-    elif height<= 0.5:       # and self.last_done_reason == self.bad_ending[0]:
+    else:       # and self.last_done_reason == self.bad_ending[0]:
         return -10
     
 
@@ -59,16 +61,6 @@ def knee_reward_method(self, target_knee, support_knee):
         self.reawrd_step['reward_knee_left'] =  reward_knee_left
         
         return reward_knee_right+ reward_knee_left
-
-def pitch_stability_rewards(self, pitch):
-    if pitch < 0.2:
-            2.5  # Muy estable
-    elif pitch < 0.4:
-        0.5  # Moderadamente estable
-    elif pitch < self.max_tilt_by_level[self.level]:
-        return -2.0  # Inestable
-    elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
-        return  -25  # Inestable
     
 
 def hip_reward_method(self,left_hip_roll,left_hip_pitch, right_hip_roll, right_hip_pitch):
@@ -129,7 +121,7 @@ def com_zmp_stability_reward(self):
     else:
         # Fallback: usa COM estático
         try:
-            com, _ = self.env.robot_data.get_center_of_mass
+            com, _ = self.env.robot_data.get_center_of_mass()
             # Simple: dentro de la caja entre pies ± margen
             term = 0.3 if self.env.zmp_calculator.is_stable(np.array(com[:2])) else -0.3
         except Exception:
@@ -208,3 +200,79 @@ def soft_range_bonus(x, lo, hi, slope=0.15):
 def soft_center_bonus(x, center, tol, slope=0.15):
     """Meseta alrededor de 'center' ± tol. Cae fuera con pendiente 'slope' (rad^-1)."""
     return soft_range_bonus(x, center - tol, center + tol, slope=slope)
+
+
+# ==== Effort weight adaptation (paper) =======================================
+@dataclass
+class EffortWeightScheduler:
+    q: float = 0.6          # umbral de desempeño (tu r_vel normalizado en [0,1])
+    b: float = 0.95         # suavizado de medias móviles
+    delta_a: float = 1e-3   # tasa de adaptación inicial (Δa)
+    lam: float = 0.5        # decaimiento al entrar por primera vez en zona "buena"
+    a_t: float = 0.0        # peso actual del esfuerzo
+    s_mean: float = 0.0     # media móvil del 'switch' (0..1)
+    r_mean: float = 0.0     # media móvil del retorno de TAREA
+    a_min: float = 0.0
+    a_max: float = 0.4
+
+    def update_after_episode(self, task_return: float) -> float:
+        """
+        Llamar al FINAL de cada episodio con el retorno de TAREA (p.ej., r_vel medio en [0,1]).
+        """
+        # 1) media móvil del retorno de tarea
+        self.r_mean = self.b * self.r_mean + (1.0 - self.b) * float(task_return)
+        # 2) objetivo binario vs umbral
+        s_target = 1.0 if self.r_mean > self.q else 0.0
+        # 3) media móvil del 'switch' de estabilidad
+        self.s_mean = self.b * self.s_mean + (1.0 - self.b) * s_target
+        # 4) actualizar tasa y peso
+        if self.r_mean > self.q and self.s_mean < 0.5:
+            # acabas de entrar en ‘zona buena’: sube con cautela
+            self.delta_a *= self.lam
+        elif self.r_mean > self.q and self.s_mean >= 0.5:
+            # buen desempeño sostenido → subir peso del esfuerzo
+            self.a_t += self.delta_a
+        else:
+            # desempeño por debajo del umbral → bajar peso del esfuerzo
+            self.a_t -= self.delta_a
+        # 5) cotas
+        self.a_t = max(self.a_min, min(self.a_t, self.a_max))
+        return self.a_t
+
+
+def effort_cost_proxy(u_now: np.ndarray,
+                      u_prev: np.ndarray | None = None,
+                      activity_pow: float = 3.0,
+                      w_smooth: float = 0.5,
+                      w_sparse: float = 0.1,
+                      act_threshold: float = 0.15) -> tuple[float, dict]:
+    """
+    Aproxima c_effort del paper con términos:
+      - actividad: mean(|u|^p)   (p~3)
+      - suavidad:  mean((u - u_prev)^2)
+      - esparsidad: mean(1[u>thr])
+    Retorna (coste, breakdown_dict).
+    """
+    u = np.clip(np.asarray(u_now, dtype=float), 0.0, 1.0)
+    activity = float(np.mean(np.power(np.abs(u), activity_pow)))
+    if u_prev is None:
+        smooth = 0.0
+    else:
+        du = np.asarray(u_now, dtype=float) - np.asarray(u_prev, dtype=float)
+        smooth = float(np.mean(du * du))
+    sparse = float(np.mean((u > act_threshold).astype(float)))
+    cost = activity + w_smooth * smooth + w_sparse * sparse
+    return cost, {"activity": activity, "smooth": smooth, "sparse": sparse}
+
+def effort_penalty(u_now, u_prev, a_t, w_smooth=0.04, sparsity_thr=0.15, w_sparse=0.02):
+    """
+    Coste de esfuerzo inspirado en el paper:
+      - Actividad cúbica (aprox energía muscular) escalada por a_t
+      - Suavidad (∆u)^2
+      - Esparsidad (#activaciones > umbral)
+    u_* en [0,1] (acciones PAM normalizadas)
+    """
+    c, dbg = effort_cost_proxy(u_now, u_prev, activity_pow=3.0,
+                               w_smooth=w_smooth, w_sparse=w_sparse,
+                               act_threshold=sparsity_thr)
+    return a_t * c

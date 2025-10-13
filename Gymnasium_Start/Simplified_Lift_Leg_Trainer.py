@@ -643,7 +643,7 @@ def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-
     trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, 
                                           learning_rate=learning_rate, logger=logger, 
                                           csvlog=csvlog, _simple_reward_mode='walk3d',
-                                          _allow_hops=False, _vx_target=vx_target, robot_name=robot_name)
+                                          _allow_hops=True, _vx_target=vx_target, robot_name=robot_name)
     print(f"✅ Trainer created (NO CURRICULUM)")
     print(f"   Focus: Balance básico con RL puro")
     print(f"   Expert help: 0% (assist=0 siempre)")

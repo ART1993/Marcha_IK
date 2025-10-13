@@ -6,10 +6,12 @@ from enum import Enum
 
 from collections import deque
 
-from Archivos_Recompensas.MetodosRecompensas import height_reward_method, contacto_pies_reward,\
-                                    knee_reward_method, hip_roll_align_reward, pitch_stability_rewards,\
-                                    com_zmp_stability_reward, com_projection_reward, seleccion_fuerzas, \
-                                    proximity_legs_penalization, soft_center_bonus, soft_range_bonus
+from Archivos_Recompensas.MetodosRecompensas import (
+    height_reward_method, contacto_pies_reward, knee_reward_method, hip_roll_align_reward,
+    pitch_stability_rewards, com_zmp_stability_reward, com_projection_reward,
+    seleccion_fuerzas, proximity_legs_penalization, soft_center_bonus, soft_range_bonus,
+    EffortWeightScheduler, effort_cost_proxy   # <-- NUEVO
+)
 
 class RewardMode(Enum):
     PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
@@ -132,10 +134,48 @@ class SimpleProgressiveReward:
         # Debug para confirmar configuración
         self.min_F=20
         self.reawrd_step=self.env.reawrd_step
+        # --- Effort weight scheduler ---
+        self.effort = EffortWeightScheduler() #q=0.6, b=0.95, delta_a=1e-3, lam=0.5, a_min=0.0, a_max=0.5
+        self._task_accum = 0.0
+        self._task_N = 0
+        self._task_score_sum = 0.0
+        self._task_score_n = 0
+        self._prev_u_for_effort = None  # para suavidad (du^2)
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
             self.env.logger.log("main",f"   Frequency: {self.frequency_simulation} Hz")
             self.env.logger.log("main",f"🎯 Simple Progressive System: Starting at Level {self.level}")
+
+    def _accumulate_task_term(self, r_task: float):
+        try:
+            self._task_accum += float(r_task)
+            self._task_N += 1
+        except Exception:
+            pass
+
+    def end_of_episode_hook(self):
+        """
+        Llamar al finalizar un episodio (env.step detecta done=True).
+        Actualiza el peso de esfuerzo usando el retorno medio de TAREA.
+        """
+        if self._task_N > 0:
+            task_return = self._task_accum / self._task_N
+            new_a = self.effort.update_after_episode(task_return)
+            if self.env and self.env.logger:
+                self.env.logger.log("main", f"🟣 Effort weight updated: a_t={new_a:.4f} (r_task_mean={task_return:.3f})")
+        # reset acumuladores
+        self._task_accum = 0.0
+        self._task_N = 0
+        self._prev_u_for_effort = None
+
+    def pop_episode_task_score(self) -> float:
+        """Score medio de tarea acumulado en este episodio (0..1), y resetea acumuladores."""
+        if self._task_score_n <= 0:
+            return 0.0
+        s = self._task_score_sum / self._task_score_n
+        self._task_score_sum = 0.0
+        self._task_score_n = 0
+        return float(np.clip(s, 0.0, 1.0))
     
     def calculate_reward(self, action, step_count):
         """
@@ -404,13 +444,13 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
             return True
         
-        if abs(self.dx) > 0.35:
-            self.last_done_reason = "drift"
-            if self.env.logger:
-                self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
-            return True
+        # if self.dx < 0.35:
+        #     self.last_done_reason = "drift"
+        #     if self.env.logger:
+        #         self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
+        #     return True
         
-        max_tilt = self.max_tilt_by_level.get(self.level, 0.5)
+        max_tilt = self.max_tilt_by_level.get(self.level, 1.0)
         # Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
             self.last_done_reason = "tilt"
@@ -590,56 +630,149 @@ class SimpleProgressiveReward:
         pos, orn = p.getBasePositionAndOrientation(env.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         roll, pitch, yaw = euler
+        # Da la velocidad lineal y angular de la pelvis
         lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
         vx = lin_vel[0]
 
         # Contactos y fuerzas
-        F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
-        F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
-        Fmin = 40.0
+        n_l,F_L = env.contact_normal_force(env.left_foot_link_id)
+        n_r,F_R = env.contact_normal_force(env.right_foot_link_id)
+        Fmin = 20.0
 
-        # 1) Progreso hacia +X con cap
-        v_max = max(0.3, float(self.vx_target))
-        r_vel = max(0.0, min(vx / v_max, 1.0))
+        L_on, R_on = (F_L > Fmin), (F_R > Fmin)
 
-        # 2) Postura
-        r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
+        # --- Posiciones de pies y base ---
+        Lpos = p.getLinkState(env.robot_id, env.left_foot_link_id, computeForwardKinematics=1)[0]
+        Rpos = p.getLinkState(env.robot_id, env.right_foot_link_id, computeForwardKinematics=1)[0]
+        com_x = pos[0] # Pos x de la cadera (base) no del COM
 
-        # 3) Estabilidad (ZMP + suavidad interna ya implementada)
-        r_stab = self.zmp_and_smooth_reward()
+        # --- 1) Velocidad objetivo (campana) ---
+        v_tgt   = float(getattr(self, "vx_target", 0.25))
+        sigma_v = 0.20
+        r_vel = np.exp(-1*((vx - v_tgt)/sigma_v)**2) # Si no aumenta el valor para dif bajas derucir constante multiplicacion
+        self._accumulate_task_term(r_vel)
+        self.reawrd_step['r_vel_raw'] = r_vel
 
-        # 4) Patrón de paso ligero: pie soporte claro + alternancia
-        support_now = 'L' if Ftot_L > Ftot_R else 'R'
+        # --- Pesos (usa effort weight adaptativo) ---
+        alive = 0.2
+        w_v, w_post = 2.4, 0.6
+        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
+
+        a_eff = float(getattr(self.env, "effort_weight", 0.02))  # NEW
+        w_en, w_du = max(0.0, a_eff), max(0.0, 2.0*a_eff)        # NEW: escalar por esfuerzo adaptativo
+        w_stuck, w_fall = 1.5, 5.0
+
+        # --- 2) Upright simple (con leve "forward lean" positivo) ---
+        pitch_tgt = +0.05  # ~3°
+        r_post = np.exp(- ((roll/0.25)**2) - (((pitch - pitch_tgt)/0.30)**2))
+
+        # 3) Patrón de paso ligero: pie soporte claro + alternancia
+        support_now = 'L' if F_L > F_R else 'R'
         if step_count == 1: self._last_support3d = support_now
         switched = (support_now != getattr(self, "_last_support3d", support_now))
         self._last_support3d = support_now
+        # bonus pequeño por cambio de soporte y por "soporte claro"
         b_switch = 0.10 if switched else 0.0
-        b_contact = 0.10 if ((support_now=='L' and Ftot_L>Fmin and Ftot_R<0.5*Fmin) or
-                             (support_now=='R' and Ftot_R>Fmin and Ftot_L<0.5*Fmin)) else 0.0
-        r_foot = b_switch + b_contact
+        b_clear  = 0.10 if ((support_now=='L' and L_on and not R_on) or
+                            (support_now=='R' and R_on and not L_on)) else 0.0
+        r_contact = b_switch + b_clear
 
-        # 5) Suavidad/energía
+        # --- 4) Step length al IMPACTO: pie nuevo por delante del COM ---
+        # detecta nuevo impacto (transición off->on del pie que NO estaba soportando)
+        if step_count == 1:
+            self._L_on_prev, self._R_on_prev = L_on, R_on
+            self._last_step_len = 0.0
+        impact_L = (L_on and not self._L_on_prev and support_now=='L')  # L acaba de aterrizar y pasa a ser soporte
+        impact_R = (R_on and not self._R_on_prev and support_now=='R')
+
+        step_len_tgt = 0.18  # 18 cm
+        step_len_tol = 0.06  # meseta ±6 cm
+        r_step = 0.0
+        if impact_L:
+            step_len = float(Lpos[0] - com_x)  # por delante del COM
+            self._last_step_len = step_len
+        elif impact_R:
+            step_len = float(Rpos[0] - com_x)
+            self._last_step_len = step_len
+        else:
+            step_len = getattr(self, "_last_step_len", 0.0)
+
+        # "soft center" alrededor del target
+        def soft_center(x, c, tol, slope=0.10):
+            if x < c - tol: return max(0.0, 1.0 - (c - tol - x)/slope)
+            if x > c + tol: return max(0.0, 1.0 - (x - (c + tol))/slope)
+            return 1.0
+        r_step = soft_center(step_len, step_len_tgt, step_len_tol)
+
+        # --- 5) Swing ADELANTE del COM (shaping en el aire, pequeño) ---
+        # Si el pie está en el aire, anímalo a ir por delante del COM
+        ahead_margin = 0.06  # 6 cm
+        r_ahead = 0.0
+        if not L_on:
+            r_ahead += 1.0 if (Lpos[0] > com_x + ahead_margin) else 0.0
+        if not R_on:
+            r_ahead += 1.0 if (Rpos[0] > com_x + ahead_margin) else 0.0
+        r_ahead *= 0.5  # normaliza a [0,1]
+
+        # --- 6) Suavidad / energía ---
         u = np.clip(action, 0.0, 1.0)
         if not hasattr(self, "_prev_u3d"): self._prev_u3d = np.zeros_like(u)
-        energy = float(np.mean(u)); delta_u = float(np.mean(np.abs(u - self._prev_u3d))); self._prev_u3d = u
 
-        # 6) Guardarraíles
-        pen_roll = self._roll_guardrail_pen(roll)
-        pen_ankle = self._ankle_guardrail_pen(left_ankle_id=env.left_foot_link_id, right_ankle_id=env.right_foot_link_id)
-
-        # 7) Caída / vuelos (si no se permiten)
+         # --- 7) Caída y "no avanzar" ---
         fall = 0.0
-        z_base = pos[2]
-        if (z_base < 0.75) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
+        if (pos[2] < 0.5) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
             fall = 1.0; self.last_done_reason = "fall_3D"; self._episode_done = True
-        if not self.allow_hops and (Ftot_L < 10.0 and Ftot_R < 10.0):
-            fall += 0.3
 
-        # Pesos
-        w_v, w_post, w_stab, w_foot = 2.2, 0.6, 0.4, 0.3
-        w_en, w_du, w_guard, w_fall = 0.04, 0.08, 0.3, 5.0
-        reward = (w_v*r_vel + w_post*r_post + w_stab*r_stab + w_foot*r_foot
-                  - w_en*energy - w_du*delta_u - w_guard*(pen_roll + pen_ankle) - w_fall*fall)
+
+        # penaliza "atasco" si tras 1.0 s el promedio de vx < 0.03 m/s
+        if step_count == 1:
+            self._vx_accum = 0.0; self._vx_n = 0
+        self._vx_accum += vx; self._vx_n += 1
+        r_stuck = 0.0
+        if self._vx_n >= int(self.frequency_simulation):  # ~1 s
+            if (self._vx_accum / self._vx_n) < 0.03:
+                r_stuck = 0.4  # penaliza atascos
+            self._vx_accum = 0.0; self._vx_n = 0
+
+        # --- Pesos (sin ZMP) ---
+        alive = 0.2
+        w_v, w_post = 2.4, 0.6
+        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
+        w_stuck, w_fall = 1.5, 5.0
+
+        self._prev_u3d = u
+        eff_base, eff_dbg = effort_cost_proxy(u, getattr(self, "_prev_u3d", None),
+                                      activity_pow=3.0, w_smooth=0.5, w_sparse=0.1,
+                                      act_threshold=0.15)
+        eff_cost = self.effort.a_t * eff_base
+
+        reward = (alive
+                + w_v*r_vel
+                + w_post*r_post
+                + w_cont*r_contact
+                + w_step*r_step
+                + w_ahead*r_ahead
+                - w_stuck*r_stuck
+                - w_fall*fall
+                -eff_cost)
+        
+        # logging
+        self.reawrd_step['alive'] = alive
+        self.reawrd_step['r_vel'] = w_v*r_vel
+        self.reawrd_step['r_post'] = w_post*r_post
+        self.reawrd_step['r_contact'] = w_cont*r_contact
+        self.reawrd_step['r_step'] = w_step*r_step
+        self.reawrd_step['r_ahead'] = w_ahead*r_ahead
+        self.reawrd_step['stuck_pen'] = - w_stuck*r_stuck
+        self.reawrd_step['fall_pen'] = - w_fall*fall
+        self.reawrd_step['effort_weight'] = float(self.effort.a_t)
+        self.reawrd_step['effort_cost'] = - float(eff_cost)
+        self.reawrd_step['effort_activity'] = eff_dbg.get('activity', 0.0)
+        self.reawrd_step['effort_smooth'] = eff_dbg.get('smooth', 0.0)
+        self.reawrd_step['effort_sparse'] = eff_dbg.get('sparse', 0.0)
+
+        # actualizar flags de contacto para siguiente paso
+        self._L_on_prev, self._R_on_prev = L_on, R_on
         return float(reward)
     
     # ===================== NUEVO: Levantar una pierna (simple) =====================
@@ -663,7 +796,7 @@ class SimpleProgressiveReward:
         # Fuerzas
         F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
         F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
-        Fmin = 45.0
+        Fmin = 30.0
 
         # 1) Estabilidad + soporte claro (una pierna)
         r_stab = self.zmp_and_smooth_reward()
@@ -717,8 +850,8 @@ class SimpleProgressiveReward:
         dx, dy = pos[0]-ax, pos[1]-ay
 
         # Fuerzas (pueden ser ~0 si ambos pies están en el aire; aquí NO lo penalizamos)
-        F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
-        F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
+        n_l, F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L
+        n_r, F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R
 
         # 1) Alternancia: premiar cambio de pie en swing (detectar pie más “ligero”)
         swing_now = 'L' if Ftot_L < Ftot_R else 'R'
@@ -741,14 +874,14 @@ class SimpleProgressiveReward:
         if (Ftot_L > 10.0 or Ftot_R > 10.0):
             r_stab = self.zmp_and_smooth_reward() #porque se puso pos, euler, step_count
 
-        # 5) Suavidad/energía
+        # 5) Suavidad/energía 
         u = np.clip(action, 0.0, 1.0)
         if not hasattr(self, "_prev_umin"): self._prev_umin = np.zeros_like(u)
         energy = float(np.mean(u)); delta_u = float(np.mean(np.abs(u - self._prev_umin))); self._prev_umin = u
 
         # 6) Caída (permitimos “vuelo” —ambos pies en el aire— pero no caídas reales)
         fall = 0.0
-        if (pos[2] < 0.75) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
+        if (pos[2] < 0.5) or (abs(pitch) > self.max_tilt_by_level[3]) or (abs(roll) > self.max_tilt_by_level[3]):
             fall = 1.0; self.last_done_reason = "fall_march"; self._episode_done = True
 
         # Pesos
@@ -756,4 +889,14 @@ class SimpleProgressiveReward:
         w_en, w_du, w_fall = 0.04, 0.08, 5.0
         reward = (w_alt*r_alt + w_clear*clearance + w_stay*r_stay + w_post*r_post + w_stab*r_stab
                   - w_en*energy - w_du*delta_u - w_fall*fall)
+        
+        self.reawrd_step['r_alt'] = w_alt*r_alt
+        self.reawrd_step['clearance'] = w_clear*clearance
+        self.reawrd_step['r_stay'] = w_stay*r_stay
+        self.reawrd_step['r_post'] = w_post*r_post
+        self.reawrd_step['r_stab'] = w_stab*r_stab
+        self.reawrd_step['energy_pen'] = - w_en*energy
+        self.reawrd_step['delta_u_pen'] = - w_du*delta_u
+        self.reawrd_step['fall_pen'] = - w_fall*fall
         return float(reward)
+    

@@ -79,6 +79,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.num_active_pams = len(self.muscle_names)
         
         self.frequency_simulation=400.0
+        #Probar para ver si evita tembleques
+        self.frequency_control=50.0
         self.time_step = 1.0 / self.frequency_simulation
         # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
         
@@ -163,7 +165,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.logger:
             self.logger.log("main",f"🤖 Simplified Lift legs Environment initialized")
             self.logger.log("main",f"🤖 Environment initialized - Systems initiate in reset")
-            self.logger.log("main",f"🤖 Using {self.num_active_pams=:} "
+            self.logger.log("main",f"🤖 Using {self.num_active_pams=:} for {self.robot_name}" 
                   f"[{self.print_env=:}]")
     
 # ========================================================================================================================================================================= #
@@ -181,8 +183,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         self.step_count += 1
         self.info = {"kpi": {}}
-        # ===== DECISIÓN: EXPERTO vs RL =====
-        # En env.step (o donde construyas la acción final)
+        # Obtengo posicion y orientación al inicio del paso
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         self.euler = p.getEulerFromQuaternion(orn)
        
@@ -199,9 +200,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Aplicar fuerzas PAM normalizadas
         joint_torques = self._apply_pam_forces(normalized_pressures)
-
-        # NUEVA LÍNEA: Validar comportamiento biomecánico
-        #is_valid = self.validate_robot_specific_behavior(normalized_pressures, joint_torques)
         
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
@@ -220,6 +218,28 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             )
 
         p.stepSimulation()
+        #parametros tras ejecutar step de simulación 
+        self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
+        self.euler_post = p.getEulerFromQuaternion(self.orn_post)
+        # Tengo los datos del robot actualizados a cada paso así como la localización del COM
+        self.robot_data = PyBullet_Robot_Data(self.robot_id)
+        # KPI ZMP ya existente
+        if self.zmp_calculator:
+            try:
+                zmp_xy = self.zmp_calculator.calculate_zmp()
+                self.zmp_x, self.zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
+                # COM (usa tu helper de Pybullet_Robot_Data)
+                try:
+                    com_world, _m = self.robot_data.get_center_of_mass()
+                    self.com_x, self.com_y, self.com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+                except Exception:
+                    self.com_x = self.com_y = self.com_z = 0.0
+            except Exception:
+                self.zmp_x, self.zmp_y = 0.0, 0.0
+        else:
+            self.zmp_x, self.zmp_y = 0.0, 0.0
+
+
         system_used = "PROGRESSIVE"
 
         
@@ -247,6 +267,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         }
         
         info, reward, done, system_used = self.function_logger_kpi(info, reward, done, system_used)
+
+        
 
 
         self._debug_joint_angles_and_pressures(info, u_final, done)
@@ -309,21 +331,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             n_r, F_R = self.contact_normal_force(self.right_foot_link_id)
             left_down, right_down = self.contacto_pies
 
-            # KPI ZMP ya existente
-            if self.zmp_calculator:
-                try:
-                    zmp_xy = self.zmp_calculator.calculate_zmp()
-                    zmp_x, zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
-                    # COM (usa tu helper de Pybullet_Robot_Data)
-                    try:
-                        com_world, _m = self.robot_data.get_center_of_mass
-                        com_x, com_y, com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
-                    except Exception:
-                        com_x = com_y = com_z = 0.0
-                except Exception:
-                    zmp_x, zmp_y = 0.0, 0.0
-            else:
-                zmp_x, zmp_y = 0.0, 0.0
+            
             info["kpi"] = {
                             "global_step": int(self.step_count),
                             "reward": float(reward),
@@ -333,11 +341,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             "right_down": int(bool(right_down)),
                             "F_L": float(F_L),
                             "F_R": float(F_R),
-                            "zmp_x": float(zmp_x),
-                            "zmp_y": float(zmp_y),
-                            "com_x": com_x,
-                            "com_y": com_y,
-                            "com_z": com_z,
+                            "zmp_x": float(self.zmp_x),
+                            "zmp_y": float(self.zmp_y),
+                            "com_x": self.com_x,
+                            "com_y": self.com_y,
+                            "com_z": self.com_z,
                         }
             # Debug simple
             info = self.info_pam_torque(info)
@@ -349,6 +357,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                 }
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.n_episodes+=1
+                if hasattr(self.simple_reward_system, "end_of_episode_hook"):
+                    task_score = self.simple_reward_system.end_of_episode_hook()
+                else:
+                    task_score = 0.0
+                new_a = self.effort_scheduler.update_after_episode(task_score)  # NEW
+                self.effort_weight = new_a                                      # NEW
+                info.setdefault("kpi", {})["effort_weight"] = float(new_a)      # log
                 
                 if self.logger:
                     self.logger.log("main",f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
@@ -641,16 +656,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== ESTADO DEL TORSO (8 elementos) =====
         
-        self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
-        self.euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación
-        obs.extend([self.pos[0], self.pos[1], self.pos[2], self.euler[0], self.euler[1]])  # x, z, roll, pitch
+        obs.extend([self.pos_post[0], self.pos_post[1], self.pos_post[2], self.euler_post[0], self.euler_post[1]])  # x, z, roll, pitch
 
         # Velocidades
         # obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
-        yaw = p.getEulerFromQuaternion(orn)[2]
+        yaw = p.getEulerFromQuaternion(self.orn_post)[2]
         cy, sy = np.cos(yaw), np.sin(yaw)
         # rotación mundo->cuerpo (2D yaw)
         vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
@@ -759,22 +772,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
             # Pierna izquierda
-            self.joint_indices[0]: 0.0,   # left_hip_pitch_joint
+            self.joint_indices[0]: -0.05,   # left_hip_pitch_joint
             self.joint_indices[1]: 0.0,   # left_hip_roll_joint
-            self.joint_indices[2]: 0.0,   # left_knee_joint
+            self.joint_indices[2]: 0.05,   # left_knee_joint
             self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
-            self.joint_indices[4]: 0.0,   # left_ankle_roll_joint
+            self.joint_indices[4]: -0.05,   # left_ankle_roll_joint
             # pierna derecha
-            self.joint_indices[5]: 0.0,   # right_hip_roll_joint
+            self.joint_indices[5]: -0.05,   # right_hip_roll_joint
             self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
-            self.joint_indices[7]: 0.0,   # right_knee_joint
+            self.joint_indices[7]: 0.05,   # right_knee_joint
             self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
-            self.joint_indices[9]: 0.0    # right_ankle_roll_joint
+            self.joint_indices[9]: -0.05    # right_ankle_roll_joint
         }
         
         for joint_id, pos in initial_positions.items():
             p.resetJointState(self.robot_id, joint_id, pos)
             p.setJointMotorControl2(self.robot_id, joint_id, p.VELOCITY_CONTROL, force=0)
+            p.enableJointForceTorqueSensor(self.robot_id, joint_id, enableSensor=1)
         
         # ===== CONFIGURACIÓN DE DATOS Y CALCULADORES =====
         
@@ -885,7 +899,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Control antagónico
         self.INHIBITION_FACTOR = 0.3           # 30% inhibición recíproca
-        self.MAX_CONTRACTION_RATIO = 0.25      # 25% contracción máxima segura
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)

@@ -26,8 +26,19 @@ class PAMMcKibben:
         self.a= 3/(np.tan(alpha0)**2) 
         self.b = 1 / (np.sin(alpha0)**2)  # geometría del hilo
         # asumimos que la contracción es ideal y por tanto es constante
-        self.volumen=self.area*self.L0
+        self.volumen=self.area*self.L0  # Volumen inicial del músculo (m^3) en caso ideal debería de ser constante
         self._limites_parametros(min_pressure, max_factor_pressure)
+        # self.p = self.min_pressure  # presión actual interna del músculo (Pa) Se usa en force_new_model para determinar la fuerza
+        # self.u_eff = 0.0            # Apertura efectiva de la valvula (normalizado en [0,1]) tras filtro de 1er orden. Captura de retardo, 
+        #                             # limita cambio brusco
+        # self.tau_valve = 0.02     # s constante de tiempo del filtro de válvula
+        # self.C_in  = 1e-5         # kg/(s·Pa) simplificado
+        # self.C_out = 1e-5         # los C se refieren a ganancias de caudal en entrada/salida. Control de velocidad de cambio de P ante cambios bruscos de u
+        # self.k_leak = 0.0         # fuga, proporcianal hacia presión atmosférica, se usa en randomización (es 0, no lo quiero usar)
+        # self.T_gas = 300.0        # Valores de temperatura (K) y la de los contaste de los gases, usado para la variación de presión
+        # self.R_gas = 287.0        # J/(kg·K) aire ideal
+        # self._V_prev = self.volumen # Volumen del músculo en el paso anterior (m^3), se usa para calcular la variación de presión. 
+        #                             # Se usará para variación de volumen en el tiempo
 
     
     def _limites_parametros(self, min_pressure, max_factor_pressure):
@@ -224,23 +235,6 @@ class PAMMcKibben:
         A0 = np.pi * (self.r0 ** 2)
         dF_deps = - pressure * A0 * ( (1.0 / (1.0 - eps)**2) + 3.0 * (np.cos(self.alpha0)**2) )
         return float((R**2 / self.L0) * dF_deps)
-    
-    #def pressure_for_torque(self, tau, theta, theta0, R):
-    #    eps = self.epsilon_from_angle(theta, theta0, R)
-    #    A = self.area_from_epsilon(eps)
-    #    alpha = self.braid_angle(eps)
-    #    factor = self.force_factor(alpha)
-    #    denom = max(R * A * factor, 1e-9)    # a(θ)=R en este caso
-    #    P = tau / denom
-    #    return float(np.clip(P, self.min_pressure, self.max_pressure))
-    
-    #def stiffness_model(self, pressure, contraction_ratio):
-        """Rigidez variable del actuador"""
-    #    base_stiffness = 1000  # N/m base
-    #    pressure_factor = pressure / 100000  # normalizado a 1 bar ver si es mejor usar 5 bar
-    #    contraction_factor = 1 + 2 * contraction_ratio
-        
-    #    return base_stiffness * pressure_factor * contraction_factor
 
     # =========================================================================== #
     # Verificación de la consistencia de transformacion fuerza presión y viceversa
@@ -277,6 +271,41 @@ class PAMMcKibben:
         print(f"   Error: {error:.6f} ({'✅ OK' if error < 0.001 else '❌ PROBLEMA'})")
         
         return error < 0.001
+    
+    # def volume_from_eps(self, eps):
+    #     """
+    #         Presión en episodio actual. EN caso de que el volumen no sea constante
+    #         (músculo no ideal)
+    #     """
+    #     L = self.contraction_muscle(eps)
+    #     A = self.current_area(eps)
+    #     return A * L
+    
+    # def dynamics_pressure(self, dt, u_cmd, eps, p_supply):
+    #     """
+    #         Integra variacion de p con lag de valvula (tau*varacion de ueff=u-ueff)
+    #         Con caudal simplificado con min
+    #         Comprensibilidad
+    #         fuga (en mi caso fuga es 0)
+    #     """
+    #     self.u_eff += (dt / max(self.tau_valve, 1e-6)) * (np.clip(u_cmd,0,1) - self.u_eff)
+    #     V = self.volume_from_eps(eps)
+    #     dVdt = (V - self._V_prev) / max(dt, 1e-6); self._V_prev = V
+    #     m_in  = self.C_in  * self.u_eff * max(p_supply - self.p, 0.0)
+    #     m_out = self.C_out * (1.0 - self.u_eff)* max(self.p - self.min_pressure, 0.0)
+    #     dpdt = (self.R_gas*self.T_gas / max(V,1e-9))*(m_in - m_out) - (self.p/max(V,1e-9))*dVdt \
+    #         - self.k_leak*(self.p - self.min_pressure)
+    #     self.p = float(np.clip(self.p + dt*dpdt, self.min_pressure, self.max_pressure))
+
+    # def step_muscle(self, dt, u_cmd, contraction_ratio, p_supply):
+    #     """
+    #         Función de llamadas en cada env.step para avanzar dinamica neumatica y obtener fuerza actual
+    #         devuelve F y p actual
+    #     """
+    #     eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
+    #     self.dynamics_pressure(dt, u_cmd, eps, p_supply)
+    #     F = self.force_model_new(self.p, eps)
+    #     return F, self.p
     
 
 # Verificación rápida

@@ -90,7 +90,7 @@ class PyBullet_Robot_Data:
         return link_info
     
     @property
-    def get_joint_position_velocities_and_torques(self) -> dict[str, float]:
+    def get_joint_position_velocities_and_torques(self) -> tuple[dict[str, float]]:
         """
         Obtiene las velocidades actuales de todas las articulaciones
         
@@ -110,7 +110,7 @@ class PyBullet_Robot_Data:
         
         return positions, velocities, torques
     
-    @property
+
     def get_center_of_mass(self) -> tuple[np.ndarray, float]:
         """
         Calcula el centro de masas global del robot
@@ -149,3 +149,64 @@ class PyBullet_Robot_Data:
             center_of_mass = np.zeros(3)
         
         return center_of_mass, total_mass
+    
+    def get_center_of_mass_velocity(self):
+        """
+        Opción A: media ponderada por masa de las velocidades lineales del COM de cada link.
+        Requiere computeLinkVelocity=True para los links.
+        """
+        total_mass = 0.0
+        weighted_vel = np.zeros(3)
+
+        # --- Base (-1): v_base + omega x r_com_world ---
+        base_mass = self.link_info[-1]['mass']
+        if base_mass > 0:
+            (base_pos, base_orn) = p.getBasePositionAndOrientation(self.robot_id)
+            (v_lin_base, v_ang_base) = p.getBaseVelocity(self.robot_id)
+
+            base_com_local = p.getDynamicsInfo(self.robot_id, -1)[3]  # offset local del COM base
+            # r_com_world = R(base_orn) * base_com_local
+            r_com_world = p.multiplyTransforms([0,0,0], base_orn, base_com_local, [0,0,0,1])[0]
+            v_base_com = np.array(v_lin_base) + np.cross(np.array(v_ang_base), np.array(r_com_world))
+
+            weighted_vel += base_mass * v_base_com
+            total_mass  += base_mass
+
+        # --- Resto de links: usar v_lin del COM que da getLinkState ---
+        for jid in self.joint_info.keys():
+            link_mass = self.link_info[jid]['mass']
+            if link_mass > 0:
+                ls = p.getLinkState(self.robot_id, jid,
+                                    computeForwardKinematics=True,
+                                    computeLinkVelocity=True)
+                # Convención común: ls[6] es vel. lineal del COM del link en mundo
+                v_lin_com = np.array(ls[6], dtype=float)
+                weighted_vel += link_mass * v_lin_com
+                total_mass  += link_mass
+
+        if total_mass <= 0:
+            return np.zeros(3)
+        return weighted_vel / total_mass
+
+    # ------- Fallback por diferencias finitas + suavizado opcional -------
+    _prev_com = None
+    _prev_com_v = np.zeros(3)
+
+
+    def get_center_of_mass_velocity_fd(self, dt, alpha=0.2):
+        """
+        Opción B: diferencias finitas del COM global, con EMA para suavizar.
+        dt: paso de integración real (tu sim_dt).
+        alpha: 0..1 (más alto = menos suavizado).
+        """
+        com, _ = self.get_center_of_mass()
+        if self._prev_com is None or dt <= 0:
+            self._prev_com = np.array(com, dtype=float)
+            self._prev_com_v = np.zeros(3)
+            return np.zeros(3)
+
+        v = (np.array(com) - self._prev_com) / float(dt)
+        self._prev_com = np.array(com, dtype=float)
+        # EMA
+        self._prev_com_v = (1 - alpha) * self._prev_com_v + alpha * v
+        return self._prev_com_v

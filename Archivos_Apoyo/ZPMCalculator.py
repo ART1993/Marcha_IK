@@ -63,7 +63,7 @@ class ZMPCalculator:
         # Obtener posición del centro de masa
         if self.robot_data:
             try:
-                com_pos, _ = self.robot_data.get_center_of_mass
+                com_pos, _ = self.robot_data.get_center_of_mass()
                 com_pos = np.array(com_pos)
                 l_dynamic = com_pos[2]  # Altura Z actual del COM
             except:
@@ -243,7 +243,7 @@ class ZMPCalculator:
         Análisis completo usando tanto COM como ZMP
         """
         # COM para análisis básico
-        com_pos, total_mass = self.robot_data.get_center_of_mass if self.robot_data else ([0,0,1], 25.0)
+        com_pos, total_mass = self.robot_data.get_center_of_mass() if self.robot_data else ([0,0,1], 25.0)
         
         # ZMP para análisis dinámico  
         zmp_point_info = self.get_stability_info()

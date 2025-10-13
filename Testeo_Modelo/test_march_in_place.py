@@ -10,12 +10,12 @@ MODEL_DIR = "./models_lift_leg"
 BEST_PATH = os.path.join(MODEL_DIR, "best_model.zip")
 NORM_PATH = os.path.join(MODEL_DIR, "single_leg_balance_pam_normalize.pkl")
 
-def make_env(render=True, robot_name="2_legged_human_like_robot20DOF"):
+def make_env(render=True, robot_name="2_legged_human_like_robot20DOF", simple_reward_mode='march_in_place'):
     csvlog = CSVLogger(only_workers=False)  # escribe desde el main
     env = Simple_Lift_Leg_BipedEnv(
         render_mode='human' if render else 'direct',
         print_env="TEST",
-        simple_reward_mode='march_in_place',  # 👈 modo de marcha en el sitio
+        simple_reward_mode=simple_reward_mode,  # 👈 modo de marcha en el sitio
         allow_hops=True,                      # 👈 vuelos permitidos
         vx_target=0.0,                        # 👈 sin avance longitudinal
         csvlog=csvlog,
@@ -23,9 +23,10 @@ def make_env(render=True, robot_name="2_legged_human_like_robot20DOF"):
     )
     return env
 
-def run_test(episodes=5, render=True, max_steps=6000, robot_name="2_legged_human_like_robot20DOF"):
+def run_test(episodes=5, render=True, max_steps=6000, 
+             robot_name="2_legged_human_like_robot20DOF", simple_reward_mode='march_in_place'):
     # 1) Crear env
-    base = DummyVecEnv([lambda: make_env(render=render, robot_name=robot_name)])
+    base = DummyVecEnv([lambda: make_env(render=render, robot_name=robot_name, simple_reward_mode=simple_reward_mode)])
 
     # 2) Cargar normalización si existe
     if os.path.exists(NORM_PATH):
