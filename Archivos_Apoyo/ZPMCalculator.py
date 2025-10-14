@@ -25,7 +25,7 @@ class ZMPCalculator:
                  ground_id=None):
         
         # ===== CONFIGURACIÓN BÁSICA =====
-        
+        # ----- IDs -----
         self.robot_id = robot_id
         self.left_foot_id = left_foot_id  
         self.right_foot_id = right_foot_id
@@ -34,6 +34,15 @@ class ZMPCalculator:
         #robot_id y floor_id
         self.robot_data = robot_data
         self.ground_id=ground_id
+
+        # ----- Constantes de contacto/ZMP (robustas) -----
+        self.MIN_CONTACT_FORCE = 8.0   # N (ignorar micro-contactos)
+        self.EPS_FZ = 30.0            # N (suma mínima para ZMP fiable)
+        # Geometría aproximada del pie (rectángulo en el frame del link)
+        self.FOOT_LENGTH = 0.24       # m (talón→punta)
+        self.FOOT_WIDTH  = 0.11       # m (medial↔lateral)
+        # Historial de último ZMP válido (para “hold” si ΣFz baja)
+        self._zmp_last = None
         
         # ===== PARÁMETROS FÍSICOS SIMPLIFICADOS =====
         
@@ -56,7 +65,8 @@ class ZMPCalculator:
     def calculate_zmp(self):
         """
         Calcular ZMP usando ecuaciones básicas.
-        
+            Xzmp = sum(px*Fz)/sum(Fz)
+            Si ΣFz < EPS_FZ, usa fallback LIPM (COM-accel) y 'hold' del último ZMP válido.
         Utiliza las ecuaciones físicas pero con implementación simplificada.
         """
         
@@ -259,3 +269,79 @@ class ZMPCalculator:
                         }
         
         return info_stability
+    
+
+     # ---------------------------
+     #  Helpers de contacto/soporte
+     # ---------------------------
+    def _foot_has_contact(self, foot_id) -> bool:
+        ground = self.ground_id if self.ground_id is not None else 0
+        cps = p.getContactPoints(self.robot_id, ground, linkIndexA=foot_id, linkIndexB=-1)
+        if not cps: 
+            return False
+        fz = sum(max(0.0, cp[9]) for cp in cps)  # idx 9 = normalForce
+        return fz >= self.EPS_FZ * 0.5  # algo de carga real
+
+    def _collect_contact_samples(self):
+        """Devuelve lista [(pos_world(x,y), Fz), ...] filtrada por MIN_CONTACT_FORCE."""
+        ground = self.ground_id if self.ground_id is not None else 0
+        samples = []
+        for foot_id in (self.left_foot_id, self.right_foot_id):
+            cps = p.getContactPoints(self.robot_id, ground, linkIndexA=foot_id, linkIndexB=-1)
+            for cp in cps or []:
+                Fz = float(max(0.0, cp[9]))      # normalForce
+                if Fz >= self.MIN_CONTACT_FORCE:
+                    # cp[5] = contact position on link A in world coordinates
+                    px, py = float(cp[5][0]), float(cp[5][1])
+                    samples.append(((px, py), Fz))
+        return samples
+
+    def _foot_rectangle_world(self, foot_id):
+        """4 vértices (x,y) del rectángulo del pie en mundo a partir de su pose."""
+        L = self.FOOT_LENGTH * 0.5
+        W = self.FOOT_WIDTH  * 0.5
+        local = [(+L, +W, 0.0), (+L, -W, 0.0), (-L, -W, 0.0), (-L, +W, 0.0)]
+        pos, orn = p.getLinkState(self.robot_id, foot_id, computeForwardKinematics=1)[:2]
+        verts = []
+        for vx, vy, vz in local:
+            wx, wy, _ = p.multiplyTransforms(pos, orn, [vx, vy, vz],[0,0,0,1])[0]
+            verts.append((float(wx), float(wy)))
+        return verts
+
+    def _support_polygon_world(self):
+        """
+        Polígono de soporte en MUNDO como lista de vértices (x,y).
+        Un pie: su rectángulo. Dos pies: unión aproximada (envolvente min/max).
+        """
+        L_on = self._foot_has_contact(self.left_foot_id)
+        R_on = self._foot_has_contact(self.right_foot_id)
+        if not (L_on or R_on):
+            return []  # sin soporte real
+
+        polys = []
+        if L_on: polys += self._foot_rectangle_world(self.left_foot_id)
+        if R_on: polys += self._foot_rectangle_world(self.right_foot_id)
+        if len(polys) <= 4:
+            return polys  # un solo pie
+        # Envolvente axis-aligned (rápida y suficiente para margen)
+        xs = [v[0] for v in polys]; ys = [v[1] for v in polys]
+        rect = [(min(xs), min(ys)), (min(xs), max(ys)),
+                (max(xs), max(ys)), (max(xs), min(ys))]
+        return rect
+
+    def _point_in_rect_margin(self, pt, rect):
+        """Devuelve distancia con signo al borde del rectángulo (≫0 dentro)."""
+        if len(rect) < 4:
+            # Tratarlo como círculo alrededor del centro si algo raro
+            cx = float(np.mean([v[0] for v in rect])) if rect else 0.0
+            cy = float(np.mean([v[1] for v in rect])) if rect else 0.0
+            r = self.stability_margin
+            d = r - np.hypot(pt[0]-cx, pt[1]-cy)
+            return d
+        xs = [v[0] for v in rect]; ys = [v[1] for v in rect]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        # distancia al borde más cercano (positivo si dentro)
+        dx = min(pt[0] - min_x, max_x - pt[0])
+        dy = min(pt[1] - min_y, max_y - pt[1])
+        return min(dx, dy)

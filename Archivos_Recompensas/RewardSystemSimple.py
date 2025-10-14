@@ -302,45 +302,59 @@ class SimpleProgressiveReward:
     
     def _calculate_leg_reward(self, step_count):
         """Calcular recompensa por levantar pierna correctamente"""
-        left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_ankle_id, right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_ankle_id = self.env.joint_indices
+        left_hip_roll_id, left_hip_pitch_id, left_knee_id, left_ankle_id, \
+        right_hip_roll_id, right_hip_pitch_id, right_knee_id,right_ankle_id = self.env.joint_indices
         
-        n_l,F_L = self.env.contact_normal_force(left_ankle_id)
-        n_r,F_R = self.env.contact_normal_force(right_ankle_id)
-        F_sum = max(F_L + F_R, 1e-6)
+        state_L, nL, FL = self.env.foot_contact_state(self.env.left_foot_link_id,  f_min=self.min_F)
+        state_R, nR, FR = self.env.foot_contact_state(self.env.right_foot_link_id, f_min=self.min_F)
+        F_sum = max(FL + FR, 1e-6)
         
-        F_sup, F_tar, support_foot_down, target_foot_down, target_is_right = seleccion_fuerzas(self, F_L, F_R, left_ankle_id, right_ankle_id)
+        F_sup, F_tar, support_is_left,\
+              support_state, target_state = seleccion_fuerzas(state_L,state_R, self.fixed_target_leg,FL, FR)
 
         # (1) Penaliza doble apoyo fuerte
-        both_down_pen = -1.0 if (F_sup >= self.min_F and F_tar >= self.min_F) else 0.0
+        both_down_pen = -1.0 if (state_L == self.env.footcontact_state.PLANTED.value and state_R == self.env.footcontact_state.PLANTED.value) else 0.0
 
-        # (2) Penaliza toe-touch (1–30 N) del pie objetivo
-        toe_touch_pen = -0.6 if (0.0 < F_tar < self.min_F) else 0.0
+        # (2) Toe-touch sólo si el pie objetivo es TOUCH (no PLANTED)
+        toe_touch_pen = -0.6 if (target_state == self.env.footcontact_state.TOUCH.value) else 0.0
 
         # (3) Recompensa reparto de carga sano: ≥80% en el pie de soporte
         ratio = F_sup / F_sum
-        support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0
+        support_load_reward = np.clip((ratio - 0.80) / 0.20, 0.0, 1.0) * 1.0 if (support_state == self.env.footcontact_state.PLANTED.value) else 0.0
 
         # (2.5) Penalización por casi-cruce entre el pie en swing y el pie de soporte
-        close_pen = proximity_legs_penalization(self, F_sup, F_tar, left_ankle_id, right_ankle_id, target_is_right)
-
-        # (4) BONUS por tiempo en apoyo simple con saturación (sin toe-touch)
-        ss_reward = self._single_support_dwell_reward(F_sup, F_tar, self.frequency_simulation)
+        close_pen = proximity_legs_penalization(self, F_sup, F_tar, self.env.left_foot_link_id, self.env.right_foot_link_id, support_is_left)
+        # (4) Tiempo en apoyo simple SÓLO si soporte=PLANTED y objetivo no PLANTED
+        ss_reward = self._single_support_dwell_reward(FL if support_is_left else FR,
+                                              FR if support_is_left else FL,
+                                              self.frequency_simulation) if (support_state == self.env.footcontact_state.PLANTED.value
+                                                                              and target_state != self.env.footcontact_state.PLANTED.value) else 0.0
+        
+        # (5) Recompensa de pie soporte "plano" solo si PLANTED
+        if support_state == self.env.footcontact_state.PLANTED.value:
+            stance_foot_id = self.env.left_foot_link_id if support_is_left else self.env.right_foot_link_id
+            flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
+        else:
+            flat_reward = 0.0
 
         # --- Bonuses de forma SOLO si el pie objetivo NO está en contacto ---
         # Clearance
-        foot_z = p.getLinkState(self.robot_id, left_ankle_id)[0][2]
+        swing_foot_id = (self.env.right_foot_link_id if support_is_left else self.env.left_foot_link_id)
+        ls = p.getLinkState(self.robot_id, swing_foot_id, computeForwardKinematics=1)
+        foot_z = ls[0][2]
         clearance_target = 0.09  # 9 cm
-        clearance_bonus = 0.0 if not support_foot_down else np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
+        clearance_bonus = (np.clip(foot_z / clearance_target, 0.0, 1.0) * 0.5
+                           if target_state == self.env.footcontact_state.NONE.value else 0.0)
 
         
         # Rodilla (rango recomendado 0.45–0.75 rad)
-        knee_id  = right_knee_id if target_is_right else left_knee_id
+        knee_id  = right_knee_id if support_is_left else left_knee_id
         knee_ang = p.getJointState(self.robot_id, knee_id)[0]
         knee_bonus = soft_range_bonus(knee_ang, self.swing_knee_lo, self.swing_knee_hi, slope=0.20) * 1.0
-        knee_bonus = 0.0 if target_foot_down else knee_bonus
+        knee_bonus = 0.0 if target_state else knee_bonus
 
         # Cadera (pitch) del swing — objetivo configurable, con meseta ± self.swing_hip_tol
-        hip_id  = right_hip_pitch_id if target_is_right else left_hip_pitch_id
+        hip_id  = right_hip_pitch_id if support_is_left else left_hip_pitch_id
         hip_ang = p.getJointState(self.robot_id, hip_id)[0]
         
         # después (direccional):
@@ -348,10 +362,10 @@ class SimpleProgressiveReward:
         hip_bonus_dir = soft_center_bonus(desired_sign * hip_ang,
                                         self.swing_hip_target, self.swing_hip_tol,
                                         slope=0.20) * 0.7
-        hip_bonus = 0.0 if target_foot_down else hip_bonus_dir
+        hip_bonus = hip_bonus_dir if target_state == self.env.footcontact_state.NONE.value else 0.0
 
         # ✅ Bono de hip ROLL del swing (abducción cómoda)
-        swing_roll_jid = (left_hip_roll_id if (not target_is_right) else right_hip_roll_id)
+        swing_roll_jid = (left_hip_roll_id if support_is_left else right_hip_roll_id)
         q_roll_swing = p.getJointState(self.robot_id, swing_roll_jid)[0]
         roll_abd_center = 0.15  # ~8–10°
         roll_abd_tol    = 0.08
@@ -382,15 +396,12 @@ class SimpleProgressiveReward:
         self.reawrd_step['knee_bonus']=knee_bonus
         self.reawrd_step['hip_bonus']=hip_bonus
         self.reawrd_step['speed_pen']=speed_pen
+        self.reawrd_step['flat_reward']=flat_reward
+        self.reawrd_step['close_pen'] = close_pen
         leg_reward = (clearance_bonus + knee_bonus + hip_bonus
-                      + roll_swing_bonus  + close_pen
-                      + shaping + speed_pen) # contacto_reward
+                      + roll_swing_bonus + flat_reward
+                      + shaping + speed_pen+ close_pen) # contacto_reward
         # Recompensa por pie de soporte 'plano' (planta paralela al suelo)
-        if F_sup >= self.min_F and support_foot_down:
-            stance_foot_id = (right_ankle_id if (F_R >= F_L) else left_ankle_id)
-            flat_reward = self._foot_flat_reward(stance_foot_id, only_if_contact=True)
-            leg_reward += flat_reward
-        self.reawrd_step['flat_reward']=flat_reward if support_foot_down else 0.0
         return leg_reward
     
     def zmp_and_smooth_reward(self):
@@ -635,11 +646,16 @@ class SimpleProgressiveReward:
         vx = lin_vel[0]
 
         # Contactos y fuerzas
-        n_l,F_L = env.contact_normal_force(env.left_foot_link_id)
-        n_r,F_R = env.contact_normal_force(env.right_foot_link_id)
-        Fmin = 20.0
+        (state_L, n_l, FL) = env.foot_contact_state(env.left_foot_link_id, f_min=self.min_F)
+        (state_R, n_r, FR) = env.foot_contact_state(env.right_foot_link_id, f_min=self.min_F)
+        Fmin = self.min_F
 
-        L_on, R_on = (F_L > Fmin), (F_R > Fmin)
+        L_on = (state_L == self.env.footcontact_state.PLANTED.value)
+        R_on = (state_R == self.env.footcontact_state.PLANTED.value)
+
+        support_now = 'L' if FL > FR else 'R'
+        b_clear = 0.10 if ((support_now=='L' and L_on and not R_on) or
+                   (support_now=='R' and R_on and not L_on)) else 0.0
 
         # --- Posiciones de pies y base ---
         Lpos = p.getLinkState(env.robot_id, env.left_foot_link_id, computeForwardKinematics=1)[0]
@@ -667,14 +683,11 @@ class SimpleProgressiveReward:
         r_post = np.exp(- ((roll/0.25)**2) - (((pitch - pitch_tgt)/0.30)**2))
 
         # 3) Patrón de paso ligero: pie soporte claro + alternancia
-        support_now = 'L' if F_L > F_R else 'R'
         if step_count == 1: self._last_support3d = support_now
         switched = (support_now != getattr(self, "_last_support3d", support_now))
         self._last_support3d = support_now
         # bonus pequeño por cambio de soporte y por "soporte claro"
         b_switch = 0.10 if switched else 0.0
-        b_clear  = 0.10 if ((support_now=='L' and L_on and not R_on) or
-                            (support_now=='R' and R_on and not L_on)) else 0.0
         r_contact = b_switch + b_clear
 
         # --- 4) Step length al IMPACTO: pie nuevo por delante del COM ---
@@ -740,11 +753,12 @@ class SimpleProgressiveReward:
         w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
         w_stuck, w_fall = 1.5, 5.0
 
-        self._prev_u3d = u
+        
         eff_base, eff_dbg = effort_cost_proxy(u, getattr(self, "_prev_u3d", None),
                                       activity_pow=3.0, w_smooth=0.5, w_sparse=0.1,
                                       act_threshold=0.15)
         eff_cost = self.effort.a_t * eff_base
+        self._prev_u3d = u
 
         reward = (alive
                 + w_v*r_vel
@@ -789,26 +803,27 @@ class SimpleProgressiveReward:
         elif str(target_action).endswith("BALANCE_RIGHT_SUPPORT"):
             support_desired = 'R'
         else:
-            F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
-            F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
-            support_desired = 'L' if Ftot_L >= Ftot_R else 'R'
+            state_L, nL, FL = self.env.foot_contact_state(self.env.left_foot_link_id,  f_min=self.min_F)
+            state_R, nR, FR = self.env.foot_contact_state(self.env.right_foot_link_id, f_min=self.min_F)
+            support_desired = 'L' if FL >= FR else 'R'
 
         # Fuerzas
-        F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L[1] if isinstance(F_L, tuple) else 0.0
-        F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R[1] if isinstance(F_R, tuple) else 0.0
+        state_L, nL, FL = self.env.foot_contact_state(self.env.left_foot_link_id,  f_min=self.min_F)
+        state_R, nR, FR = self.env.foot_contact_state(self.env.right_foot_link_id, f_min=self.min_F)
         Fmin = 30.0
 
         # 1) Estabilidad + soporte claro (una pierna)
         r_stab = self.zmp_and_smooth_reward()
         if support_desired == 'L':
-            r_support = 1.0 if (Ftot_L > Fmin and Ftot_R < 0.4*Fmin) else 0.0
+            r_support = 1.0 if (FL > Fmin and FR < 0.4*Fmin) else 0.0
             swing_foot_id = env.right_foot_link_id
         else:
-            r_support = 1.0 if (Ftot_R > Fmin and Ftot_L < 0.4*Fmin) else 0.0
+            r_support = 1.0 if (FR > Fmin and FL < 0.4*Fmin) else 0.0
             swing_foot_id = env.left_foot_link_id
 
         # 2) Clearance del pie en el aire (~10–15 cm)
         ls = p.getLinkState(env.robot_id, swing_foot_id, computeForwardKinematics=1)
+        # foot_z es el comz del robot
         foot_z = ls[0][2]; base_z = pos[2]
         clearance = max(0.0, min((foot_z - (base_z - 0.20)) / 0.15, 1.0))
 
@@ -850,11 +865,11 @@ class SimpleProgressiveReward:
         dx, dy = pos[0]-ax, pos[1]-ay
 
         # Fuerzas (pueden ser ~0 si ambos pies están en el aire; aquí NO lo penalizamos)
-        n_l, F_L = env.contact_normal_force(env.left_foot_link_id); Ftot_L = F_L
-        n_r, F_R = env.contact_normal_force(env.right_foot_link_id); Ftot_R = F_R
+        state_L, nL, FL = self.env.foot_contact_state(self.env.left_foot_link_id,  f_min=self.min_F)
+        state_R, nR, FR = self.env.foot_contact_state(self.env.right_foot_link_id, f_min=self.min_F)
 
         # 1) Alternancia: premiar cambio de pie en swing (detectar pie más “ligero”)
-        swing_now = 'L' if Ftot_L < Ftot_R else 'R'
+        swing_now = 'L' if FL < FR else 'R'
         switched = (self._last_swing is not None and swing_now != self._last_swing)
         self._last_swing = swing_now
         r_alt = 1.0 if switched else 0.0
@@ -871,7 +886,7 @@ class SimpleProgressiveReward:
         # 4) Postura (roll/pitch bajos). ZMP sólo tiene sentido con contacto; si ambos en el aire, lo omitimos
         r_post = np.exp(-abs(pitch)/0.25) * np.exp(-abs(roll)/0.20)
         r_stab = 0.0
-        if (Ftot_L > 10.0 or Ftot_R > 10.0):
+        if (FL > 10.0 or FR > 10.0):
             r_stab = self.zmp_and_smooth_reward() #porque se puso pos, euler, step_count
 
         # 5) Suavidad/energía 

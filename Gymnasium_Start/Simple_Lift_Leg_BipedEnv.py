@@ -10,13 +10,18 @@ import math
 from collections import deque
 from json import loads, load
 import os
+from enum import Enum
 
 from Archivos_Apoyo.Configuraciones_adicionales import PAM_McKibben,Rutas_Archivos, \
                                                     seleccionar_funcion_calculo_torques
 from Archivos_Apoyo.ZPMCalculator import ZMPCalculator
 from Archivos_Apoyo.Pybullet_Robot_Data import PyBullet_Robot_Data
-
 from Archivos_Recompensas.RewardSystemSimple import SimpleProgressiveReward
+
+class FootContactState(Enum):
+    NONE = 0      # sin contacto
+    TOUCH = 1     # rozando (0 < n_contactos <= 2 o F_total baja)
+    PLANTED = 2   # apoyo plano (n_contactos > 2 y F_total alta)
            
 
 class Simple_Lift_Leg_BipedEnv(gym.Env):
@@ -62,7 +67,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             elif values.get("link_name")=="right_foot_link":
                 self.right_foot_link_id=values.get("index")
 
-
+        self.footcontact_state=FootContactState
         # ===== CONFIGURACIÓN BÁSICA =====
         self.pam_muscles = PAM_McKibben(self.robot_name, self.control_joint_names)
         self.render_mode = render_mode
@@ -226,11 +231,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # KPI ZMP ya existente
         if self.zmp_calculator:
             try:
+                
                 zmp_xy = self.zmp_calculator.calculate_zmp()
                 self.zmp_x, self.zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
                 # COM (usa tu helper de Pybullet_Robot_Data)
                 try:
-                    com_world, _m = self.robot_data.get_center_of_mass()
+                    com_world, self.mass = self.robot_data.get_center_of_mass()
                     self.com_x, self.com_y, self.com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
                 except Exception:
                     self.com_x = self.com_y = self.com_z = 0.0
@@ -327,9 +333,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info['curriculum'] = curriculum_info  # Añadir sin reemplazar
             info['system_type'] = 'progressive'
             info['current_level'] = curriculum_info.get('level', 1)
-            n_l, F_L = self.contact_normal_force(self.left_foot_link_id)
-            n_r, F_R = self.contact_normal_force(self.right_foot_link_id)
-            left_down, right_down = self.contacto_pies
+            (left_state, n_l, F_L) = self.foot_contact_state(self.left_foot_link_id, f_min=20)
+            (right_state, n_r, F_R) = self.foot_contact_state(self.right_foot_link_id, f_min=20)
+            # flags "down" derivadas de estado:
+            left_down  = int(left_state  == self.footcontact_state.PLANTED.value)
+            right_down = int(right_state == self.footcontact_state.PLANTED.value)
 
             
             info["kpi"] = {
@@ -341,6 +349,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             "right_down": int(bool(right_down)),
                             "F_L": float(F_L),
                             "F_R": float(F_R),
+                            "nL": int(n_l), "nR": int(n_r),
+                            "state_L": left_state, "state_R": right_state,
                             "zmp_x": float(self.zmp_x),
                             "zmp_y": float(self.zmp_y),
                             "com_x": self.com_x,
@@ -358,15 +368,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 episode_total = info['episode_reward']  # Ya calculado arriba
                 self.n_episodes+=1
                 if hasattr(self.simple_reward_system, "end_of_episode_hook"):
-                    task_score = self.simple_reward_system.end_of_episode_hook()
-                else:
-                    task_score = 0.0
-                new_a = self.effort_scheduler.update_after_episode(task_score)  # NEW
-                self.effort_weight = new_a                                      # NEW
-                info.setdefault("kpi", {})["effort_weight"] = float(new_a)      # log
-                
+                    self.simple_reward_system.end_of_episode_hook()
+                # Log del peso de esfuerzo actual del sistema de recompensas
+                a_t = 0.0
+                if hasattr(self.simple_reward_system, "effort") and hasattr(self.simple_reward_system.effort, "a_t"):
+                    a_t = float(self.simple_reward_system.effort.a_t)
+                info.setdefault("kpi", {})["effort_weight"] = a_t
                 if self.logger:
-                    self.logger.log("main",f"📈 Episode {info['curriculum']['episodes']} | Level {info['curriculum']['level']} | Reward: {episode_total:.1f}")
+                    self.logger.log("main", f"📈 Episode {info['curriculum']['episodes']} | Nivel {info['curriculum']['level']} | Reward: {info['episode_reward']:.1f}")
         
         # === CSVLogger: volcado per-step (~10 Hz) ===
         if (self.step_count % (self.frequency_simulation//10) == 0 or done) and self.simple_reward_system:
@@ -471,6 +480,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         F_total=sum(fuerzas_puntos)
         fuerza_contacto_y_puntos=(num_contactos, F_total)
         return fuerza_contacto_y_puntos
+    
+    def foot_contact_state(self, link_id:int, f_min:float=20.0, n_touch:int=2):
+        """
+            Clasifica el estado de contacto de un link del pie:
+            - NONE:   sin contacto
+            - TOUCH:  rozando (<=2 puntos o fuerza baja)
+            - PLANTED:apoyo plano (varios puntos y fuerza suficiente)
+            Devuelve: (state_value:int, n_contactos:int, F_total:float)
+        """
+        n, F = self.contact_normal_force(link_id)
+        if n == 0:
+            state = self.footcontact_state.NONE.value
+        elif n <= n_touch or F < f_min:
+            state = self.footcontact_state.TOUCH.value
+        else:
+            state = self.footcontact_state.PLANTED.value
+        return state, n, F
     
     def debug_contacts_once(self):
         for name, lid in [("L_foot", self.left_foot_link_id), ("R_foot", self.right_foot_link_id)]:
@@ -1032,8 +1058,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_general[f"COM_z"]=round(info["kpi"]['com_z'],3)
                     row_general[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_general[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
+                    row_general[f'Masa']=round(self.mass,1)
+                    row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("general_values", row_general)
+
 
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
@@ -1084,39 +1113,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     "i_ext":  self.muscle_names.index(ext),
                 })
         return pairs
-                
-
-    
-# def configure_robot_specific_pam_system(env:Simple_Lift_Leg_BipedEnv):
-#     """
-#     Configurar el sistema PAM específicamente para tu robot.
-#     Llamar una vez después de crear el entorno.
-#     """
-    
-#     # Verificar que las dimensiones coinciden
-#     expected_mass = 24.1  # kg
-#     expected_height = 1.20  # m
-#     if env.logger:
-#         env.logger.log("main","🤖 Configuring PAM system for your specific robot:")
-#         env.logger.log("main",f"   Expected mass: {expected_mass}kg")
-#         env.logger.log("main",f"   Expected height: {expected_height}m")
-#         env.logger.log("main",f"   PAM configuration: {env.num_active_pams} muscles "
-#                 f"(hips antagonistic + knees {'flex+ext'})")
-#         env.logger.log("main",f"   Moment arms: Hip 5.0-6.3cm, Knee 5.7cm")
-#         env.logger.log("main",f"   Passive springs: {env.PASSIVE_SPRING_STRENGTH} N⋅m (gravity-compensated)")
-    
-#     # Configurar parámetros específicos en el entorno
-#     env.robot_specific_configured = True
-#     env.expected_robot_mass = expected_mass
-#     env.expected_robot_height = expected_height
-    
-#     # Reemplazar el método de cálculo de torques
-#     env._calculate_basic_joint_torques = env._calculate_robot_specific_joint_torques_16_pam
-#     if env.logger:
-#         env.logger.log("main","✅ Robot-specific PAM system configured!")
-    
-#     return True
-
 
 
 

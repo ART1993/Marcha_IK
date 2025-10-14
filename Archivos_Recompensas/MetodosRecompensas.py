@@ -151,25 +151,34 @@ def com_projection_reward(self):
         return 0.0
     
 
-def seleccion_fuerzas(self,fixed_target_leg, F_L, F_R, left_ankle_id, right_ankle_id):
+def seleccion_fuerzas(state_L,state_R,fixed_target_leg, FL, FR):
     # NUEVO: si estamos en left-only, el soporte debe ser el pie derecho
+    """
+     Decide pie de soporte y pie objetivo con semántica consistente.
+     Devuelve: F_sup, F_tar, support_is_left(bool), support_state(int), target_state(int)
+     Nota: state_* deben ser valores 0/1/2 del clasificador de contacto.
+    """
     if fixed_target_leg == 'left':
         # fuerza la semántica: soporte=right, objetivo=left
-        target_is_right = False
-        target_is_left = not target_is_right
-        support_foot_down = self.env.contact_with_force(right_ankle_id, stable_foot=(not target_is_right), min_F=self.min_F)
-        target_foot_down  = self.env.contact_with_force(left_ankle_id, stable_foot= (not target_is_left), min_F=self.min_F)
-        F_sup = F_R      # soporte = pie derecho
-        F_tar = F_L      # objetivo = pie izquierdo
+        support_is_left = False
+        support_state = state_R
+        target_state  = state_L
+        F_sup = FR      # soporte = pie derecho
+        F_tar = FL      # objetivo = pie izquierdo
+    elif fixed_target_leg =='right':
+        support_is_left = True
+        support_state = state_L
+        target_state  = state_R
+        F_sup = FL      # soporte = pie derecho
+        F_tar = FR      # objetivo = pie izquierdo
     else:
-        target_is_right = True
-        target_is_left = not target_is_right
-        support_foot_down = self.env.contact_with_force(left_ankle_id, stable_foot= (not target_is_left), min_F=self.min_F)
-        target_foot_down  = self.env.contact_with_force(right_ankle_id, stable_foot=(not target_is_right), min_F=self.min_F)
-        F_sup = F_L      # soporte = pie derecho
-        F_tar = F_R      # objetivo = pie izquierdo
+        support_is_left = (FL >= FR)
+        support_state = state_L if support_is_left else state_R
+        F_sup = FL if support_is_left else FR
+        target_state  = state_R if support_is_left else state_L
+        F_sup = FR if support_is_left else FL
 
-    return F_sup, F_tar, support_foot_down, target_foot_down, target_is_right
+    return F_sup, F_tar, support_is_left, support_state, target_state
 
 
 def proximity_legs_penalization(self, F_sup, F_tar, left_ankle_id, right_ankle_id, target_is_right):

@@ -113,10 +113,12 @@ class PyBullet_Robot_Data:
 
     def get_center_of_mass(self) -> tuple[np.ndarray, float]:
         """
-        Calcula el centro de masas global del robot
-        
-        Returns:
-            Tuple con (posición_COM, masa_total)
+        NOTA: para cada link, getLinkState(..., computeForwardKinematics=True)
+            devuelve:
+            ls[0] = pos del marco del link en MUNDO
+            ls[1] = orn del marco del link en MUNDO (quat)
+            ls[2] = offset inercial LOCAL del COM (en el marco del link)
+            Por tanto, hay que transformar ese offset a mundo.
         """
         total_mass = 0.0
         weighted_position = np.zeros(3)
@@ -137,10 +139,15 @@ class PyBullet_Robot_Data:
                 # getLinkState devuelve la posición del COM del link
                  # getLinkState: [2] = world COM position del link
                 ls = p.getLinkState(self.robot_id, joint_index, computeForwardKinematics=True)
+                # ls[0], ls[1]: pose del link en mundo; ls[2]: COM local inercial
                 # En quickstart guide veo que es 0
-                com_pos = np.array(ls[2] if ls[2] is not None else ls[0])
-                
-                weighted_position += link_mass * com_pos
+                link_pos_world  = ls[0]
+                link_orn_world  = ls[1]
+                com_local_inert = ls[2]
+                 # Transformar offset inercial local -> mundo
+                com_world = p.multiplyTransforms(link_pos_world, link_orn_world,
+                                             com_local_inert, [0,0,0,1])[0]
+                weighted_position += link_mass * np.array(com_world)
                 total_mass += link_mass
         
         if total_mass > 0:
@@ -179,7 +186,8 @@ class PyBullet_Robot_Data:
                 ls = p.getLinkState(self.robot_id, jid,
                                     computeForwardKinematics=True,
                                     computeLinkVelocity=True)
-                # Convención común: ls[6] es vel. lineal del COM del link en mundo
+                # ls[6] = vel lineal del COM del link en mundo (PyBullet)
+                # ls[7] = vel angular del link en mundo
                 v_lin_com = np.array(ls[6], dtype=float)
                 weighted_vel += link_mass * v_lin_com
                 total_mass  += link_mass
