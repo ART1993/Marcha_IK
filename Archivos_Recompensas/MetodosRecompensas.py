@@ -285,3 +285,85 @@ def effort_penalty(u_now, u_prev, a_t, w_smooth=0.04, sparsity_thr=0.15, w_spars
                                w_smooth=w_smooth, w_sparse=w_sparse,
                                act_threshold=sparsity_thr)
     return a_t * c
+
+# Ignorar por el momento
+def calculate_reward_walk3d_slim(self, obs, info):
+        """
+            Recompensa compacta:
+            r = r_vel + w_c * r_foot - a(t) * c_effort - w_p * c_pain
+            Usa vel_COM, flags de contacto y GRF del entorno.
+        """
+
+        vx = float(self.env.vel_COM[0]) if hasattr(self.env, "vel_COM") else 0.0
+        v_star, sigma = 1.2, 0.5
+        if vx < v_star:
+            r_vel = np.exp(-((vx - v_star) ** 2) / (sigma ** 2))
+        else:
+            r_vel = 1.0
+
+        # -------- Contacto de pies (ligero anti-vuelo) --------
+        left_down = int(getattr(self.env, "left_down", 0))
+        right_down = int(getattr(self.env, "right_down", 0))
+        support = left_down + right_down    # 0,1,2
+        # Recompensa 1 si hay apoyo (1 ó 2), -1 si está en vuelo (0)
+        r_foot = (1 if support in (1, 2) else 0) - (1 if support == 0 else 0)
+
+        # -------- Esfuerzo (elige una de las dos variantes) --------
+        # a) si trabajas con torques normalizados en info["joint_torques_norm"] -> lista de (tau, tau_max)
+        c_effort = None
+        if "joint_torques_norm" in info and info["joint_torques_norm"]:
+            vals = []
+            for tau, tau_max in info["joint_torques_norm"]:
+                if tau_max is None or tau_max == 0:
+                    continue
+                vals.append((tau / tau_max) ** 2)
+            c_effort = float(np.mean(vals)) if len(vals) else 0.0
+        # b) si controlas PAM/activaciones en info["muscle_activations"] (0..1)
+        if c_effort is None and "muscle_activations" in info and info["muscle_activations"]:
+            acts = np.array(info["muscle_activations"], dtype=float)
+            c_effort = float(np.mean(acts ** 3))
+        if c_effort is None:
+            c_effort = 0.0
+
+        # -------- “Dolor”: límites + GRF excesivo --------
+        # Límites
+        c_pain_lim = 0.0
+        q_dict = info.get("q", {})  # mapa joint_name -> posición
+        for j in self.joints_monitored:
+            if j not in self.joint_limits or j not in q_dict:
+                continue
+            q = float(q_dict[j])
+            qmin, qmax = self.joint_limits[j]
+            over = max(0.0, q - qmax)
+            under = max(0.0, qmin - q)
+            c_pain_lim += over ** 2 + under ** 2
+        # GRF
+        F_L = float(getattr(self.env, "F_L", info.get("F_L", 0.0)))
+        F_R = float(getattr(self.env, "F_R", info.get("F_R", 0.0)))
+        BW = float(self.robot_weight_N)
+        pain_grf = max(0.0, (F_L + F_R) / BW - 1.2)
+        c_pain = c_pain_lim + pain_grf
+
+        # -------- Pesos --------
+        w_c, w_p = 0.05, 0.5
+        a_eff = float(self.effort_adapter.a)
+
+        reward = r_vel + w_c * r_foot - a_eff * c_effort - w_p * c_pain
+
+        # Penalización terminal (si existe en tu flujo)
+        if info.get("fell", False):
+            reward += -5.0
+
+        # ---- Logging y acumuladores ----
+        self._ep_r_vel += r_vel
+        self._ep_steps += 1
+        logs = {
+            "r_vel": float(r_vel),
+            "r_foot": float(r_foot),
+            "effort_weight": float(a_eff),
+            "effort_cost": float(c_effort),
+            "pain": float(c_pain),
+            "pain_lim": float(c_pain_lim),
+            "pain_grf": float(pain_grf)
+        }
+        return float(reward), logs
