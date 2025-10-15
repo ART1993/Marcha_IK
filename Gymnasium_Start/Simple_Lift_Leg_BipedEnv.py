@@ -827,7 +827,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             right_foot_id=self.right_foot_link_id,  # right_foot_link
             frequency_simulation=self.frequency_simulation,
             robot_data=self.robot_data,
-            ground_id=self.plane_id
+            ground_id=self.plane_id,
+            contact_state_fn=self.foot_contact_state
         )
         
         self._configure_contact_friction()

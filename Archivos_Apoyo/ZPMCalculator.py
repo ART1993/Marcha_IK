@@ -22,7 +22,8 @@ class ZMPCalculator:
                  right_foot_id, 
                  frequency_simulation=1500,
                  robot_data=None,
-                 ground_id=None):
+                 ground_id=None,
+                 contact_state_fn=None):
         
         # ===== CONFIGURACIÓN BÁSICA =====
         # ----- IDs -----
@@ -34,15 +35,15 @@ class ZMPCalculator:
         #robot_id y floor_id
         self.robot_data = robot_data
         self.ground_id=ground_id
+        self.contact_state_fn=contact_state_fn
 
         # ----- Constantes de contacto/ZMP (robustas) -----
         self.MIN_CONTACT_FORCE = 8.0   # N (ignorar micro-contactos)
         self.EPS_FZ = 30.0            # N (suma mínima para ZMP fiable)
         # Geometría aproximada del pie (rectángulo en el frame del link)
-        self.FOOT_LENGTH = 0.24       # m (talón→punta)
-        self.FOOT_WIDTH  = 0.11       # m (medial↔lateral)
+        self.FOOT_LENGTH = 0.3       # m (talón→punta)
+        self.FOOT_WIDTH  = 0.15       # m (medial↔lateral)
         # Historial de último ZMP válido (para “hold” si ΣFz baja)
-        self._zmp_last = None
         
         # ===== PARÁMETROS FÍSICOS SIMPLIFICADOS =====
         
@@ -56,20 +57,53 @@ class ZMPCalculator:
         # ===== HISTORIA MÍNIMA PARA ACELERACIÓN =====
         
         self.com_history = []
-        self.max_history = 5  # Solo 3 puntos para cálculo básico
-        
-        print(f"🎯 Simplified ZMP Calculator initialized")
-        print(f"   Stability margin: {self.stability_margin}m")
-        print(f"   COM height estimate: {self.l}m")
+        self.max_history = 3  # Solo 3 puntos para cálculo básico
+        self._zmp_last = None
+        self._zmp_lp   = None
+        self.ZMP_ALPHA = 0.3  # low-pass (0..1)
+        self.STATE_NONE    = 0
+        self.STATE_TOUCH   = 1
+        self.STATE_PLANTED = 2
     
     def calculate_zmp(self):
         """
-        Calcular ZMP usando ecuaciones básicas.
-            Xzmp = sum(px*Fz)/sum(Fz)
-            Si ΣFz < EPS_FZ, usa fallback LIPM (COM-accel) y 'hold' del último ZMP válido.
-        Utiliza las ecuaciones físicas pero con implementación simplificada.
+            Calcula ZMP:
+            1) Con fuerzas de contacto si ΣFz >= EPS_FZ
+            2) Fallback LIPM (COM-accel) si no hay soporte; hace 'hold' del último ZMP válido.
+            Aplica también un low-pass simple para suavizar ruido.
         """
-        
+        # --- 0) Estados de pies (si hay callback)
+        # Regla: calculamos ZMP por fuerzas si al menos 1 pie está PLANTED.
+        left_state = right_state = None
+        if self.contact_state_fn is not None:
+            try:
+                left_state, _, _  = self.contact_state_fn(self.left_foot_id)
+                right_state, _, _ = self.contact_state_fn(self.right_foot_id)
+            except Exception:
+                left_state = right_state = None
+
+        # --- 1) Contactos por fuerzas (si hay al menos un pie PLANTED, o no hay callback)
+        samples = self._collect_contact_samples()
+        wsum = sum(Fz for (_, Fz) in samples)
+        planted_ok = (
+            (left_state is None and right_state is None) or
+            (left_state  is not None and left_state  >= self.STATE_PLANTED) or
+            (right_state is not None and right_state >= self.STATE_PLANTED)
+        )
+        if planted_ok and wsum >= self.EPS_FZ:
+            zx = sum(px*Fz for ((px, _), Fz) in samples) / wsum
+            zy = sum(py*Fz for ((_, py), Fz) in samples) / wsum
+            zmp = np.array([zx, zy], dtype=float)
+            # Low-pass
+            self._zmp_lp = zmp if self._zmp_lp is None else (1-self.ZMP_ALPHA)*self._zmp_lp + self.ZMP_ALPHA*zmp
+            self._zmp_last = np.array(self._zmp_lp, dtype=float)
+            # Actualiza historia COM igualmente (para debugging/telemetría)
+            if self.robot_data:
+                com_pos, _ = self.robot_data.get_center_of_mass()
+                self.update_com_history(np.array(com_pos))
+            return self._zmp_last.copy()
+
+        # --- 2) Fallback LIPM (sin soporte suficiente o sin PLANTED)
         # Obtener posición del centro de masa
         if self.robot_data:
             try:
@@ -99,7 +133,18 @@ class ZMPCalculator:
         zmp_x = com_pos[0] - (l_dynamic / self.g) * com_acceleration[0]
         zmp_y = com_pos[1] - (l_dynamic / self.g) * com_acceleration[1]
         
-        return np.array([zmp_x, zmp_y])
+        zmp = np.array([zmp_x, zmp_y], dtype=float)
+        # Mantén último ZMP bueno si existe (hold) cuando NO hay pies PLANTED
+        no_planted = (
+            (left_state is not None and left_state  < self.STATE_PLANTED) and
+            (right_state is not None and right_state < self.STATE_PLANTED)
+        ) if (left_state is not None and right_state is not None) else (wsum < self.EPS_FZ)
+        if no_planted and (self._zmp_last is not None):
+            return self._zmp_last.copy()
+
+        self._zmp_lp = zmp.copy()
+        self._zmp_last = zmp.copy()
+        return zmp
     
     def update_com_history(self, com_position):
         """Actualizar historia del COM (simplificada)"""
@@ -116,7 +161,7 @@ class ZMPCalculator:
         Si no hay suficiente historia, asumir aceleración cero.
         """
         
-        if len(self.com_history) < 5:
+        if len(self.com_history) < 3:
             return np.array([0.0, 0.0, 0.0])
         
         # Diferencias finitas de segundo orden: a = (pos[t] - 2*pos[t-1] + pos[t-2]) / dt^2
@@ -132,30 +177,9 @@ class ZMPCalculator:
         return acceleration
     
     def get_support_polygon(self):
-        """
-        Obtener polígono de soporte SIMPLIFICADO basado en contactos de pies.
-        
-        Returns:
-            np.array: Puntos del polígono de soporte [[x1,y1], [x2,y2], ...]
-        """
-        
-        support_points = []
-
-        ground = self.ground_id if self.ground_id is not None else 0  # fallback 0
-        left_contacts  = p.getContactPoints(self.robot_id, ground, linkIndexA=self.left_foot_id, linkIndexB=-1)
-        right_contacts = p.getContactPoints(self.robot_id, ground, linkIndexA=self.right_foot_id, linkIndexB=-1)
-        
-        # Verificar contacto pie izquierdo
-        if left_contacts:
-            left_pos = p.getLinkState(self.robot_id, self.left_foot_id)[0]
-            support_points.append([left_pos[0], left_pos[1]])  # Solo x, y
-        
-        # Verificar contacto pie derecho
-        if right_contacts:
-            right_pos = p.getLinkState(self.robot_id, self.right_foot_id)[0]
-            support_points.append([right_pos[0], right_pos[1]])  # Solo x, y
-        
-        return np.array(support_points) if support_points else np.array([])
+        """Polígono de soporte (x,y) en MUNDO a partir de la geometría de los pies."""
+        poly = self._support_polygon_world()
+        return np.asarray(poly, dtype=float) if poly else np.array([])
     
     def is_stable(self, zmp_point=None):
         """
@@ -167,25 +191,11 @@ class ZMPCalculator:
         if zmp_point is None:
             zmp_point = self.calculate_zmp()
         
-        support_polygon = self.get_support_polygon()
-        
-        # Sin contacto = inestable
-        if len(support_polygon) == 0:
+        rect = self._support_polygon_world()
+        if not rect:
             return False
-        
-        # Un solo pie = verificar distancia simple
-        if len(support_polygon) == 1:
-            distance = np.linalg.norm(zmp_point - support_polygon[0])
-            return distance < self.stability_margin
-        
-        # Dos pies = verificar si ZMP está en el rectángulo entre ellos
-        min_x = min(support_polygon[:, 0]) - self.stability_margin
-        max_x = max(support_polygon[:, 0]) + self.stability_margin
-        min_y = min(support_polygon[:, 1]) - self.stability_margin
-        max_y = max(support_polygon[:, 1]) + self.stability_margin
-        
-        return (min_x <= zmp_point[0] <= max_x and 
-                min_y <= zmp_point[1] <= max_y)
+        d = self._point_in_rect_margin(tuple(np.asarray(zmp_point)[:2]), rect)
+        return d >= 0.0
     
     def stability_margin_distance(self, zmp_point=None):
         """
@@ -198,28 +208,10 @@ class ZMPCalculator:
         if zmp_point is None:
             zmp_point = self.calculate_zmp()
         
-        support_polygon = self.get_support_polygon()
-        
-        # Sin soporte = muy inestable
-        if len(support_polygon) == 0:
-            return -1.0
-        
-        # Un pie = distancia al centro del pie
-        if len(support_polygon) == 1:
-            distance_to_foot = np.linalg.norm(zmp_point - support_polygon[0])
-            return self.stability_margin - distance_to_foot
-        
-        # Dos pies = distancia al borde del rectángulo
-        min_x = min(support_polygon[:, 0])
-        max_x = max(support_polygon[:, 0])
-        min_y = min(support_polygon[:, 1])
-        max_y = max(support_polygon[:, 1])
-        
-        # Distancia al borde más cercano
-        dist_x = min(zmp_point[0] - min_x, max_x - zmp_point[0])
-        dist_y = min(zmp_point[1] - min_y, max_y - zmp_point[1])
-        
-        return min(dist_x, dist_y)
+        rect = self._support_polygon_world()
+        if not rect:
+            return float(-self.stability_margin)  # sin soporte: inestable
+        return float(self._point_in_rect_margin(tuple(np.asarray(zmp_point)[:2]), rect))
     
     def get_stability_info(self):
         """
@@ -233,19 +225,39 @@ class ZMPCalculator:
         is_stable = self.is_stable(zmp_point)
         margin = self.stability_margin_distance(zmp_point)
         support_polygon = self.get_support_polygon()
-        
-        return {
+        # KPI de cargas
+        try:
+            sFz, fzL, fzR = self.vertical_loads()
+        except Exception:
+            sFz = fzL = fzR = 0.0
+
+        info = {
             'zmp_position': zmp_point.tolist(),
             'is_stable': is_stable,
             'stability_margin': margin,
             'support_polygon': support_polygon.tolist(),
-            'num_contact_points': len(support_polygon),
+            'support_polygon_vertices': len(support_polygon),
+            'num_contact_samples': len(self._collect_contact_samples()),
+            'sumFz_total': sFz, 'sumFz_left': fzL, 'sumFz_right': fzR,
             'com_history_length': len(self.com_history)
         }
+
+        if self.contact_state_fn is not None:
+            try:
+                ls, _, _ = self.contact_state_fn(self.left_foot_id)
+                rs, _, _ = self.contact_state_fn(self.right_foot_id)
+                info['left_state'] = int(ls)
+                info['right_state'] = int(rs)
+            except Exception:
+                pass
+        
+        return info
     
     def reset(self):
         """Reset del calculador ZMP"""
         self.com_history.clear()
+        self._zmp_last = None
+        self._zmp_lp   = None
         print(f"🔄 ZMP Calculator reset")
 
     def get_stability_analysis(self):
@@ -276,17 +288,34 @@ class ZMPCalculator:
      # ---------------------------
     def _foot_has_contact(self, foot_id) -> bool:
         ground = self.ground_id if self.ground_id is not None else 0
+        if self.contact_state_fn is not None:
+            try:
+                state, n, F = self.contact_state_fn(foot_id)
+                return (state >= self.STATE_PLANTED) or (F >= self.EPS_FZ)
+            except Exception:
+                pass
+        # Fallback por PyBullet
         cps = p.getContactPoints(self.robot_id, ground, linkIndexA=foot_id, linkIndexB=-1)
         if not cps: 
             return False
-        fz = sum(max(0.0, cp[9]) for cp in cps)  # idx 9 = normalForce
-        return fz >= self.EPS_FZ * 0.5  # algo de carga real
+        # Cuenta “contactos buenos” con Fz >= MIN_CONTACT_FORCE y también mira ΣFz
+        good = [cp for cp in cps if max(0.0, cp[9]) >= self.MIN_CONTACT_FORCE]
+        sum_fz = sum(max(0.0, cp[9]) for cp in good)
+        return (len(good) >= 2) or (sum_fz >= self.EPS_FZ * 0.5)
 
     def _collect_contact_samples(self):
         """Devuelve lista [(pos_world(x,y), Fz), ...] filtrada por MIN_CONTACT_FORCE."""
         ground = self.ground_id if self.ground_id is not None else 0
         samples = []
         for foot_id in (self.left_foot_id, self.right_foot_id):
+            # Si hay callback y el pie está NONE, ignóralo del todo; si TOUCH, acepta pero será filtrado por Fz.
+            if self.contact_state_fn is not None:
+                try:
+                    state, _, _ = self.contact_state_fn(foot_id)
+                    if state == self.STATE_NONE:
+                        continue
+                except Exception:
+                    pass
             cps = p.getContactPoints(self.robot_id, ground, linkIndexA=foot_id, linkIndexB=-1)
             for cp in cps or []:
                 Fz = float(max(0.0, cp[9]))      # normalForce
@@ -345,3 +374,24 @@ class ZMPCalculator:
         dx = min(pt[0] - min_x, max_x - pt[0])
         dy = min(pt[1] - min_y, max_y - pt[1])
         return min(dx, dy)
+    
+    # KPIs de carga (debug/telemetría)
+    def vertical_loads(self):
+        """Devuelve (ΣFz_total, ΣFz_left, ΣFz_right) tras filtrado por MIN_CONTACT_FORCE."""
+        ground = self.ground_id if self.ground_id is not None else 0
+        def sum_fz(foot):
+            cps = p.getContactPoints(self.robot_id, ground, linkIndexA=foot, linkIndexB=-1)
+            return sum(max(0.0, cp[9]) for cp in (cps or []) if max(0.0, cp[9]) >= self.MIN_CONTACT_FORCE)
+        fzL = sum_fz(self.left_foot_id)
+        fzR = sum_fz(self.right_foot_id)
+        return (fzL + fzR, fzL, fzR)
+    
+    def _soft_saturate_to_rect(self, pt):
+        """(Opcional) proyecta suavemente el ZMP al rectángulo de soporte cuando reaparece soporte."""
+        rect = self._support_polygon_world()
+        if not rect:
+            return np.asarray(pt, dtype=float)
+        xs = [v[0] for v in rect]; ys = [v[1] for v in rect]
+        x = float(np.clip(pt[0], min(xs), max(xs)))
+        y = float(np.clip(pt[1], min(ys), max(ys)))
+        return np.array([x, y], dtype=float)
