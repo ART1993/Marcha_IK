@@ -639,10 +639,10 @@ def create_march_in_place_trainer(total_timesteps=1_500_000, n_envs=4, learning_
 
 
 def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-4, vx_target=0.6, 
-                          logger=None, csvlog=None, robot_name="2_legged_human_like_robot20DOF"):
+                          logger=None, csvlog=None, robot_name="2_legged_human_like_robot20DOF", _simple_reward_mode="walk3d"):
     trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, 
                                           learning_rate=learning_rate, logger=logger, 
-                                          csvlog=csvlog, _simple_reward_mode='walk3d',
+                                          csvlog=csvlog, _simple_reward_mode=_simple_reward_mode,
                                           _allow_hops=True, _vx_target=vx_target, robot_name=robot_name)
     print(f"✅ Trainer created (NO CURRICULUM)")
     print(f"   Focus: Balance básico con RL puro")

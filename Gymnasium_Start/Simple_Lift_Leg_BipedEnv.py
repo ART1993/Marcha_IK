@@ -231,13 +231,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # KPI ZMP ya existente
         if self.zmp_calculator:
             try:
-                
                 zmp_xy = self.zmp_calculator.calculate_zmp()
                 self.zmp_x, self.zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
                 # COM (usa tu helper de Pybullet_Robot_Data)
                 try:
                     com_world, self.mass = self.robot_data.get_center_of_mass()
                     self.com_x, self.com_y, self.com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+                    self.vel_COM=self.robot_data.get_center_of_mass_velocity()
                 except Exception:
                     self.com_x = self.com_y = self.com_z = 0.0
             except Exception:
@@ -798,13 +798,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
             # Pierna izquierda
-            self.joint_indices[0]: -0.05,   # left_hip_pitch_joint
+            self.joint_indices[0]: -0.1,   # left_hip_pitch_joint
             self.joint_indices[1]: 0.0,   # left_hip_roll_joint
             self.joint_indices[2]: 0.05,   # left_knee_joint
             self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
             self.joint_indices[4]: -0.05,   # left_ankle_roll_joint
             # pierna derecha
-            self.joint_indices[5]: -0.05,   # right_hip_roll_joint
+            self.joint_indices[5]: -0.1,   # right_hip_roll_joint
             self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
             self.joint_indices[7]: 0.05,   # right_knee_joint
             self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
@@ -1060,7 +1060,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_general[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_general[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     row_general[f'Masa']=round(self.mass,1)
-                    row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
+                    #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("general_values", row_general)
 

@@ -18,6 +18,7 @@ class RewardMode(Enum):
     WALK3D = "walk3d"                # caminar en 3D (avance +X)
     LIFT_LEG = "lift_leg"            # levantar una pierna estable
     MARCH_IN_PLACE = "march_in_place" # alternar piernas en el sitio (ambos pies en el aire permitido)
+    WALK3DSLIM = "walk3D_slim"
     
 
 # =============================================================================
@@ -46,9 +47,9 @@ class SimpleProgressiveReward:
         except Exception:
             self.mode = RewardMode.PROGRESSIVE
         # Parametrización útil para modos nuevos
-        self.vx_target = float(getattr(env, "vx_target", 0.6))
+        self.vx_target = float(getattr(env, "vx_target", 1.2))
         self.allow_hops = bool(getattr(env, "allow_hops", False))
-
+        
         # --- Parámetros configurables (puedes sobreescribirlos desde env) ---
         # Cadera de la pierna en el aire (roll absoluto). Recomendado 0.3–0.5
         self.swing_hip_target  = float(getattr(env, "swing_hip_target", 0.10))
@@ -70,6 +71,7 @@ class SimpleProgressiveReward:
         self.success_streak = 0  # Episodios consecutivos exitosos
         self._no_contact_steps = 0
         self.contact_both = 0
+        self.dt=1.0/self.frequency_simulation
         
         # Configuración por nivel (muy simple)
         # Configuración más graduada
@@ -135,12 +137,30 @@ class SimpleProgressiveReward:
         self.min_F=20
         self.reawrd_step=self.env.reawrd_step
         # --- Effort weight scheduler ---
+        self.effort_adapter = EffortWeightAdapter(q=0.6, b=0.9, delta_a=1e-3, lam=0.9)
         self.effort = EffortWeightScheduler() #q=0.6, b=0.95, delta_a=1e-3, lam=0.5, a_min=0.0, a_max=0.5
         self._task_accum = 0.0
         self._task_N = 0
         self._task_score_sum = 0.0
         self._task_score_n = 0
         self._prev_u_for_effort = None  # para suavidad (du^2)
+        # Acumuladores por episodio
+        self._ep_r_vel = 0.0
+        self._ep_steps = 0
+        # Si no lo tienes definido fuera, define el peso en N:
+        if not hasattr(self, "robot_weight_N"):
+            # masa total * g (intenta leer de robot_data si existe)
+            mass_total = getattr(self.env.robot_data, "total_mass", None)
+            if mass_total is None:
+                mass_total = 70.0  # fallback
+            self.robot_weight_N = mass_total * 9.81
+        # Límites articulares (si no los tienes ya, intenta leerlos)
+        if not hasattr(self, "joint_limits"):
+            jl = getattr(self.env.robot_data, "joint_limits", None)
+            self.joint_limits = jl if jl is not None else {}
+        # Lista de articulaciones a monitorizar (opcional)
+        if not hasattr(self, "joints_monitored"):
+            self.joints_monitored = list(self.joint_limits.keys())
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
             self.env.logger.log("main",f"   Frequency: {self.frequency_simulation} Hz")
@@ -177,19 +197,28 @@ class SimpleProgressiveReward:
         self._task_score_n = 0
         return float(np.clip(s, 0.0, 1.0))
     
+    def reset_episode_accumulators(self):
+        self._ep_r_vel = 0.0
+        self._ep_steps = 0
+    
     def calculate_reward(self, action, step_count):
         """
         Método principal: calcula reward según el nivel actual
         """
-
+        self.com_x, self.com_y, self.com_z=self.env.com_x, self.env.com_y, self.env.com_z
+        self.zmp_x,self.zmp_y=self.env.zmp_x,self.env.zmp_y
+        self.vel_COM=self.env.vel_COM
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
-        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
+        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3DSLIM.value:
+            #calculate_reward_walk3d anterior
+            return self.calculate_reward_walk3d_slim(action, step_count)
+        elif getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
             return self.calculate_reward_walk3d(action, step_count)
-        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.LIFT_LEG.value:
+        elif getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.LIFT_LEG.value:
             return self.calculate_reward_lift_leg(action, step_count)
-        if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.MARCH_IN_PLACE.value:
+        elif getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.MARCH_IN_PLACE.value:
             return self.calculate_reward_march_in_place(action, step_count)
         else:
             reward = self._level_3_reward(pos, euler, step_count)  # + levantar piernas
@@ -455,12 +484,6 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
             return True
         
-        # if self.dx < 0.35:
-        #     self.last_done_reason = "drift"
-        #     if self.env.logger:
-        #         self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
-        #     return True
-        
         max_tilt = self.max_tilt_by_level.get(self.level, 1.0)
         # Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
@@ -469,33 +492,6 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Robot tilted too much")
             return True
         
-        # dentro de is_episode_done(...) tras calcular contactos:
-        # if self.mode == RewardMode.MARCH_IN_PLACE.value:
-        #     fin_simulacion_no_contacto = self.frequency_simulation
-        #     fin_simulacion_exceso_contacto = self.frequency_simulation//2  
-        # else:
-        #     fin_simulacion_no_contacto = 0.5 * self.frequency_simulation  # 3 segundos de gracia
-        #     fin_simulacion_exceso_contacto = 0.8 * self.frequency_simulation
-        # pie_izquierdo_contacto, pie_derecho_contacto = self.env.contacto_pies   # si ya tienes util; si no, usa getContactPoints
-        # if not (pie_izquierdo_contacto or pie_derecho_contacto):
-        #     self._no_contact_steps += 1
-        # else:
-        #     self._no_contact_steps = 0
-        # if self._no_contact_steps >= fin_simulacion_no_contacto:  # 0.5 s
-        #     self.last_done_reason = "no_support"
-        #     if self.env.logger:
-        #         self.env.logger.log("main","❌ Episode done: No foot support for too long")
-        #     return True
-        # if (pie_izquierdo_contacto and pie_derecho_contacto):
-        #     self.contact_both += 1
-        #     if self.contact_both >fin_simulacion_exceso_contacto:# 0.8 s
-        #         self.last_done_reason = "excessive support"
-        #         if self.env.logger:
-        #             self.env.logger.log("main","❌ Episode done: excessive support")
-        #         return True
-        # else:
-        #     self.contact_both=0
-        # Tiempo máximo (crece con nivel)
         max_steps =  6000 # 6000 steps
         if step_count >= max_steps:
             self.last_done_reason = "time"
@@ -637,13 +633,18 @@ class SimpleProgressiveReward:
 
     # ===================== NUEVO: Caminar 3D =====================
     def calculate_reward_walk3d(self, action, step_count):
+        """
+            forma de la recompensa:
+            r = r_vel + w_c * r_foot - a(t) * c_effort - w_p * c_pain
+            Usa vel_COM, flags de contacto y GRF del entorno.
+        """
         env = self.env
         pos, orn = p.getBasePositionAndOrientation(env.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         roll, pitch, yaw = euler
         # Da la velocidad lineal y angular de la pelvis
         lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
-        vx = lin_vel[0]
+        vx = self.vel_COM[0]
 
         # Contactos y fuerzas
         (state_L, n_l, FL) = env.foot_contact_state(env.left_foot_link_id, f_min=self.min_F)
@@ -654,25 +655,20 @@ class SimpleProgressiveReward:
         R_on = (state_R == self.env.footcontact_state.PLANTED.value)
 
         support_now = 'L' if FL > FR else 'R'
-        b_clear = 0.10 if ((support_now=='L' and L_on and not R_on) or
-                   (support_now=='R' and R_on and not L_on)) else 0.0
+        b_clear = 0.35 if ((support_now=='L' and L_on and not R_on) or
+                   (support_now=='R' and R_on and not L_on)) else -1.0
 
         # --- Posiciones de pies y base ---
         Lpos = p.getLinkState(env.robot_id, env.left_foot_link_id, computeForwardKinematics=1)[0]
         Rpos = p.getLinkState(env.robot_id, env.right_foot_link_id, computeForwardKinematics=1)[0]
-        com_x = pos[0] # Pos x de la cadera (base) no del COM
+        com_x = self.com_x # Pos x de la cadera (base) no del COM
 
         # --- 1) Velocidad objetivo (campana) ---
         v_tgt   = float(getattr(self, "vx_target", 0.25))
         sigma_v = 0.20
         r_vel = np.exp(-1*((vx - v_tgt)/sigma_v)**2) # Si no aumenta el valor para dif bajas derucir constante multiplicacion
         self._accumulate_task_term(r_vel)
-        self.reawrd_step['r_vel_raw'] = r_vel
-
-        # --- Pesos (usa effort weight adaptativo) ---
-        alive = 0.2
-        w_v, w_post = 2.4, 0.6
-        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
+        
 
         a_eff = float(getattr(self.env, "effort_weight", 0.02))  # NEW
         w_en, w_du = max(0.0, a_eff), max(0.0, 2.0*a_eff)        # NEW: escalar por esfuerzo adaptativo
@@ -687,7 +683,7 @@ class SimpleProgressiveReward:
         switched = (support_now != getattr(self, "_last_support3d", support_now))
         self._last_support3d = support_now
         # bonus pequeño por cambio de soporte y por "soporte claro"
-        b_switch = 0.10 if switched else 0.0
+        b_switch = 0.20 if switched else 0.0
         r_contact = b_switch + b_clear
 
         # --- 4) Step length al IMPACTO: pie nuevo por delante del COM ---
@@ -748,9 +744,9 @@ class SimpleProgressiveReward:
             self._vx_accum = 0.0; self._vx_n = 0
 
         # --- Pesos (sin ZMP) ---
-        alive = 0.2
+        #alive = 0.2
         w_v, w_post = 2.4, 0.6
-        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
+        w_cont, w_step, w_ahead = 1.5, 0.9, 0.3
         w_stuck, w_fall = 1.5, 5.0
 
         
@@ -760,7 +756,7 @@ class SimpleProgressiveReward:
         eff_cost = self.effort.a_t * eff_base
         self._prev_u3d = u
 
-        reward = (alive
+        reward = (
                 + w_v*r_vel
                 + w_post*r_post
                 + w_cont*r_contact
@@ -771,7 +767,7 @@ class SimpleProgressiveReward:
                 -eff_cost)
         
         # logging
-        self.reawrd_step['alive'] = alive
+        self.reawrd_step['r_vel_raw'] = r_vel
         self.reawrd_step['r_vel'] = w_v*r_vel
         self.reawrd_step['r_post'] = w_post*r_post
         self.reawrd_step['r_contact'] = w_cont*r_contact
@@ -788,6 +784,99 @@ class SimpleProgressiveReward:
         # actualizar flags de contacto para siguiente paso
         self._L_on_prev, self._R_on_prev = L_on, R_on
         return float(reward)
+    
+    def calculate_reward_walk3d_slim(self, obs, info):
+        """
+            Recompensa compacta:
+            r = r_vel + w_c * r_foot - a(t) * c_effort - w_p * c_pain
+            Usa vel_COM, flags de contacto y GRF del entorno.
+        """
+
+        vx = float(self.env.vel_COM[0]) if hasattr(self.env, "vel_COM") else 0.0
+        v_star, sigma = 1.2, 0.5
+        if vx < v_star:
+            r_vel = np.exp(-((vx - v_star) ** 2) / (sigma ** 2))
+        else:
+            r_vel = 1.0
+
+        # -------- Contacto de pies (ligero anti-vuelo) --------
+        left_down = int(getattr(self.env, "left_down", 0))
+        right_down = int(getattr(self.env, "right_down", 0))
+        support = left_down + right_down    # 0,1,2
+        # Recompensa 1 si hay apoyo (1 ó 2), -1 si está en vuelo (0)
+        r_foot = (1 if support in (1, 2) else 0) - (1 if support == 0 else 0)
+
+        # -------- Esfuerzo (elige una de las dos variantes) --------
+        # a) si trabajas con torques normalizados en info["joint_torques_norm"] -> lista de (tau, tau_max)
+        c_effort = None
+        if "joint_torques_norm" in info and info["joint_torques_norm"]:
+            vals = []
+            for tau, tau_max in info["joint_torques_norm"]:
+                if tau_max is None or tau_max == 0:
+                    continue
+                vals.append((tau / tau_max) ** 2)
+            c_effort = float(np.mean(vals)) if len(vals) else 0.0
+        # b) si controlas PAM/activaciones en info["muscle_activations"] (0..1)
+        if c_effort is None and "muscle_activations" in info and info["muscle_activations"]:
+            acts = np.array(info["muscle_activations"], dtype=float)
+            c_effort = float(np.mean(acts ** 3))
+        if c_effort is None:
+            c_effort = 0.0
+
+        # -------- “Dolor”: límites + GRF excesivo --------
+        # Límites
+        c_pain_lim = 0.0
+        q_dict = info.get("q", {})  # mapa joint_name -> posición
+        for j in self.joints_monitored:
+            if j not in self.joint_limits or j not in q_dict:
+                continue
+            q = float(q_dict[j])
+            qmin, qmax = self.joint_limits[j]
+            over = max(0.0, q - qmax)
+            under = max(0.0, qmin - q)
+            c_pain_lim += over ** 2 + under ** 2
+        # GRF
+        F_L = float(getattr(self.env, "F_L", info.get("F_L", 0.0)))
+        F_R = float(getattr(self.env, "F_R", info.get("F_R", 0.0)))
+        BW = float(self.robot_weight_N)
+        pain_grf = max(0.0, (F_L + F_R) / BW - 1.2)
+        c_pain = c_pain_lim + pain_grf
+
+        # -------- Pesos --------
+        w_c, w_p = 0.05, 0.5
+        a_eff = float(self.effort_adapter.a)
+
+        reward = r_vel + w_c * r_foot - a_eff * c_effort - w_p * c_pain
+
+        # Penalización terminal (si existe en tu flujo)
+        if info.get("fell", False):
+            reward += -5.0
+
+        # ---- Logging y acumuladores ----
+        self._ep_r_vel += r_vel
+        self._ep_steps += 1
+        logs = {
+            "r_vel": float(r_vel),
+            "r_foot": float(r_foot),
+            "effort_weight": float(a_eff),
+            "effort_cost": float(c_effort),
+            "pain": float(c_pain),
+            "pain_lim": float(c_pain_lim),
+            "pain_grf": float(pain_grf)
+        }
+        return float(reward), logs
+    
+    def on_episode_end(self):
+        """
+        Llamar cuando termine un episodio (terminated or truncated).
+        Actualiza el adaptador con el retorno de r_vel del episodio
+        y resetea acumuladores.
+        """
+        ep_return = self._ep_r_vel  # puedes normalizar por pasos si quieres
+        self.effort_adapter.update(ep_return)
+        self.reset_episode_accumulators()
+
+        
     
     # ===================== NUEVO: Levantar una pierna (simple) =====================
     def calculate_reward_lift_leg(self, action, step_count):
@@ -914,4 +1003,34 @@ class SimpleProgressiveReward:
         self.reawrd_step['delta_u_pen'] = - w_du*delta_u
         self.reawrd_step['fall_pen'] = - w_fall*fall
         return float(reward)
+    
+
+class EffortWeightAdapter:
+    """
+    Ajusta a(t) (peso del esfuerzo) en función del rendimiento de la tarea.
+    r_mean: EMA del retorno de r_vel por episodio.
+    s_mean: EMA de si se supera el umbral q (suaviza la "confianza").
+    """
+    def __init__(self, q=0.6, b=0.9, delta_a=1e-3, lam=0.9):
+        self.q = q          # umbral de rendimiento
+        self.b = b          # suavizado EMA
+        self.delta_a = delta_a
+        self.lam = lam
+        self.r_mean = 0.0
+        self.s_mean = 0.0
+        self.a = 0.0        # peso actual del esfuerzo
+
+    def update(self, episode_return: float):
+        # EMA del retorno de r_vel (episodio)
+        self.r_mean = self.b * self.r_mean + (1 - self.b) * episode_return
+        # indicador de si superamos q
+        s_target = 1.0 if self.r_mean > self.q else 0.0
+        self.s_mean = self.b * self.s_mean + (1 - self.b) * s_target
+        # adaptación (desacelera subida si ya vamos bien de forma sostenida)
+        if self.r_mean > self.q and self.s_mean < 0.5:
+            self.delta_a *= self.lam
+        self.a += (self.delta_a if self.r_mean > self.q else -self.delta_a)
+        if self.a < 0.0:
+            self.a = 0.0
+        return self.a
     

@@ -94,7 +94,8 @@ def train_balance_march_in_place(total_timesteps=1000000, n_envs=4, resume=True,
 
 
 def train_balance_walk_3d(total_timesteps=1000000, n_envs=4, resume=True, 
-                                 with_logger=True, robot_name="2_legged_human_like_robot20DOF"):
+                                 with_logger=True, robot_name="2_legged_human_like_robot20DOF",
+                                 simple_reward_mode="walk3d"):
     """
     Función principal para entrenar balance con RL PURO (sin ayuda experta)
     """
@@ -120,7 +121,8 @@ def train_balance_walk_3d(total_timesteps=1000000, n_envs=4, resume=True,
         n_envs=n_envs,
         logger=logger,
         csvlog=csvlog,
-        robot_name=robot_name
+        robot_name=robot_name,
+        _simple_reward_mode=simple_reward_mode
     )
     
     model = trainer.train(resume=resume)
