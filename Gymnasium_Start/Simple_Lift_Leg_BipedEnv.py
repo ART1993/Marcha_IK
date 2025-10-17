@@ -798,17 +798,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
             # Pierna izquierda
-            self.joint_indices[0]: -0.1,   # left_hip_pitch_joint
+            self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
             self.joint_indices[1]: 0.0,   # left_hip_roll_joint
-            self.joint_indices[2]: 0.05,   # left_knee_joint
+            self.joint_indices[2]: 0.0,   # left_knee_joint      0.1
             self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
-            self.joint_indices[4]: -0.05,   # left_ankle_roll_joint
+            self.joint_indices[4]: 0.0,   # left_ankle_roll_joint 0.1
             # pierna derecha
-            self.joint_indices[5]: -0.1,   # right_hip_roll_joint
+            self.joint_indices[5]: 0.0,   # right_hip_roll_joint 0.1
             self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
-            self.joint_indices[7]: 0.05,   # right_knee_joint
+            self.joint_indices[7]: 0.0,   # right_knee_joint    0.1
             self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
-            self.joint_indices[9]: -0.05    # right_ankle_roll_joint
+            self.joint_indices[9]: 0.0    # right_ankle_roll_joint 0.1
         }
         
         for joint_id, pos in initial_positions.items():

@@ -644,62 +644,101 @@ class SimpleProgressiveReward:
         euler = p.getEulerFromQuaternion(orn)
         roll, pitch, yaw = euler
         # Da la velocidad lineal y angular de la pelvis
-        lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
-        vx = lin_vel[0]
+        #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
+        vx = float(self.vel_COM[0])
 
         # Contactos y fuerzas
         (state_L, n_l, FL) = env.foot_contact_state(env.left_foot_link_id, f_min=self.min_F)
         (state_R, n_r, FR) = env.foot_contact_state(env.right_foot_link_id, f_min=self.min_F)
-        Fmin = self.min_F
 
         L_on = (state_L == self.env.footcontact_state.PLANTED.value)
         R_on = (state_R == self.env.footcontact_state.PLANTED.value)
 
+        # Contacto de ritmo de paso, claridad y alternancia
+        # 3) Patrón de paso ligero: pie soporte claro + alternancia (con histéresis)
+        # le doy un peso de 0.4  # Evita "chatter" cuando FL≈FR usando un umbral de cambio.
+        deltaF = FL - FR
+        hysteresis = getattr(self, "_support_hyst", 15.0)  # N, ajusta según tu escala de fuerzas
+        prev_support = getattr(self, "_last_support3d", 'L' if FL >= FR else 'R')
+        if deltaF > +hysteresis:
+            support_now = 'L'
+        elif deltaF < -hysteresis:
+            support_now = 'R'
+        else:
+            support_now = prev_support
         support_now = 'L' if FL > FR else 'R'
         b_clear = 0.10 if ((support_now=='L' and L_on and not R_on) or
                    (support_now=='R' and R_on and not L_on)) else 0.0
-
-        # --- Posiciones de pies y base ---
-        Lpos = p.getLinkState(env.robot_id, env.left_foot_link_id, computeForwardKinematics=1)[0]
-        Rpos = p.getLinkState(env.robot_id, env.right_foot_link_id, computeForwardKinematics=1)[0]
-        com_x = pos[0] # Pos x de la cadera (base) no del COM
-
-        # --- 1) Velocidad objetivo (campana) ---
-        v_tgt   = float(getattr(self, "vx_target", 0.25))
-        sigma_v = 0.20
-        r_vel = np.exp(-1*((vx - v_tgt)/sigma_v)**2) # Si no aumenta el valor para dif bajas derucir constante multiplicacion
-        self._accumulate_task_term(r_vel)
-        self.reawrd_step['r_vel_raw'] = r_vel
-
-        # --- Pesos (usa effort weight adaptativo) ---
-        alive = 0.2
-        w_v, w_post = 2.4, 0.6
-        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
-
-        a_eff = float(getattr(self.env, "effort_weight", 0.02))  # NEW
-        w_en, w_du = max(0.0, a_eff), max(0.0, 2.0*a_eff)        # NEW: escalar por esfuerzo adaptativo
-        w_stuck, w_fall = 1.5, 5.0
-
-        # --- 2) Upright simple (con leve "forward lean" positivo) ---
-        pitch_tgt = +0.05  # ~3°
-        r_post = np.exp(- ((roll/0.25)**2) - (((pitch - pitch_tgt)/0.30)**2))
-
-        # 3) Patrón de paso ligero: pie soporte claro + alternancia
-        if step_count == 1: self._last_support3d = support_now
+        if step_count == 1: 
+            self._last_support3d = support_now
         switched = (support_now != getattr(self, "_last_support3d", support_now))
         self._last_support3d = support_now
         # bonus pequeño por cambio de soporte y por "soporte claro"
         b_switch = 0.10 if switched else 0.0
         r_contact = b_switch + b_clear
 
+        # --- Posiciones de pies y base ---
+        Lpos = p.getLinkState(env.robot_id, env.left_foot_link_id, computeForwardKinematics=1)[0]
+        Rpos = p.getLinkState(env.robot_id, env.right_foot_link_id, computeForwardKinematics=1)[0]
+        com_x = float(self.com_x) # Pos x del COM
+
+        # --- 1) Velocidad objetivo (campana) ---
+        # Si se quiere "sigma" estadístico, usa -0.5*((...)/sigma)^2; si prefieres más estrecha, quita el 0.5.
+        v_tgt   = float(getattr(self, "vx_target", 0.25))
+        sigma_v = 0.20
+        r_vel = np.exp(-0.5*((vx - v_tgt)/sigma_v)**2) # Si no aumenta el valor para dif bajas derucir constante multiplicacion
+        self._accumulate_task_term(r_vel)
+        self.reawrd_step['r_vel_raw'] = r_vel
+
+        
+        alive = 0.2
+        w_v, w_post = 2.4, 0.6
+        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
+        # --- Pesos (usar effort weight adaptativo) ---
+        a_eff = float(getattr(self.env, "effort_weight", 0.02))  # NEW
+        w_en, w_du = max(0.0, a_eff), max(0.0, 3.0*a_eff)        # NEW: E y derivada (suavidad)
+        w_stuck, w_fall = 1.5, 5.0
+
+        # --- 2) Mantenerse erguido simple (con leve "forward lean" positivo) ---
+        # Para tu morfología sin tronco, un leve pitch negativo puede ser preferible
+        pitch_tgt = -0.05  # ~3°
+        r_post = np.exp(- ((roll/0.25)**2) - (((pitch - pitch_tgt)/0.30)**2))
+
+        # --- 1.b) Estabilidad vertical (COM/altura) y rampas de currículo ---
+        # Objetivo: mantener base_z cerca de su valor de referencia antes de priorizar avance
+        base_z = pos[2]
+        if step_count == 1:
+            # referencia razonable: altura inicial de la base
+            self._base_z_ref = float(getattr(self.env, "init_pos", (0,0,base_z))[2]) if hasattr(self.env, "init_pos") else float(base_z)
+            self._prev_vx_for_impulse = float(vx)
+        z_ref = float(getattr(self, "base_z_target", getattr(self, "_base_z_ref", base_z)))
+        sigma_z = float(getattr(self, "base_z_sigma", 0.03))  # ~3 cm
+        r_vert = float(np.exp(- ((base_z - z_ref)/max(1e-6, sigma_z))**2))
+        # rampas: reduce temporalmente el peso de avance al principio del episodio y de cada paso
+        warmup_steps = int(getattr(self, "warmup_steps_walk", 2*self.frequency_simulation))  # ~2 s
+        step_ramp = min(1.0, max(0.0, float(step_count)/max(1, warmup_steps)))
+        # también escala por episodios para un currículo temprano de equilibrio
+        episodes_ramp = int(getattr(self, "warmup_episodes_walk", 10))
+        epi_factor = min(1.0, max(0.0, float(getattr(self, "episode_count", 0))/max(1, episodes_ramp)))
+        ramp_factor = step_ramp * epi_factor  # 0→1
+        # (opcional) pequeña penalización de 'aceleración' para amortiguar impulsos iniciales
+        dv = float(abs(vx - getattr(self, "_prev_vx_for_impulse", vx)))
+        self._prev_vx_for_impulse = float(vx)
+
+        
+
         # --- 4) Step length al IMPACTO: pie nuevo por delante del COM ---
         # detecta nuevo impacto (transición off->on del pie que NO estaba soportando)
+         # Inicializa flags antes de usarlos y usa getattr para evitar accesos no definidos en step 1
         if step_count == 1:
-            self._L_on_prev, self._R_on_prev = L_on, R_on
+            self._L_on_prev = L_on
+            self._R_on_prev = R_on
             self._last_step_len = 0.0
-        impact_L = (L_on and not self._L_on_prev and support_now=='L')  # L acaba de aterrizar y pasa a ser soporte
-        impact_R = (R_on and not self._R_on_prev and support_now=='R')
-
+        # Detecta impacto por transición off->on, sin exigir soporte_now igual (evita perder impactos en doble apoyo)
+        impact_L = (L_on and not getattr(self, "_L_on_prev", False))
+        impact_R = (R_on and not getattr(self, "_R_on_prev", False))
+        
+        #peso aportado: 0.9
         step_len_tgt = 0.18  # 18 cm
         step_len_tol = 0.06  # meseta ±6 cm
         r_step = 0.0
@@ -731,7 +770,8 @@ class SimpleProgressiveReward:
 
         # --- 6) Suavidad / energía ---
         u = np.clip(action, 0.0, 1.0)
-        if not hasattr(self, "_prev_u3d"): self._prev_u3d = np.zeros_like(u)
+        if not hasattr(self, "_prev_u3d"):
+            self._prev_u3d = np.zeros_like(u)
 
          # --- 7) Caída y "no avanzar" ---
         fall = 0.0
@@ -749,18 +789,28 @@ class SimpleProgressiveReward:
                 r_stuck = 0.4  # penaliza atascos
             self._vx_accum = 0.0; self._vx_n = 0
 
-        # --- Pesos (sin ZMP) ---
-        alive = 0.2
-        w_v, w_post = 2.4, 0.6
-        w_cont, w_step, w_ahead = 0.4, 0.9, 0.3
-        w_stuck, w_fall = 1.5, 5.0
-
-        
+         # --- 6b) Coste de esfuerzo con descomposición energía/suavidad/esparsidad ---
         eff_base, eff_dbg = effort_cost_proxy(u, getattr(self, "_prev_u3d", None),
-                                      activity_pow=3.0, w_smooth=0.5, w_sparse=0.1,
+                                      activity_pow=3.0, w_smooth=0.7, w_sparse=0.1,
                                       act_threshold=0.15)
-        eff_cost = self.effort.a_t * eff_base
+        # Usa w_en (energía) y w_du (suavidad) aquí; mantenemos esparsidad ligada a a_eff (más suave).
+         # Si tu proxy devuelve componentes en eff_dbg, combínalas explícitamente:
+        eff_energy = float(eff_dbg.get('activity', 0.0))   # "energía"/actividad
+        eff_smooth = float(eff_dbg.get('smooth', 0.0))     # derivada / smoothness
+        eff_sparse = float(eff_dbg.get('sparse', 0.0))     # sparsidad
+        
+        eff_cost = (w_en * eff_energy) + (w_du * eff_smooth) + (0.5 * a_eff * eff_sparse)
+        # # Si prefieres, aún puedes escalar todo por self.effort.a_t:
+        # eff_cost *= float(self.effort.a_t) # Anteriormente era esto eff_cost = a_eff * eff_base
+        #eff_cost = a_eff * eff_base
         self._prev_u3d = u
+
+        # Ajuste de pesos con rampas (avance reducido al principio)
+        w_v_eff = w_v * float(ramp_factor)
+        # El término vertical pesa más al principio y se apaga al avanzar el step
+        w_vert = float(getattr(self, "w_vert", 0.8)) * (1.0 - float(step_ramp))
+        # Penalización suave de 'aceleración' (cambios bruscos de velocidad del cuerpo)
+        w_acc  = float(getattr(self, "w_accel_pen", 0.05))
 
         reward = (alive
                 + w_v*r_vel
@@ -768,6 +818,8 @@ class SimpleProgressiveReward:
                 + w_cont*r_contact
                 + w_step*r_step
                 + w_ahead*r_ahead
+                + w_vert*r_vert
+                - w_acc*dv
                 - w_stuck*r_stuck
                 - w_fall*fall
                 -eff_cost)
@@ -779,9 +831,11 @@ class SimpleProgressiveReward:
         self.reawrd_step['r_contact'] = w_cont*r_contact
         self.reawrd_step['r_step'] = w_step*r_step
         self.reawrd_step['r_ahead'] = w_ahead*r_ahead
+        self.reawrd_step['r_vert']  = w_vert*r_vert
+        self.reawrd_step['accel_pen'] = - w_acc*dv
         self.reawrd_step['stuck_pen'] = - w_stuck*r_stuck
         self.reawrd_step['fall_pen'] = - w_fall*fall
-        self.reawrd_step['effort_weight'] = float(self.effort.a_t)
+        self.reawrd_step['effort_weight'] = float(getattr(self.env, "effort_weight", 0.0))
         self.reawrd_step['effort_cost'] = - float(eff_cost)
         self.reawrd_step['effort_activity'] = eff_dbg.get('activity', 0.0)
         self.reawrd_step['effort_smooth'] = eff_dbg.get('smooth', 0.0)
@@ -840,7 +894,7 @@ class SimpleProgressiveReward:
 
         # 5) Caída
         fall = 0.0
-        if (base_z < 0.75) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
+        if (base_z < 0.5) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
             fall = 1.0; self.last_done_reason = "fall_lift"; self._episode_done = True
 
         # Pesos

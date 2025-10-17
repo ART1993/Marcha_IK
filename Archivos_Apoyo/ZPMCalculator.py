@@ -42,7 +42,7 @@ class ZMPCalculator:
         self.EPS_FZ = 30.0            # N (suma mínima para ZMP fiable)
         # Geometría aproximada del pie (rectángulo en el frame del link)
         self.FOOT_LENGTH = 0.3       # m (talón→punta)
-        self.FOOT_WIDTH  = 0.15       # m (medial↔lateral)
+        self.FOOT_WIDTH  = 0.2       # m (medial↔lateral)
         # Historial de último ZMP válido (para “hold” si ΣFz baja)
         
         # ===== PARÁMETROS FÍSICOS SIMPLIFICADOS =====
