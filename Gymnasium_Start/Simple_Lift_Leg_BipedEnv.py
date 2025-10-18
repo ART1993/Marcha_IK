@@ -87,7 +87,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #Probar para ver si evita tembleques
         self.frequency_control=50.0
         self.time_step = 1.0 / self.frequency_simulation
-        # ===== CONFIGURACIÓN PAM SIMPLIFICADA =====
+        # Action-repeat/frame-skip: aplicar una acción a 400 Hz simulación pero 50 Hz control
+        self.frame_skip = max(1, int(self.frequency_simulation // self.frequency_control))
         
         # Estados PAM básicos
         self.pam_states = {
@@ -669,13 +670,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     def _get_simple_observation(self):
         """
-        Observación SIMPLIFICADA - Solo 16 elementos esenciales
+        Observación SIMPLIFICADA
         
-        ELIMINADO:
-        - Estados de resortes pasivos (4 elementos)
-        - ZMP history complejo (4 elementos)
-        - Observation history deque
-        - Métricas biomecánicas avanzadas
         """
         
         obs = []
@@ -798,16 +794,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
         initial_positions = {
             # Pierna izquierda
-            self.joint_indices[0]: -0.1,   # left_hip_pitch_joint 0.1
+            self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
             self.joint_indices[1]: 0.0,   # left_hip_roll_joint
-            self.joint_indices[2]: 0.1,   # left_knee_joint      0.1
-            self.joint_indices[3]: -0.1,   # left_ankle_pitch_joint
+            self.joint_indices[2]: 0.0,   # left_knee_joint      0.1
+            self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
             self.joint_indices[4]: 0.0,   # left_ankle_roll_joint 0.1
             # pierna derecha
-            self.joint_indices[5]: 0.1,   # right_hip_roll_joint 0.1
+            self.joint_indices[5]: 0.0,   # right_hip_roll_joint 0.1
             self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
-            self.joint_indices[7]: 0.1,   # right_knee_joint    0.1
-            self.joint_indices[8]: -0.1,   # right_ankle_pitch_joint
+            self.joint_indices[7]: 0.0,   # right_knee_joint    0.1
+            self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
             self.joint_indices[9]: 0.0    # right_ankle_roll_joint 0.1
         }
         
@@ -1060,8 +1056,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_general[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_general[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     row_general[f'Masa']=round(self.mass,1)
-                    row_general['posicion_x']=round(self.simple_reward_system.dx,3)
-                    row_general['posicion_y']=round(self.simple_reward_system.dy,3)
+                    row_general['posicion_x']=round(self.pos[0],3)
+                    row_general['posicion_y']=round(self.pos[1],3)
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("general_values", row_general)

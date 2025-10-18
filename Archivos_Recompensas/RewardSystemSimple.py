@@ -448,8 +448,8 @@ class SimpleProgressiveReward:
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         # Penalizo deriva frente y lateral
-        self.dx = float(pos[0] - self.env.init_pos[0])
-        self.dy = float(pos[1] - self.env.init_pos[1])
+        self.dx = float(pos[0])
+        self.dy = float(pos[1])
         # Caída
         if pos[2] <= 0.5:
             self.last_done_reason = "fall"
@@ -457,11 +457,11 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
             return True
         
-        # if self.dx < 0.35:
-        #     self.last_done_reason = "drift"
-        #     if self.env.logger:
-        #         self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
-        #     return True
+        if self.dx < -1.0 or abs(self.dy)>1.0:
+            self.last_done_reason = "drift"
+            if self.env.logger:
+                self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
+            return True
         
         max_tilt = self.max_tilt_by_level.get(self.level, 1.0)
         # Inclinación extrema
@@ -819,6 +819,8 @@ class SimpleProgressiveReward:
                 + w_step*r_step
                 + w_ahead*r_ahead
                 + w_vert*r_vert
+                + self.dx*2
+                - abs(self.dy)
                 - w_acc*dv
                 - w_stuck*r_stuck
                 - w_fall*fall
