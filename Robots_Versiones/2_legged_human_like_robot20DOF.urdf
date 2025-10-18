@@ -203,7 +203,7 @@
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </collision>
   </link>
-
+<!-- probar  <origin xyz="0.1 0 -0.035" rpy="0 0 0"/>  en pies para ver si así se reduce la posibilidad del robot moviendose hacia atrás-->
   <!--
     =====================================================
                   RIGHT HIP
