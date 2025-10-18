@@ -130,7 +130,7 @@ class SimpleProgressiveReward:
         self.fixed_target_leg=self.target_leg
         self.switch_timer = 0
         # self.leg_switch_bonus = 0.0  # Bonus por cambio exitoso
-        self.bad_ending=("fall", "tilt", "drift", "no_support", "excessive support")
+        self.bad_ending=("fall", "tilt", "drift")
         # Debug para confirmar configuración
         self.min_F=20
         self.reawrd_step=self.env.reawrd_step
@@ -658,7 +658,7 @@ class SimpleProgressiveReward:
         # 3) Patrón de paso ligero: pie soporte claro + alternancia (con histéresis)
         # le doy un peso de 0.4  # Evita "chatter" cuando FL≈FR usando un umbral de cambio.
         deltaF = FL - FR
-        hysteresis = getattr(self, "_support_hyst", 15.0)  # N, ajusta según tu escala de fuerzas
+        hysteresis = getattr(self, "_support_hyst", 10.0)  # N, ajusta según tu escala de fuerzas
         prev_support = getattr(self, "_last_support3d", 'L' if FL >= FR else 'R')
         if deltaF > +hysteresis:
             support_now = 'L'
@@ -666,7 +666,6 @@ class SimpleProgressiveReward:
             support_now = 'R'
         else:
             support_now = prev_support
-        support_now = 'L' if FL > FR else 'R'
         b_clear = 0.10 if ((support_now=='L' and L_on and not R_on) or
                    (support_now=='R' and R_on and not L_on)) else 0.0
         if step_count == 1: 
@@ -775,9 +774,8 @@ class SimpleProgressiveReward:
 
          # --- 7) Caída y "no avanzar" ---
         fall = 0.0
-        if (pos[2] < 0.5) or (abs(pitch) > 0.7) or (abs(roll) > 0.7):
-            fall = 1.0; self.last_done_reason = "fall_3D"; self._episode_done = True
-
+        if self.last_done_reason in self.bad_ending:
+            fall = 1.0
 
         # penaliza "atasco" si tras 1.0 s el promedio de vx < 0.03 m/s
         if step_count == 1:
@@ -813,7 +811,7 @@ class SimpleProgressiveReward:
         w_acc  = float(getattr(self, "w_accel_pen", 0.05))
 
         reward = (alive
-                + w_v*r_vel
+                + w_v_eff*r_vel
                 + w_post*r_post
                 + w_cont*r_contact
                 + w_step*r_step
@@ -954,8 +952,9 @@ class SimpleProgressiveReward:
 
         # 6) Caída (permitimos “vuelo” —ambos pies en el aire— pero no caídas reales)
         fall = 0.0
-        if (pos[2] < 0.5) or (abs(pitch) > self.max_tilt_by_level[3]) or (abs(roll) > self.max_tilt_by_level[3]):
-            fall = 1.0; self.last_done_reason = "fall_march"; self._episode_done = True
+        if self.last_done_reason in self.bad_ending:
+            fall = 1.0 
+            self._episode_done = True
 
         # Pesos
         w_alt, w_clear, w_stay, w_post, w_stab = 0.9, 0.7, 0.9, 0.3, 0.3

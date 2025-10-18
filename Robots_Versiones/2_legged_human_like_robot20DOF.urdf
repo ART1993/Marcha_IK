@@ -9,7 +9,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.6 0.1"/>  <!-- Increased width (0.6 along X-axis) -->
+        <box size="0.3 0.6 0.2"/>  <!-- aumentado el tamaño de la caja para ver si mejora el entrenamiento Quizas con mayores dimensiones mejora el movimiento -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.6 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.3 0.6 0.2"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>

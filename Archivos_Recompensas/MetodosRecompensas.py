@@ -103,12 +103,12 @@ def hip_roll_align_reward(pie_izquierdo_contacto, pie_derecho_contacto, torso_ro
 def pitch_stability_rewards(self, pitch):
     if pitch < 0.2:
         return 2.5  # Muy estable
-    elif pitch < 0.4:
+    elif pitch <= 0.4:
         return 0.5  # Moderadamente estable
-    elif pitch < self.max_tilt_by_level[self.level]:
+    elif pitch > 0.4:
         return -2.0  # Inestable
     elif pitch >= self.max_tilt_by_level[self.level]:# self.last_done_reason == self.bad_ending[1]:
-        return  -25  # Inestable
+        return  -5  # Inestable
     
 def com_zmp_stability_reward(self):
     z = getattr(self.env, "zmp_calculator", None)
