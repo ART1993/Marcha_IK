@@ -212,10 +212,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Aplicar torques
         #torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
         # En el caso que quiera reducir los torques a usar y por tanto los joints no fijos #[:len(joint_torques)]
-        torque_mapping = [(jid, joint_torques[i]) for i, jid in enumerate(self.joint_indices)]
+        torque_mapping = {jid: joint_torques[i] for i, jid in enumerate(self.joint_indices)}
 
         #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
-        for joint_id, torque in torque_mapping:
+        for joint_id, torque in torque_mapping.items():
             p.setJointMotorControl2(
                 self.robot_id,
                 joint_id,
@@ -255,7 +255,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.joint_states_properties = self.obtener_estado_articulaciones()
         
         done = self.simple_reward_system.is_episode_done(self.step_count)
-        reward = self.simple_reward_system.calculate_reward(u_final, self.step_count)
+        reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
        
         
@@ -789,6 +789,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.simple_reward_system.env = self
             self.simple_reward_system.robot_id = self.robot_id
             self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
+            self.simple_reward_system.reset()
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
@@ -1078,40 +1079,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_rewards[reward_name]=reward_value
                 
                 self.csvlog.write("rewards", row_rewards)
+    
 
-
-    def _build_antagonist_pairs(self):
-        """
-            Devuelve una lista de dicts con pares antagonistas por joint, resolviendo índices en self.muscle_names.
-            Cada item: {"joint": <nombre_joint>, "flex_name": ..., "ext_name": ..., "i_flex": int, "i_ext": int}
-            Solo incluye joints que realmente tengan ambas cabezas (flexor y extensor) presentes.
-            De momento lo dejo a un lado, pero puede ser útil para lógica avanzada.
-        """
-        pairs = []
-        # Si tu env usa self.control_joint_names, es lo más fiable. Sino, dedúcelo de muscle_names.
-        joint_candidates = getattr(self, "control_joint_names", None)
-        if not joint_candidates:
-            # Fallback: deducir joints a partir de los nombres de músculos terminados en _flexor/_extensor
-            base_names = set()
-            for mn in self.muscle_names:
-                if mn.endswith("_flexor"):
-                    base_names.add(mn[:-7])
-                elif mn.endswith("_extensor"):
-                    base_names.add(mn[:-9])
-            joint_candidates = sorted(base_names)
-
-        for jname in joint_candidates:
-            flex = f"{jname}_flexor"
-            ext  = f"{jname}_extensor"
-            if flex in self.muscle_names and ext in self.muscle_names:
-                pairs.append({
-                    "joint": jname,
-                    "flex_name": flex,
-                    "ext_name": ext,
-                    "i_flex": self.muscle_names.index(flex),
-                    "i_ext":  self.muscle_names.index(ext),
-                })
-        return pairs
 
 
 
