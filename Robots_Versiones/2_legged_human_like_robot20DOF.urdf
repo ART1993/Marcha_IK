@@ -189,7 +189,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.4 0.3 0.05"/>  <!-- Larger foot size for more stability -->
+        <box size="0.3 0.2 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
       <material name="green">
@@ -198,7 +198,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.4 0.3 0.05"/>
+        <box size="0.3 0.2 0.05"/>
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </collision>
@@ -362,7 +362,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.4 0.3 0.05"/>  <!-- Larger foot size for more stability -->
+        <box size="0.3 0.2 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
       <material name="green">
@@ -371,7 +371,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.4 0.3 0.05"/>
+        <box size="0.3 0.2 0.05"/>
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </collision>
