@@ -3,7 +3,7 @@
   <!-- Link: Base (Wider Waist) -->
   <link name="base_link">
     <inertial>
-      <mass value="12.0"/>
+      <mass value="10.0"/>
       <inertia ixx="0.325" ixy="0" ixz="0" iyy="0.050" iyz="0" izz="0.365"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </inertial>
@@ -122,7 +122,7 @@
     <child link="left_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="120" velocity="6.0"/>
+    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 

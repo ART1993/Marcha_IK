@@ -166,7 +166,7 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
             return True
         
-        max_tilt = 1.0
+        max_tilt = 0.8
         #Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
             self.last_done_reason = "tilt"
@@ -267,7 +267,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['r_vel_raw'] = w_v*r_vel
         self.reawrd_step['r_dev'] = self.dy**2
         #self.reawrd_step['r_pitch'] = r_pitch
-        #self.reawrd_step['r_height'] = w_height*r_height**2
+        self.reawrd_step['r_height'] = w_height*r_height**2
         self.reawrd_step['r_act']=eficiencia_acciones
         self.reawrd_step['C_pain']=C_pain
         self.action_previous=action
@@ -276,7 +276,7 @@ class SimpleProgressiveReward:
         
         reward = (alive
                 + w_v*r_vel
-                #-w_height*r_height**2
+                -w_height*r_height**2
                 #+w_height*r_pitch
                 - w_dev*self.dy**2
                 -eficiencia_acciones
