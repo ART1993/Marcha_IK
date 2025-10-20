@@ -23,7 +23,7 @@ def make_env(render=True, robot_name="2_legged_human_like_robot20DOF", simple_re
     )
     return env
 
-def run_test(episodes=5, render=True, max_steps=6000, 
+def run_test(episodes=5, render=True, max_steps=6000, best_model=BEST_PATH,
              robot_name="2_legged_human_like_robot20DOF", simple_reward_mode='march_in_place'):
     # 1) Crear env
     base = DummyVecEnv([lambda: make_env(render=render, robot_name=robot_name, simple_reward_mode=simple_reward_mode)])
@@ -35,7 +35,7 @@ def run_test(episodes=5, render=True, max_steps=6000,
         base.norm_reward = False
 
     # 3) Cargar modelo
-    model = RecurrentPPO.load(BEST_PATH, env=base, device='auto')
+    model = RecurrentPPO.load(best_model, env=base, device='auto')
 
     # 4) Rollouts deterministas
     for ep in range(episodes):

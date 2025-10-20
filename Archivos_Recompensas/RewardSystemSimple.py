@@ -373,6 +373,16 @@ def compute_pain_cost(robot_id, joint_ids, tau_cmds_by_joint, foot_links, w3, w4
 
     # cpain (positivo): si tu reward resta costes, usarás -cpain
     return w3 * tlim_sum + w4 * grf_excess
+
+
+def exp_term(error, tol, r_at_tol=0.5):
+    error = float(error)
+    tol = max(float(tol), 1e-9)
+    alpha = -np.log(r_at_tol)
+    return np.exp(-alpha * (error / tol)**2)
+
+def band_error(x, x_star, deadband):
+    return max(0.0, abs(float(x) - float(x_star)) - float(deadband))
     
     
     

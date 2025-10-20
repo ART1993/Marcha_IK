@@ -612,7 +612,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         euler = p.getEulerFromQuaternion(orn)
         
         # Posición y orientación  
-        obs.extend([self.init_pos[0],self.init_pos[1], self.init_pos[2], euler[0], euler[1]])  # x, z, roll, pitch
+        obs.extend([self.init_pos[0],self.init_pos[1], self.init_pos[2], euler[0], euler[1]])  # x, y, z, roll, pitch
 
         # Velocidades
         #obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
@@ -625,7 +625,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         obs.extend([vx_b, vy_b, lin_vel[2], init_ang_vel[0], init_ang_vel[1]])
         
         
-        
+        # Observaciones ¿Por que no son posiciones del robot y V_com?
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         joint_states = self.obtener_estado_articulaciones()  # Solo joints activos
         joint_positions = [state[0] for state in joint_states]
