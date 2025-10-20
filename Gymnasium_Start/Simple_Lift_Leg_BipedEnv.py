@@ -366,15 +366,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                     "ep_len": int(self.step_count),
                                     "done_reason": getattr(self.simple_reward_system, "last_done_reason", None)
                                 }
-                episode_total = info['episode_reward']  # Ya calculado arriba
                 self.n_episodes+=1
-                if hasattr(self.simple_reward_system, "end_of_episode_hook"):
-                    self.simple_reward_system.end_of_episode_hook()
-                # Log del peso de esfuerzo actual del sistema de recompensas
-                a_t = 0.0
-                if hasattr(self.simple_reward_system, "effort") and hasattr(self.simple_reward_system.effort, "a_t"):
-                    a_t = float(self.simple_reward_system.effort.a_t)
-                info.setdefault("kpi", {})["effort_weight"] = a_t
                 if self.logger:
                     self.logger.log("main", f"📈 Episode {info['curriculum']['episodes']} | Nivel {info['curriculum']['level']} | Reward: {info['episode_reward']:.1f}")
         
