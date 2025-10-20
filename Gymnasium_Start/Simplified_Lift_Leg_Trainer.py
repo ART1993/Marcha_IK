@@ -9,8 +9,7 @@ import glob
 import re
 from datetime import datetime
 import json
-import csv
-from stable_baselines3.common.callbacks import BaseCallback
+
 
 # Import your environments
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
@@ -19,88 +18,7 @@ from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 from Archivos_Apoyo.CSVLogger import CSVLogger
 
 
-class SimpleCsvKpiCallback(BaseCallback):
-    """
-    Lee info['kpi'] por step e info['ep_kpi'] al finalizar episodios
-    y los vuelca a CSV en self.logs_dir.
-    """
-    def __init__(self, logs_dir: str, verbose: int = 0):
-        super().__init__(verbose)
-        self.logs_dir = logs_dir
-        self._step_f = None
-        self._ep_f = None
-        self._step_writer = None
-        self._ep_writer = None
 
-    def _on_training_start(self) -> None:
-        os.makedirs(self.logs_dir, exist_ok=True)
-        self._step_f = open(os.path.join(self.logs_dir, "kpi_step.csv"), "w", newline="")
-        self._ep_f   = open(os.path.join(self.logs_dir, "kpi_episode.csv"), "w", newline="")
-        self._step_writer = csv.DictWriter(self._step_f,
-            fieldnames=["timesteps","env_idx","reward","roll","pitch",
-                        "left_down","right_down","F_L","F_R",
-                        "zmp_x","zmp_y","com_x","com_y","com_z"])
-        self._ep_writer = csv.DictWriter(self._ep_f,
-            fieldnames=["timesteps","env_idx","ep_return","ep_len","done_reason"])
-        self._step_writer.writeheader()
-        self._ep_writer.writeheader()
-
-    def _on_step(self) -> bool:
-        # infos por cada env en este step
-        dones = self.locals.get("dones", [])
-        infos = self.locals.get("infos", [])
-        for env_idx, (d, info) in enumerate(zip(dones, infos)):
-            kpi = info.get("kpi")
-            if kpi:
-                row = {
-                    "timesteps": int(self.num_timesteps),
-                    "env_idx": env_idx,
-                    "reward": kpi.get("reward", 0.0),
-                    "roll": kpi.get("roll", 0.0),
-                    "pitch": kpi.get("pitch", 0.0),
-                    "left_down": kpi.get("left_down", 0),
-                    "right_down": kpi.get("right_down", 0),
-                    "F_L": kpi.get("F_L", 0.0),
-                    "F_R": kpi.get("F_R", 0.0),
-                    "zmp_x": kpi.get("zmp_x", 0.0),
-                    "zmp_y": kpi.get("zmp_y", 0.0),
-                    "com_x": kpi.get("com_x", 0.0),
-                    "com_y": kpi.get("com_y", 0.0),
-                    "com_z": kpi.get("com_z", 0.0),
-                }
-                self._step_writer.writerow(row)
-            if d and "ep_kpi" in info:
-                ep = info["ep_kpi"]
-                self._ep_writer.writerow({
-                    "timesteps": int(self.num_timesteps), "env_idx": env_idx,
-                    "ep_return": ep.get("ep_return", 0.0),
-                    "ep_len": ep.get("ep_len", 0),
-                    "done_reason": ep.get("done_reason", None),
-                })
-        return True
-
-    def _on_rollout_end(self) -> None:
-        # algunos episodios terminan aquí; SB3 no siempre pasa ep_info,
-        # pero nosotros miramos en infos por si hay 'ep_kpi'
-        ep_infos = self.locals.get("infos", [])
-        for env_idx, info in enumerate(ep_infos):
-            ep_kpi = info.get("ep_kpi")
-            if ep_kpi:
-                row = {
-                    "timesteps": int(self.num_timesteps),
-                    "env_idx": env_idx,
-                    "ep_return": ep_kpi.get("ep_return", 0.0),
-                    "ep_len": ep_kpi.get("ep_len", 0),
-                    "done_reason": ep_kpi.get("done_reason", None),
-                }
-                self._ep_writer.writerow(row)
-
-    def _on_training_end(self) -> None:
-        try:
-            if self._step_f: self._step_f.close()
-            if self._ep_f: self._ep_f.close()
-        except Exception:
-            pass
 
 """
 KPI CHECKLIST (entrenamiento PAM – bípede)
@@ -194,9 +112,9 @@ class Simplified_Lift_Leg_Trainer:
         # Configuración optimizada para sistemas de 6 músculos antagónicos
         self.env_config = {
                 'clip_obs': 10.0,      
-                'clip_reward': 15.0,   
+                'clip_reward': 15.0,
                 'model_prefix': 'single_leg_balance_pam',
-                'description': 'lift_legs with 6 PAMs + Auto Knee Control'
+                'description': 'lift_legs with 20 PAMs + Auto Knee Control'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -293,7 +211,8 @@ class Simplified_Lift_Leg_Trainer:
         eval_env = VecNormalize(eval_env, 
                                norm_obs=True, 
                                norm_reward=True, 
-                               clip_obs=self.env_configs['clip_obs'], 
+                               clip_obs=self.env_configs['clip_obs'],
+                               clip_reward=self.env_configs['clip_reward'],
                                training=False)
         # NEW: cargar stats de normalización del train si existen
         norm_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
@@ -386,8 +305,8 @@ class Simplified_Lift_Leg_Trainer:
             render=False,
             verbose=1
         )
-        kpi_csv_cb = SimpleCsvKpiCallback(logs_dir=self.logs_dir, verbose=0)
-        callbacks = CallbackList([checkpoint_callback, eval_callback, kpi_csv_cb])
+        #kpi_csv_cb = SimpleCsvKpiCallback(logs_dir=self.logs_dir, verbose=0)
+        callbacks = CallbackList([checkpoint_callback, eval_callback])
         
         
         return callbacks

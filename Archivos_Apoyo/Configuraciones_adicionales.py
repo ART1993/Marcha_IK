@@ -420,3 +420,89 @@ def apply_reciprocal_inhibition(flexor_force, extensor_force, INHIBITION_FACTOR)
             flexor_force *= (1.0 - INHIBITION_FACTOR * extensor_ratio)
     
     return flexor_force, extensor_force
+
+
+import csv
+from stable_baselines3.common.callbacks import BaseCallback
+class SimpleCsvKpiCallback(BaseCallback):
+    """
+    Lee info['kpi'] por step e info['ep_kpi'] al finalizar episodios
+    y los vuelca a CSV en self.logs_dir.
+    """
+    def __init__(self, logs_dir: str, verbose: int = 0):
+        super().__init__(verbose)
+        self.logs_dir = logs_dir
+        self._step_f = None
+        self._ep_f = None
+        self._step_writer = None
+        self._ep_writer = None
+
+    def _on_training_start(self) -> None:
+        os.makedirs(self.logs_dir, exist_ok=True)
+        self._step_f = open(os.path.join(self.logs_dir, "kpi_step.csv"), "w", newline="")
+        self._ep_f   = open(os.path.join(self.logs_dir, "kpi_episode.csv"), "w", newline="")
+        self._step_writer = csv.DictWriter(self._step_f,
+            fieldnames=["timesteps","env_idx","reward","roll","pitch",
+                        "left_down","right_down","F_L","F_R",
+                        "zmp_x","zmp_y","com_x","com_y","com_z"])
+        self._ep_writer = csv.DictWriter(self._ep_f,
+            fieldnames=["timesteps","env_idx","ep_return","ep_len","done_reason"])
+        self._step_writer.writeheader()
+        self._ep_writer.writeheader()
+
+    def _on_step(self) -> bool:
+        # infos por cada env en este step
+        dones = self.locals.get("dones", [])
+        infos = self.locals.get("infos", [])
+        for env_idx, (d, info) in enumerate(zip(dones, infos)):
+            kpi = info.get("kpi")
+            if kpi:
+                row = {
+                    "timesteps": int(self.num_timesteps),
+                    "env_idx": env_idx,
+                    "reward": kpi.get("reward", 0.0),
+                    "roll": kpi.get("roll", 0.0),
+                    "pitch": kpi.get("pitch", 0.0),
+                    "left_down": kpi.get("left_down", 0),
+                    "right_down": kpi.get("right_down", 0),
+                    "F_L": kpi.get("F_L", 0.0),
+                    "F_R": kpi.get("F_R", 0.0),
+                    "zmp_x": kpi.get("zmp_x", 0.0),
+                    "zmp_y": kpi.get("zmp_y", 0.0),
+                    "com_x": kpi.get("com_x", 0.0),
+                    "com_y": kpi.get("com_y", 0.0),
+                    "com_z": kpi.get("com_z", 0.0),
+                }
+                self._step_writer.writerow(row)
+            if d and "ep_kpi" in info:
+                ep = info["ep_kpi"]
+                self._ep_writer.writerow({
+                    "timesteps": int(self.num_timesteps), "env_idx": env_idx,
+                    "ep_return": ep.get("ep_return", 0.0),
+                    "ep_len": ep.get("ep_len", 0),
+                    "done_reason": ep.get("done_reason", None),
+                })
+        return True
+
+    def _on_rollout_end(self) -> None:
+        # algunos episodios terminan aquí; SB3 no siempre pasa ep_info,
+        # pero nosotros miramos en infos por si hay 'ep_kpi'
+        ep_infos = self.locals.get("infos", [])
+        for env_idx, info in enumerate(ep_infos):
+            ep_kpi = info.get("ep_kpi")
+            if ep_kpi:
+                row = {
+                    "timesteps": int(self.num_timesteps),
+                    "env_idx": env_idx,
+                    "ep_return": ep_kpi.get("ep_return", 0.0),
+                    "ep_len": ep_kpi.get("ep_len", 0),
+                    "done_reason": ep_kpi.get("done_reason", None),
+                }
+                self._ep_writer.writerow(row)
+
+    def _on_training_end(self) -> None:
+        try:
+            if self._step_f: self._step_f.close()
+            if self._ep_f: self._ep_f.close()
+        except Exception:
+            pass

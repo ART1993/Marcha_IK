@@ -41,7 +41,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
-                 vx_target: float = 0.6,
+                 vx_target: float = 1.2,
                  robot_name="2_legged_human_like_robot16DOF"):
         
         """
@@ -919,6 +919,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
         self.MAX_REASONABLE_TORQUE = 240.0     # N⋅m (factor de seguridad incluido)
+        self.joint_tau_scale = {}
+        max_reasonable = self.MAX_REASONABLE_TORQUE
+        for jid in self.joint_indices:
+            # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
+            self.joint_tau_scale[jid] = max_reasonable
 
     def hip_roll_flexor_moment_arm(self, angle):
         """
@@ -1027,33 +1032,53 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
                 if self.csvlog:
-                    row_general={"step": int(self.step_count),
+                    row_com={"step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    row_q_angle={"step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    row_v_angle={"step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    row_torque_angle={"step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    row_force_angle={"step": int(self.step_count),
+                                "episode": int(self.n_episodes),
+                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    row_pressure_PAM={"step": int(self.step_count),
                                 "episode": int(self.n_episodes),
                                 "t": round(self.step_count / self.frequency_simulation, 5),}
                     for (name, idx), state in zip(self.dict_joints.items(), self.joint_states_properties):
                         pos, vel, reaction, applied = state
                         Fx,Fy,Fz,Mx,My,Mz = reaction
-                        row_general[f"q_{name}"]=round(pos,3)
-                        row_general[f"vel_{name}"]=round(vel,3)
-                        row_general[f"τ_reaction_{name}_x"]=round(Mx,2)
-                        row_general[f"τ_reaction_{name}_y"]=round(My,2)
-                        row_general[f"τ_reaction_{name}_z"]=round(Mz,2)
-                        row_general[f"Forces_{name}_x"]=round(Fx,3)
-                        row_general[f"Forces_{name}_y"]=round(Fy,3)
-                        row_general[f"Forces_{name}_z"]=round(Fz,3)
-                        row_general[f"Pressure_{name}flexion"]=pam_pressures[idx*2]
-                        row_general[f"Pressure_{name}extension"]=pam_pressures[idx*2+1]
-                    row_general[f"COM_x"]=round(info["kpi"]['com_x'],3)
-                    row_general[f"COM_y"]=round(info["kpi"]['com_y'],3)
-                    row_general[f"COM_z"]=round(info["kpi"]['com_z'],3)
-                    row_general[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
-                    row_general[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
-                    row_general[f'Masa']=round(self.mass,1)
-                    row_general['posicion_x']=round(self.pos[0],3)
-                    row_general['posicion_y']=round(self.pos[1],3)
+                        row_q_angle[f"q_{name}"]=round(pos,3)
+                        row_v_angle[f"vel_{name}"]=round(vel,3)
+                        row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
+                        row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
+                        row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
+                        row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
+                        row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
+                        row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
+                        row_pressure_PAM[f"Pressure_{name}flexion"]=pam_pressures[idx*2]
+                        row_pressure_PAM[f"Pressure_{name}extension"]=pam_pressures[idx*2+1]
+                    row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
+                    row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
+                    row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)
+                    row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
+                    row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
+                    row_com[f'Masa']=round(self.mass,1)
+                    row_com['posicion_x']=round(self.pos[0],3)
+                    row_com['posicion_y']=round(self.pos[1],3)
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
-                    self.csvlog.write("general_values", row_general)
+                    self.csvlog.write("COM_values", row_com)
+                    self.csvlog.write("angle_values", row_q_angle)
+                    self.csvlog.write("speed_values", row_v_angle)
+                    self.csvlog.write("torque_values", row_torque_angle)
+                    self.csvlog.write("force_values", row_force_angle)
+                    self.csvlog.write("pressure", row_pressure_PAM)
 
 
             except Exception as e:

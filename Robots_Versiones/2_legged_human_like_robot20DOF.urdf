@@ -183,13 +183,13 @@
   <!-- Link: Left Foot -->
   <link name="left_foot_link">
     <inertial>
-      <mass value="0.5"/>  <!-- Heavier feet for stability -->
+      <mass value="0.4"/>  <!-- Heavier feet for stability -->
       <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <box size="0.4 0.3 0.05"/>  <!-- Larger foot size for more stability -->
+        <box size="0.3 0.2 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
       <material name="green">
@@ -198,7 +198,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.4 0.3 0.05"/>
+        <box size="0.3 0.2 0.05"/>
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </collision>
@@ -356,13 +356,13 @@
   <!-- Link: Right Foot -->
   <link name="right_foot_link">
     <inertial>
-      <mass value="0.5"/>  <!-- Heavier feet for stability -->
+      <mass value="0.4"/>  <!-- Heavier feet for stability -->
       <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
       <origin xyz="0 0 -0.035" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <box size="0.4 0.3 0.05"/>  <!-- Larger foot size for more stability -->
+        <box size="0.3 0.2 0.05"/>  <!-- Larger foot size for more stability -->
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
       <material name="green">
@@ -371,7 +371,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.4 0.3 0.05"/>
+        <box size="0.3 0.2 0.05"/>
       </geometry>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </collision>

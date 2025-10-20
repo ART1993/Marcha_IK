@@ -1051,3 +1051,147 @@ def _cocontraction_pen(self, pairs, lam: float = 0.01):
         uf = float(ps.get(flex, 0.0)); ue = float(ps.get(ext, 0.0))
         pen += uf * ue
     return lam * pen
+
+def calculate_reward_walk3d_previo(self, action, torque_mapping:dict, step_count):
+        env = self.env
+        pos, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = euler
+        # Da la velocidad lineal y angular de la pelvis
+        #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
+        vx = float(self.vel_COM[0])
+        #r_pitch=0.2 * (roll**2 + pitch**2) Versión anterior tardaba demasiado tiempo
+        
+        alive = 0.6
+        # Pesos de términos normalizados (ajústalos con tus logs)
+        w_v, w_stab, w_post, w_z, w_dp, w_eff = 0.30, 0.25, 0.15, 0.10, 0.10, 0.10
+        
+
+        # --- 1) Velocidad objetivo (campana) ---
+        # Si se quiere "sigma" estadístico, usa -0.5*((...)/sigma)^2; si prefieres más estrecha, quita el 0.5.
+        v_tgt   = float(getattr(self, "vx_target", 1.2))
+        sigma_v = 0.20
+        # Recompensa de velocidad
+        if 0<vx<v_tgt:
+            r_vel = np.exp(-0.5*((vx - v_tgt)/sigma_v)**2) # Si no aumenta el valor para dif bajas derucir constante multiplicacion
+        elif vx<=0:
+            r_vel=vx
+        else:
+            r_vel= 1.0
+        # # Recompensa de mantener altura
+        r_height= height_reward_method(pos[2])
+        accion_previa= self.action_previous if self.action_previous is not None else np.zeros_like(action)
+        diferencia_presiones=np.mean(np.array(action)-accion_previa)**2
+        n_active=len([accion_singular for accion_singular in action if accion_singular>0.2])
+        # # Minimizar coste de actuadores
+        suma_actuadores_normalizados=sum(action)
+        w_pressure=0.1
+        w_active=0.2
+        eficiencia_acciones=self.alpha_t*suma_actuadores_normalizados + w_pressure*diferencia_presiones +w_active*n_active
+        
+        
+        # ===================== NUEVO: "Dolor" (límites + GRF) =====================
+        # 1) Término de límite articular (sumatorio sobre juntas controladas)
+        #    Usa torques del paso actual si los guardas en el env; si no, usa proxy de signo.
+
+        tlim_sum = 0.0
+        for jid, tau_cmd in torque_mapping.items():
+            tau_cmd = float(tau_cmd)
+            tlim_sum += _tlim_cost(env.robot_id, jid, tau_cmd)
+
+        # # 2) Término por exceso de GRF (pies)
+        grf_excess = _grf_excess_cost(env.robot_id, self.foot_links, bw_mult=1.2, masa_robot=self.env.mass)
+
+        # # 3) Castigo total "dolor"
+        w3 = float(getattr(self, "peso_3", 0.3))
+        w4 = float(getattr(self, "peso_4", 0.3))
+        C_pain = w3 * tlim_sum + w4 * grf_excess
+
+
+
+        self._accumulate_task_term(r_vel)
+        # self.reawrd_step['r_vel_raw'] = w_v*r_vel
+        # self.reawrd_step['r_dev'] = self.dy**2
+        # #self.reawrd_step['r_pitch'] = r_pitch
+        # self.reawrd_step['r_height'] = w_height*r_height**2
+        # self.reawrd_step['r_act']=eficiencia_acciones
+        # self.reawrd_step['C_pain']=C_pain
+        self.reawrd_step['reward_height']
+        
+        
+        reward = (
+                alive
+                + w_v*r_vel
+                - eficiencia_acciones
+                #-w_height*r_height**2
+                #-r_pitch
+                -self.dy**2
+                - C_pain
+        )
+        # Se guarda la accioón previa
+        self.parametro_pesado_acciones()
+        self.action_previous=np.array(action)
+        # actualizar flags de contacto para siguiente paso
+        return float(reward)
+
+    # ---- Helpers de límites articulares ----
+def _get_joint_limits(robot_id, jid):
+    ji = p.getJointInfo(robot_id, jid)
+    lower, upper = float(ji[8]), float(ji[9])
+    axis = np.array(ji[13], dtype=float)
+    return lower, upper, axis
+
+def _tlim_cost(robot_id, jid, tau_cmd, margin=1e-2):
+    """
+    Coste instantáneo por 'dolor' de límite articular:
+    - Si está cerca del límite y el par empuja hacia fuera -> coste = |tau_cmd|
+    - Si ya está pegando tope -> usa el par de reacción proyectado en el eje
+    Devuelve float (N·m, no negativo).
+    """
+    q, dq, reaction6, _ = p.getJointState(robot_id, jid)
+    lower, upper, axis = _get_joint_limits(robot_id, jid)
+
+    near_lower = (q <= lower + margin)
+    near_upper = (q >= upper - margin)
+
+    pushing_lower = near_lower and (tau_cmd < 0.0)
+    pushing_upper = near_upper and (tau_cmd > 0.0)
+
+    cost_push = abs(tau_cmd) if (pushing_lower or pushing_upper) else 0.0
+
+    at_lower = q < lower + 1e-3
+    at_upper = q > upper - 1e-3
+    cost_react = 0.0
+    if (at_lower or at_upper):
+        axis_n = axis / (np.linalg.norm(axis) + 1e-12)
+        M = np.array(reaction6[3:6], dtype=float)     # momento de reacción [Mx,My,Mz]
+        tau_stop = float(np.dot(M, axis_n))           # par de tope sobre el eje
+        cost_react = abs(tau_stop)
+
+    return float(max(cost_push, cost_react))
+
+# ---- Helpers de GRF ----
+def _robot_weight_N(robot_id, gravity=9.81):
+    # masa del base (-1) + todos los links
+    num_joints = p.getNumJoints(robot_id)
+    m = p.getDynamicsInfo(robot_id, -1)[0]
+    for i in range(num_joints):
+        m += p.getDynamicsInfo(robot_id, i)[0]
+    return float(m * gravity)
+
+def _grf_excess_cost(robot_id, foot_links, masa_robot, world_or_ground_id=None, bw_mult=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    for link in foot_links:
+        cps = p.getContactPoints(bodyA=robot_id, linkIndexA=link)
+        for cp in cps:
+            # cp[9] = normalForce (N). Si quieres asegurarte de contar solo suelo, filtra por bodyB/world_or_ground_id.
+            Fz_total += float(cp[9])
+
+    BW = masa_robot*9.81  # N
+    thr = bw_mult * BW
+    return float(max(0.0, Fz_total - thr))

@@ -97,7 +97,9 @@ class PAMMcKibben:
         if force_factor <= 0:
             force_factor = 0.1  # Mínima fuerza positiva
         area = self.current_area(eps)
-        F = pressure * force_factor * area
+        P_g = max(0.0, pressure - self.min_pressure)
+        F = P_g * force_factor * area
+        # F = pressure * force_factor * area
         return max(0.0, F)  # no permitimos tracción negativa
     
     def pressure_from_force_and_contraction(self, target_force, contraction_ratio):
@@ -123,8 +125,9 @@ class PAMMcKibben:
         
         area = self.current_area(eps)
         denom = max(force_factor * area, 1e-9)  # evitar división por cero
-        
-        P = target_force / denom
+        # P = target_force / denom
+        P_g = target_force / denom
+        P   = P_g + self.min_pressure
         
         return np.clip(P, self.min_pressure, self.max_pressure)
     
@@ -142,7 +145,7 @@ class PAMMcKibben:
         return np.clip(normalized, 0.0, 1.0)
     
     def real_pressure_PAM(self, normalized_pressure):
-        # 1. Presión normalizada → Presión real
+        # 1. Presión real absoluta a partir de u∈[0,1]
         return self.min_pressure + normalized_pressure * (self.max_pressure - self.min_pressure)
     
     def normalized_pressure_PAM(self, real_pressure):

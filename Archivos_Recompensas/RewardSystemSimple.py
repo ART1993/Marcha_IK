@@ -6,13 +6,6 @@ from enum import Enum
 
 from collections import deque
 
-from Archivos_Recompensas.MetodosRecompensas import (
-    height_reward_method, contacto_pies_reward, knee_reward_method, hip_roll_align_reward,
-    pitch_stability_rewards, com_zmp_stability_reward, com_projection_reward,
-    seleccion_fuerzas, proximity_legs_penalization, soft_center_bonus, soft_range_bonus,
-    EffortWeightScheduler, effort_cost_proxy   # <-- NUEVO
-)
-
 class RewardMode(Enum):
     PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
     WALK3D = "walk3d"                # caminar en 3D (avance +X)
@@ -46,7 +39,6 @@ class SimpleProgressiveReward:
         except Exception:
             self.mode = RewardMode.PROGRESSIVE
         # Parametrización útil para modos nuevos
-        self.vx_target = float(getattr(env, "vx_target", 0.6))
         self.allow_hops = bool(getattr(env, "allow_hops", False))
 
         # --- Parámetros configurables (puedes sobreescribirlos desde env) ---
@@ -90,6 +82,8 @@ class SimpleProgressiveReward:
         self.threshold = 0.4
         self.change_adaptation_rate = 1e-3
         self.decay_term=0.1
+        self._vx_target=self.env.vx_target
+        self.com_z_star = 0.69
 
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
@@ -196,78 +190,73 @@ class SimpleProgressiveReward:
         # Da la velocidad lineal y angular de la pelvis
         #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
         vx = float(self.vel_COM[0])
-        r_pitch=pitch_stability_rewards(pitch)
-        
-        w_ac=0.02
-        w_pressure=0.5
-        w_active=1.0
-        w_en, w_du = max(0.0, w_ac), max(0.0, 3.0*w_ac)        # NEW: E y derivada (suavidad)
-        alive = 0.6
-        w_v, w_height =3.0, 5
-        w_dev=2
-        
+        vy = float(self.vel_COM[1])
+        #r_pitch=0.2 * (roll**2 + pitch**2) Versión anterior tardaba demasiado tiempo
 
-        # --- 1) Velocidad objetivo (campana) ---
-        # Si se quiere "sigma" estadístico, usa -0.5*((...)/sigma)^2; si prefieres más estrecha, quita el 0.5.
-        v_tgt   = float(getattr(self, "vx_target", 1.2))
-        sigma_v = 0.20
-        # Recompensa de velocidad
-        if 0<vx<v_tgt:
-            r_vel = np.exp(-0.5*((vx - v_tgt)/sigma_v)**2) # Si no aumenta el valor para dif bajas derucir constante multiplicacion
-        elif vx<=0:
-            r_vel=vx
+        # --- NORMALIZATION: tolerances and half-life mapping ---
+        d_theta = np.deg2rad(5.0)   # 5 degrees tolerance for roll/pitch
+        dz_band = 0.02              # 2 cm deadband for CoM height
+        d_s     = 0.04              # 4 cm CoM->support (si lo usas)
+        dv_foot = 0.05              # 5 cm/s no-slip
+        dv_cmd  = 0.20              # 0.20 m/s vel tracking (x)
+        dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
+        dvy     = 0.10              # 0.10 m/s vel lateral
+        d_back  = 0.05              # 0.05 m/s tolerancia hacia atrás (más severo)
+
+        r_post = exp_term(roll, d_theta) * exp_term(pitch, d_theta)
+
+        # Altura del CoM (absoluta) alrededor de z*
+        z_star = getattr(self, "com_z_star", 0.69)
+        e_z = band_error(self.env.com_z, z_star, dz_band)
+        r_z  = exp_term(e_z, dz_band, r_at_tol=0.6)
+
+        # Velocidad del CoM: |vx - vcmd|
+        vcmd = float(getattr(self, "_vx_target",1.2))
+        v_err = abs(vx - vcmd)
+        if vx >= vcmd:
+            r_vel = 1.0
+        elif vx<0:
+            r_vel=0
         else:
-            r_vel= 1.0
-        # Recompensa de mantener altura
-        r_height= height_reward_method(pos[2])
-        accion_previa= self.action_previous if self.action_previous is not None else np.zeros_like(action)
-        diferencia_presiones=np.mean(np.array(action)-accion_previa)**2
-        n_active=len([accion_singular for accion_singular in action if accion_singular>0.2])
-        # Minimizar coste de actuadores
-        suma_actuadores_normalizados=sum(action)
-        eficiencia_acciones=self.alpha_t*suma_actuadores_normalizados + w_pressure*diferencia_presiones +w_active*n_active
+            r_vel = exp_term(v_err, dv_cmd, r_at_tol=0.5)
+
+        # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
+        y =self.dy
+        r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
+        r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
+        r_lat = r_lat_pos * r_lat_vel
+
+        # Suavidad en presiones (acciones en [0,1])
+        accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
+        delta_p = np.asarray(action) - np.asarray(accion_previa)
+        r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
         
-        
-        # ===================== NUEVO: "Dolor" (límites + GRF) =====================
-        # 1) Término de límite articular (sumatorio sobre juntas controladas)
-        #    Usa torques del paso actual si los guardas en el env; si no, usa proxy de signo.
-
-        tlim_sum = 0.0
-        for jid, tau_cmd in torque_mapping.items():
-            tau_cmd = float(tau_cmd)
-            tlim_sum += _tlim_cost(env.robot_id, jid, tau_cmd)
-
-        # 2) Término por exceso de GRF (pies)
-        grf_excess = _grf_excess_cost(env.robot_id, self.foot_links, bw_mult=1.2)
-
-        # 3) Castigo total "dolor"
-        w3 = float(getattr(self, "peso_3", 0.3))
-        w4 = float(getattr(self, "peso_4", 0.3))
-        C_pain = w3 * tlim_sum + w4 * grf_excess
-
-
+        alive = 0.6
+        # Pesos de términos normalizados (ajústalos con tus logs)
+        w_v, w_lat, w_post, w_z, w_dp = 0.30, 0.20, 0.15, 0.10, 0.10
+        #w_tau = 0.10
+        #r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
 
         self._accumulate_task_term(r_vel)
-        self.reawrd_step['r_vel_raw'] = w_v*r_vel
-        self.reawrd_step['r_dev'] = self.dy**2
-        #self.reawrd_step['r_pitch'] = r_pitch
-        self.reawrd_step['r_height'] = w_height*r_height**2
-        self.reawrd_step['r_act']=eficiencia_acciones
-        self.reawrd_step['C_pain']=C_pain
-        self.action_previous=action
-       
+        self.reawrd_step['reward_speed'] = w_v * r_vel
+        self.reawrd_step['reward_posture'] = w_post* r_post
+        self.reawrd_step['reward_height'] = w_z * r_z
+        self.reawrd_step['reward_pressure'] = w_dp * r_dp
+        self.reawrd_step['reward_lateral'] = w_lat*r_lat
         
         
-        reward = (alive
-                + w_v*r_vel
-                -w_height*r_height**2
-                #+w_height*r_pitch
-                - w_dev*self.dy**2
-                -eficiencia_acciones
-                -C_pain
-                )
+        reward = (
+                alive
+                + w_v   * r_vel
+                + w_lat*r_lat
+                + w_post* r_post
+                + w_z   * r_z
+                + w_dp  * r_dp
+                #+ w_tau * r_tau
+                #- C_pain
+        )
         # Se guarda la accioón previa
-        self.parametro_pesado_acciones()
+        #self.parametro_pesado_acciones()
         self.action_previous=np.array(action)
         # actualizar flags de contacto para siguiente paso
         return float(reward)
@@ -286,93 +275,30 @@ class SimpleProgressiveReward:
             self.alpha_t=self.alpha_t-self.change_adaptation_rate
         #self.alpha_t=np.clip(self.alpha_t,0,0.5)
         self.calculate_s_mean()
-    
 
-    # ---- Helpers de límites articulares ----
-def _get_joint_limits(robot_id, jid):
-    ji = p.getJointInfo(robot_id, jid)
-    lower, upper = float(ji[8]), float(ji[9])
-    axis = np.array(ji[13], dtype=float)
-    return lower, upper, axis
+    def torque_pain_reduction(self, torque_mapping):
+        # ------------------------------------------------------------
+        # TORQUE-PAIN REDUCTION (utilización RMS con banda de tolerancia)
+        # ------------------------------------------------------------
+        # 1) escala de torque por junta (si no está en env, usa fallback)
+        joint_tau_scale = getattr(self.env, "joint_tau_scale", None)
+        max_reasonable = float(getattr(self.env, "MAX_REASONABLE_TORQUE", 240.0))
+        tau_utils = []
+        for jid, tau_cmd in torque_mapping.items():
+            scale = max_reasonable
+            if isinstance(joint_tau_scale, dict):
+                scale = float(joint_tau_scale.get(jid, max_reasonable))
+            tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
+        u_rms = float(np.sqrt(np.mean(np.square(tau_utils)))) if len(tau_utils) else 0.0
 
-def _tlim_cost(robot_id, jid, tau_cmd, margin=1e-2):
-    """
-    Coste instantáneo por 'dolor' de límite articular:
-    - Si está cerca del límite y el par empuja hacia fuera -> coste = |tau_cmd|
-    - Si ya está pegando tope -> usa el par de reacción proyectado en el eje
-    Devuelve float (N·m, no negativo).
-    """
-    q, dq, reaction6, _ = p.getJointState(robot_id, jid)
-    lower, upper, axis = _get_joint_limits(robot_id, jid)
+        # 2) sólo castiga lo que supere la tolerancia (p. ej., 60% de utilización)
+        u_tol = 0.60         # tolerancia de utilización RMS (no duele por debajo)
+        e_tau = max(0.0, u_rms - u_tol)
 
-    near_lower = (q <= lower + margin)
-    near_upper = (q >= upper - margin)
+        # 3) mapea exceso a recompensa en [0,1] (alto = poco dolor)
+        #    tol de exceso: 0.20 -> a 0.80 RMS la recompensa cae a r*=0.6
+        return  exp_term(e_tau, tol=0.20, r_at_tol=0.6)
 
-    pushing_lower = near_lower and (tau_cmd < 0.0)
-    pushing_upper = near_upper and (tau_cmd > 0.0)
-
-    cost_push = abs(tau_cmd) if (pushing_lower or pushing_upper) else 0.0
-
-    at_lower = q < lower + 1e-3
-    at_upper = q > upper - 1e-3
-    cost_react = 0.0
-    if (at_lower or at_upper):
-        axis_n = axis / (np.linalg.norm(axis) + 1e-12)
-        M = np.array(reaction6[3:6], dtype=float)     # momento de reacción [Mx,My,Mz]
-        tau_stop = float(np.dot(M, axis_n))           # par de tope sobre el eje
-        cost_react = abs(tau_stop)
-
-    return float(max(cost_push, cost_react))
-
-# ---- Helpers de GRF ----
-def _robot_weight_N(robot_id, gravity=9.81):
-    # masa del base (-1) + todos los links
-    num_joints = p.getNumJoints(robot_id)
-    m = p.getDynamicsInfo(robot_id, -1)[0]
-    for i in range(num_joints):
-        m += p.getDynamicsInfo(robot_id, i)[0]
-    return float(m * gravity)
-
-def _grf_excess_cost(robot_id, foot_links, world_or_ground_id=None, bw_mult=1.2):
-    """
-    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
-    Devuelve N (no negativo).
-    """
-    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
-    Fz_total = 0.0
-    for link in foot_links:
-        cps = p.getContactPoints(bodyA=robot_id, linkIndexA=link)
-        for cp in cps:
-            # cp[9] = normalForce (N). Si quieres asegurarte de contar solo suelo, filtra por bodyB/world_or_ground_id.
-            Fz_total += float(cp[9])
-
-    BW = _robot_weight_N(robot_id)  # N
-    thr = bw_mult * BW
-    return float(max(0.0, Fz_total - thr))
-
-# ---- Calculador de 'dolor' cpain = w3*sum(tlim) + w4*sum(GRF_exceso) ----
-def compute_pain_cost(robot_id, joint_ids, tau_cmds_by_joint, foot_links, w3, w4):
-    """
-    - joint_ids: lista de IDs de junta.
-    - tau_cmds_by_joint: dict {jid: tau_cmd} o lista con el mismo orden que joint_ids.
-    - foot_links: lista de link indices de los pies (izq, der).
-    - w3, w4: pesos de tu función de castigo.
-    """
-    # Asegurar acceso uniforme a tau_cmd por jid
-    if not isinstance(tau_cmds_by_joint, dict):
-        tau_cmds_by_joint = {jid: float(tau_cmds_by_joint[k]) for k, jid in enumerate(joint_ids)}
-
-    # Suma tlim por junta
-    tlim_sum = 0.0
-    for jid in joint_ids:
-        tau_cmd = float(tau_cmds_by_joint.get(jid, 0.0))
-        tlim_sum += _tlim_cost(robot_id, jid, tau_cmd)
-
-    # Exceso de GRF sobre 1.2xBW
-    grf_excess = _grf_excess_cost(robot_id, foot_links)
-
-    # cpain (positivo): si tu reward resta costes, usarás -cpain
-    return w3 * tlim_sum + w4 * grf_excess
 
 
 def exp_term(error, tol, r_at_tol=0.5):
