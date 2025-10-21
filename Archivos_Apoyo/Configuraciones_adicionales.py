@@ -349,7 +349,21 @@ def calculate_robot_specific_joint_torques_20_pam(env, pam_pressures):
     # #Para tobillos
     # joint_torques[3] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[3]
     # joint_torques[7] -= 0.5*env.DAMPING_COEFFICIENT * joint_velocities[7]
-    joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
+    # ======= REEMPLAZO DE CLIP GLOBAL POR CLIP ANGULAR =======
+    if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
+        # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
+        for i, jid in enumerate(env.joint_indices):
+            th_i = float(joint_positions[i])
+            lims = env.tau_limit_interp.get(jid, None)
+            if lims is not None:
+                tau_flex_max = max(0.0, lims["flex"](th_i))
+                tau_ext_max  = max(0.0, lims["ext"](th_i))
+                joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
+            else:
+                joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
+    else:
+        # en caso de que tau_limit_interp
+        joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     env.pam_states = {

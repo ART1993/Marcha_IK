@@ -234,8 +234,9 @@ class SimpleProgressiveReward:
         alive = 0.6
         # Pesos de términos normalizados (ajústalos con tus logs)
         w_v, w_lat, w_post, w_z, w_dp = 0.30, 0.20, 0.15, 0.10, 0.10
-        #w_tau = 0.10
-        #r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
+        w_tau = 0.10
+        r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
+        #r_GRF=_grf_reward(self.foot_links,env.contact_normal_force, masa_robot=self.env.mass, bw_mult=1.2)
 
         self._accumulate_task_term(r_vel)
         self.reawrd_step['reward_speed'] = w_v * r_vel
@@ -252,10 +253,9 @@ class SimpleProgressiveReward:
                 + w_post* r_post
                 + w_z   * r_z
                 + w_dp  * r_dp
-                #+ w_tau * r_tau
-                #- C_pain
+                + w_tau * r_tau
         )
-        # Se guarda la accioón previa
+        # Se guarda la acción previa
         #self.parametro_pesado_acciones()
         self.action_previous=np.array(action)
         # actualizar flags de contacto para siguiente paso
@@ -277,27 +277,75 @@ class SimpleProgressiveReward:
         self.calculate_s_mean()
 
     def torque_pain_reduction(self, torque_mapping):
-        # ------------------------------------------------------------
-        # TORQUE-PAIN REDUCTION (utilización RMS con banda de tolerancia)
-        # ------------------------------------------------------------
-        # 1) escala de torque por junta (si no está en env, usa fallback)
-        joint_tau_scale = getattr(self.env, "joint_tau_scale", None)
-        max_reasonable = float(getattr(self.env, "MAX_REASONABLE_TORQUE", 240.0))
-        tau_utils = []
-        for jid, tau_cmd in torque_mapping.items():
-            scale = max_reasonable
-            if isinstance(joint_tau_scale, dict):
-                scale = float(joint_tau_scale.get(jid, max_reasonable))
-            tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
-        u_rms = float(np.sqrt(np.mean(np.square(tau_utils)))) if len(tau_utils) else 0.0
+        """
+            Recompensa de “bajo dolor” basada en utilización de par por-junta
+            usando límites dependientes del ángulo:
+                tau ∈ [-tau_max_ext(theta), +tau_max_flex(theta)]
+            - Devuelve un valor en [0,1] (1 = nada de dolor).
+            - Fallback a clip global si no hay mapas.
+        """
+        env = self.env
+        # 1) ¿Tenemos mapas de límite por ángulo?
+        has_maps = hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0
+        # 2) Estados actuales de las articulaciones (para θ)
+        try:
+            joint_states = p.getJointStates(env.robot_id, env.joint_indices)
+            joint_positions = [float(s[0]) for s in joint_states]
+        except Exception:
+            joint_positions = None
+            has_maps = False
 
-        # 2) sólo castiga lo que supere la tolerancia (p. ej., 60% de utilización)
-        u_tol = 0.60         # tolerancia de utilización RMS (no duele por debajo)
+        tau_utils = []
+        if has_maps and joint_positions is not None:
+            # === Utilización con límites asimétricos dependientes de θ
+            for i, jid in enumerate(env.joint_indices):
+                tau_cmd = float(torque_mapping.get(jid, 0.0))
+                th_i = joint_positions[i]
+                lims = env.tau_limit_interp.get(jid, None)
+                if lims is None:
+                    continue
+                # límites positivos/negativos en el ángulo actual
+                tau_flex_max = max(0.0, float(lims["flex"](th_i)))  # + (flex)
+                tau_ext_max  = max(0.0, float(lims["ext"](th_i)))   # - (ext)
+                denom = tau_flex_max if tau_cmd >= 0.0 else tau_ext_max
+                denom = max(denom, 1e-6)  # seguridad
+                tau_utils.append(abs(tau_cmd) / denom)
+        else:
+            # === Fallback: escalado global previo
+            joint_tau_scale = getattr(env, "joint_tau_scale", None)
+            max_reasonable = float(getattr(env, "MAX_REASONABLE_TORQUE", 240.0))
+            for jid, tau_cmd in torque_mapping.items():
+                scale = max_reasonable
+                if isinstance(joint_tau_scale, dict):
+                    scale = float(joint_tau_scale.get(jid, max_reasonable))
+                tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
+
+        if not tau_utils:
+            return 1.0  # sin info → sin dolor
+
+        # 3) Agregación tipo RMS de utilización
+        u_rms = float(np.sqrt(np.mean(np.square(tau_utils))))
+
+        # 4) Sólo “duele” por encima de la tolerancia
+        #    (p.ej., hasta el 60% de utilización promedio no penaliza)
+        u_tol = 0.60
         e_tau = max(0.0, u_rms - u_tol)
 
-        # 3) mapea exceso a recompensa en [0,1] (alto = poco dolor)
-        #    tol de exceso: 0.20 -> a 0.80 RMS la recompensa cae a r*=0.6
-        return  exp_term(e_tau, tol=0.20, r_at_tol=0.6)
+        # 5) Mapear exceso a recompensa [0,1] (alto => poco dolor)
+        #    tol exceso 0.20: a u_rms≈0.80 => r_tau≈0.6
+        return exp_term(e_tau, tol=0.20, r_at_tol=0.6)
+    
+    def _grf_reward(self, foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2,
+                    mode="gauss", sigma_bw=0.15):
+        """
+        Devuelve recompensa en [0,1] a partir del exceso en BW.
+        - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
+        - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
+        """
+        exceso_bw = _grf_excess_cost_bw(foot_links, masa_robot, metodo_fuerzas_pies, bw_mult)
+        if mode == "linear":
+            return float(1.0 - np.clip(exceso_bw, 0.0, 1.0))
+        return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2))
 
 
 
@@ -309,6 +357,37 @@ def exp_term(error, tol, r_at_tol=0.5):
 
 def band_error(x, x_star, deadband):
     return max(0.0, abs(float(x) - float(x_star)) - float(deadband))
+
+
+def _grf_excess_cost(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    for link in foot_links:
+        _, _, F_foot= metodo_fuerzas_pies(link_id=link)
+        Fz_total += float(F_foot)
+
+    BW = masa_robot*9.81  # N
+    thr = bw_mult * BW
+    return float(max(0.0, Fz_total - thr))
+
+def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    for link in foot_links:
+        _, _, F_foot= metodo_fuerzas_pies(link_id=link)
+        Fz_total += float(F_foot)
+
+    BW = masa_robot*9.81  # N
+    bw_sum = Fz_total / BW
+    return float(max(0.0, bw_sum - float(bw_mult)))
     
     
     

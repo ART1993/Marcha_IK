@@ -832,6 +832,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'pressures': np.zeros(self.num_active_pams),
             'forces': np.zeros(self.num_active_pams)
         }
+        #Limite de torque de las articulaciones 
+        self._build_tau_limit_maps(theta_samples_per_joint=181,   # malla de 1º aprox.
+                                    cocontraction_norm=0.05,       # 5% de pretensión antagonista (ajustable)
+                                    safety_eta=0.85                # 85% para no sobreestimar el ideal
+                                )
         
         # ===== ESTABILIZACIÓN INICIAL =====
         
@@ -1096,6 +1101,112 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_rewards[reward_name]=reward_value
                 
                 self.csvlog.write("rewards", row_rewards)
+
+    
+    def _moment_arm_funcs_for_joint(self, joint_name: str):
+        # Devuelve funciones (flexor, extensor) r(θ) según tipo de joint
+        if "hip_roll" in joint_name:
+            return self.hip_roll_flexor_moment_arm, self.hip_roll_extensor_moment_arm
+        elif "hip_pitch" in joint_name:
+            return self.hip_pitch_flexor_moment_arm, self.hip_pitch_extensor_moment_arm
+        elif "knee" in joint_name:
+            return self.knee_flexor_moment_arm, self.knee_extensor_moment_arm
+        elif "ankle_roll" in joint_name:
+            return self.ankle_roll_flexor_moment_arm, self.ankle_roll_extensor_moment_arm
+        elif "ankle_pitch" in joint_name:
+            return self.ankle_pitch_flexor_moment_arm, self.ankle_pitch_extensor_moment_arm
+        else:
+            # Fallback prudente
+            return (lambda th: 0.05), (lambda th: 0.05)
+        
+    def _build_tau_limit_maps(self,
+                          theta_samples_per_joint: int = 181,
+                          cocontraction_norm: float = 0.00,   # 0.0 = sin pretensión
+                          safety_eta: float = 0.85):          # margen por realismo
+        """
+        Construye tablas τ_max_flex(θ) y τ_max_ext(θ) por articulación, suponiendo
+        PAM ideal (volumen vejiga const.), con límites por P_max y epsilon_max del PAM.
+
+        - cocontraction_norm: presión normalizada basal del antagonista (0..1)
+        - safety_eta: factor <1 para ajustar sobreestimación del modelo ideal.
+        """
+        import numpy as _np
+
+        self.tau_limit_maps = {}         # por joint_index: dict con 'theta', 'flex', 'ext'
+        self.tau_limit_interp = {}       # por joint_index: dict con funciones interp
+
+        # Recorremos tus articulaciones controladas
+        for joint_name, joint_id in self.dict_joints.items():
+            # 1) límites de ángulo reales desde URDF (PyBullet)
+            ji = p.getJointInfo(self.robot_id, joint_id)
+            th_lo, th_hi = float(ji[8]), float(ji[9])
+            if th_lo >= th_hi:           # por si el URDF no define
+                th_lo, th_hi = -1.0, 1.0
+
+            thetas = _np.linspace(th_lo, th_hi, theta_samples_per_joint)
+
+            # 2) localizar los PAMs flexor/extensor por nombre
+            flex_name = f"{joint_name}_flexor"
+            ext_name  = f"{joint_name}_extensor"
+            if flex_name not in self.pam_muscles or ext_name not in self.pam_muscles:
+                # si este joint no tiene pareja PAM (p.ej. no controlado), saltamos
+                continue
+            pam_flex = self.pam_muscles[flex_name]
+            pam_ext  = self.pam_muscles[ext_name]
+
+            # 3) funciones de brazo geométrico r(θ)
+            r_flex_fn, r_ext_fn = self._moment_arm_funcs_for_joint(joint_name)
+
+            # 4) presión (real) de agonista/antagonista
+            Pmax_flex = pam_flex.max_pressure
+            Pmax_ext  = pam_ext.max_pressure
+            Pmin_flex = pam_flex.min_pressure + cocontraction_norm*(pam_flex.max_pressure - pam_flex.min_pressure)
+            Pmin_ext  = pam_ext.min_pressure  + cocontraction_norm*(pam_ext.max_pressure  - pam_ext.min_pressure)
+
+            # 5) conversión θ -> ε para cada músculo (misma convención que usas en runtime)
+            def eps_from(theta, R, pam):
+                return pam.epsilon_from_angle(theta, 0.0, max(abs(R), 1e-9))
+
+            # 6) barrido y cálculo τ_max(θ)
+            tau_max_flex = []
+            tau_max_ext  = []
+            for th in thetas:
+                Rf = float(r_flex_fn(th))
+                Re = float(r_ext_fn(th))
+                eps_f = eps_from(th, Rf, pam_flex)
+                eps_e = eps_from(th, Re, pam_ext)
+
+                # Fuerzas extremas del AGONISTA y pretensión mínima del ANTAGONISTA
+                Ff_max = pam_flex.force_model_new(Pmax_flex, eps_f)
+                Fe_min = pam_ext.force_model_new(Pmin_ext,  eps_e)
+                Fe_max = pam_ext.force_model_new(Pmax_ext, eps_e)
+                Ff_min = pam_flex.force_model_new(Pmin_flex, eps_f)
+
+                # Par límite hacia flexión y extensión (agonista - antagonista)
+                tau_flex_lim = Rf*Ff_max - Re*Fe_min
+                tau_ext_lim  = Re*Fe_max - Rf*Ff_min
+
+                # margen de seguridad
+                tau_max_flex.append(max(0.0, safety_eta * tau_flex_lim))
+                tau_max_ext.append(max(0.0, safety_eta * tau_ext_lim))
+
+            tau_max_flex = _np.asarray(tau_max_flex)
+            tau_max_ext  = _np.asarray(tau_max_ext)
+
+            # 7) guarda tablas + interpoladores lineales
+            self.tau_limit_maps[joint_id] = {
+                "theta": thetas,
+                "flex":  tau_max_flex,
+                "ext":   tau_max_ext
+            }
+            def _interp_vec(x, xgrid, ygrid):
+                # saturamos fuera de rango al borde más cercano
+                return float(_np.interp(x, xgrid, ygrid, left=ygrid[0], right=ygrid[-1]))
+
+            self.tau_limit_interp[joint_id] = {
+                "flex": lambda th, _g=thetas, _y=tau_max_flex: _interp_vec(th, _g, _y),
+                "ext":  lambda th, _g=thetas, _y=tau_max_ext:  _interp_vec(th, _g, _y),
+            }
     
 
 

@@ -1100,7 +1100,7 @@ def calculate_reward_walk3d_previo(self, action, torque_mapping:dict, step_count
             tlim_sum += _tlim_cost(env.robot_id, jid, tau_cmd)
 
         # # 2) Término por exceso de GRF (pies)
-        grf_excess = _grf_excess_cost(env.robot_id, self.foot_links, bw_mult=1.2, masa_robot=self.env.mass)
+        grf_excess = _grf_excess_cost(env.robot_id, self.foot_links,env.contact_normal_force, bw_mult=1.2, masa_robot=self.env.mass)
 
         # # 3) Castigo total "dolor"
         w3 = float(getattr(self, "peso_3", 0.3))

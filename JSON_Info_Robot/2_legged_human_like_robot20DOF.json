@@ -65,7 +65,7 @@
         "friction": 0.0,
         "lower_limit": 0.0,
         "upper_limit": 1.571,
-        "max_force": 120.0,
+        "max_force": 60.0,
         "max_velocity": 6.0,
         "link_name": "left_shin_link",
         "joint_axis": [
