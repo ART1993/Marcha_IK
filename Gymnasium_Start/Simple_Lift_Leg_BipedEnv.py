@@ -195,9 +195,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
-        #delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
-        #u_final = self.prev_action + delta
-        #self.prev_action = u_final.copy()
+        # delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
+        # u_final = self.prev_action + delta
+        # self.prev_action = u_final.copy()
         self.ep_total_actions += 1
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====

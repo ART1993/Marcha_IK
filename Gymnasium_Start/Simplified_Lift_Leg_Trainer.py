@@ -17,27 +17,12 @@ from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizac
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 from Archivos_Apoyo.CSVLogger import CSVLogger
 
-
-
-
-"""
-KPI CHECKLIST (entrenamiento PAM – bípede)
-- Éxito L3 por pierna (%), duración single-support (media/p95)
-- Tilt p95 / pico, ZMP margin p05 (>0 ideal), rate de toe-touch (<5%)
-- No-support time máx (<0.2 s), slip del pie de soporte
-- Saturación PAM (<25%), co-contracción, ||Δu|| (suavidad)
-- Cap-hit rate (L3=7.0) < 30%, acciones en borde < 30%
-- PPO: entropy, approx_kl, clip_fraction, explained_variance
-Alertas (3 ventanas seguidas):
-- éxito ↓ 5pp, tilt_p95 > 20°, KL > 2×obj o clip_fraction > 0.6, FPS cae >30%
-"""
 class Simplified_Lift_Leg_Trainer:
     """
     Entrenador unificado mejorado para sistemas de robot bípedo con músculos PAM antagónicos.
     
     Esta versión mejorada del entrenador entiende la diferencia fundamental entre:
-    - Sistemas de músculos simples (4 PAMs independientes)
-    - Sistemas de músculos antagónicos (12 PAMs coordinados biomecánicamente)
+    - Sistemas de músculos antagónicos (20 PAMs coordinados biomecánicamente)
     
     Es como la diferencia entre entrenar a alguien para mover músculos individuales
     versus entrenar a un atleta para coordinar grupos musculares de manera natural.
@@ -123,9 +108,12 @@ class Simplified_Lift_Leg_Trainer:
         
         # Sistemas antagónicos requieren más memoria temporal y capacidad de procesamiento
         self.policy_kwargs_lstm = {
-            'lstm_hidden_size': 128,  # Más Simplifico memoria
+            'lstm_hidden_size': 128,  # 128 Más Simplifico memoria, subir a 256 para mayor capacidad temporal
             'n_lstm_layers': 1,       # Capas simples
             'shared_lstm': False,     # LSTMs separados para policy y value
+            # 'net_arch': [256, 256],       # MLP antes/después del LSTM
+            # 'activation_fn': torch.nn.SiLU,
+            # 'ortho_init': False           # con SiLU suele ir mejor desactivarlo
         }
 
         # ===== INFORMACIÓN DE ENTRENAMIENTO =====
@@ -246,10 +234,10 @@ class Simplified_Lift_Leg_Trainer:
             'learning_rate': self.learning_rate,
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
-            'ent_coef': 0.01,          # Exploración moderada
-            'n_steps': 256,            # Reducido
-            'batch_size': 128,         # Reducido
-            'n_epochs': 4,             # Reducido
+            'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
+            'n_steps': 256,            # 265 es bajo, subir a 1024 para secuencias más largas
+            'batch_size': 128,         # 128 subir a 512, multiplo de n_envs
+            'n_epochs': 4,             # con n_epoch=3 hay menos pasadas
             'gae_lambda': 0.95,        # Estándar
             'clip_range': 0.2,         # Estándar
             'vf_coef': 0.5,            # Estándar
