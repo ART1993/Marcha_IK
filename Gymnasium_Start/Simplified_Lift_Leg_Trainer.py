@@ -289,7 +289,8 @@ class Simplified_Lift_Leg_Trainer:
             best_model_save_path=self.model_dir,
             log_path=os.path.join(self.logs_dir, "eval"),
             eval_freq=eval_freq,
-            deterministic=True,
+            n_eval_episodes=10,
+            deterministic=False,
             render=False,
             verbose=1
         )

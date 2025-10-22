@@ -256,7 +256,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         #if self.simple_reward_system:
         # Joint indices 
-        self.joint_states_properties = self.obtener_estado_articulaciones()
+        self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
         
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
@@ -294,17 +294,19 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         # Ejemplos: mapea índices a nombres (ver mapeo más abajo)
         if jt is not None:
-            
-            info["kpi"]["tau_LHP"]   = float(jt[0])  # Left Hip pitch
-            info["kpi"]["tau_LHR"]   = float(jt[1])  # Left Hip roll
-            info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
-            info["kpi"]["tau_LAP"]   = float(jt[3])  # Right ankle pitch
-            info["kpi"]["tau_LAR"]   = float(jt[4])  # Right ankle roll
-            info["kpi"]["tau_RHP"]   = float(jt[5])  # Right Hip pitch
-            info["kpi"]["tau_RHR"]    = float(jt[6])  # Right HIP roll
-            info["kpi"]["tau_RK"]    = float(jt[7])  # Right Knee
-            info["kpi"]["tau_RAP"]    = float(jt[8])  # Right ankle pitch
-            info["kpi"]["tau_RAR"]    = float(jt[9])  # Right ankle roll
+            for i, joint_name in enumerate(self.control_joint_names):
+                #print(i, joint_name)
+                info["kpi"][f"tau_{joint_name}"]   = float(jt[i])  
+            # info["kpi"]["tau_LHP"]   = float(jt[0])  # Left Hip pitch
+            # info["kpi"]["tau_LHR"]   = float(jt[1])  # Left Hip roll
+            # info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
+            # info["kpi"]["tau_LAP"]   = float(jt[3])  # Right ankle pitch
+            # info["kpi"]["tau_LAR"]   = float(jt[4])  # Right ankle roll
+            # info["kpi"]["tau_RHP"]   = float(jt[5])  # Right Hip pitch
+            # info["kpi"]["tau_RHR"]    = float(jt[6])  # Right HIP roll
+            # info["kpi"]["tau_RK"]    = float(jt[7])  # Right Knee
+            # info["kpi"]["tau_RAP"]    = float(jt[8])  # Right ankle pitch
+            # info["kpi"]["tau_RAR"]    = float(jt[9])  # Right ankle roll
 
         if ps is not None:
             for i, mucle_name in enumerate(self.muscle_names):
@@ -614,7 +616,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Observaciones ¿Por que no son posiciones del robot y V_com?
         # ===== ESTADOS ARTICULARES (4 elementos) =====
-        joint_states = self.obtener_estado_articulaciones()  # Solo joints activos
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # Solo joints activos
         joint_positions = [state[0] for state in joint_states]
         obs.extend(joint_positions)
 
@@ -673,7 +675,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         
-        joint_states = self.obtener_estado_articulaciones()
+        joint_states = p.getJointStates(self.robot_id, self.joint_indices)
         joint_positions = [state[0] for state in joint_states]
         obs.extend(joint_positions)
 
@@ -855,6 +857,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
         for _ in range(int(self.frequency_simulation//10)):
             p.stepSimulation()
+
+        if self.zmp_calculator:
+            # COM (usa tu helper de Pybullet_Robot_Data)
+            try:
+                com_world, _ = self.robot_data.get_center_of_mass()
+                self.init_com_x, self.init_com_y, self.init_com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+            except Exception:
+                self.init_com_x = self.init_com_y = self.init_com_z = 0.0
         
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()
@@ -1067,7 +1077,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_pressure_PAM={"step": int(self.step_count),
                                 "episode": int(self.n_episodes),
                                 "t": round(self.step_count / self.frequency_simulation, 5),}
-                    for (name, idx), state in zip(self.dict_joints.items(), self.joint_states_properties):
+                    for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
                         pos, vel, reaction, applied = state
                         Fx,Fy,Fz,Mx,My,Mz = reaction
                         row_q_angle[f"q_{name}"]=round(pos,3)
@@ -1086,6 +1096,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     row_com[f'Masa']=round(self.mass,1)
+                    row_com[f"COM_z_inicial"]=round(self.init_com_z,3)
                     row_com['posicion_x']=round(self.pos[0],3)
                     row_com['posicion_y']=round(self.pos[1],3)
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)

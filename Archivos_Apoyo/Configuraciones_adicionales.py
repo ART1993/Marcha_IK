@@ -147,31 +147,30 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
                                                                                      env.hip_pitch_extensor_moment_arm)
 
     # Rodilla izquierda 
-    pam_forces[8], pam_forces[9], R_knee_flex_L, R_knee_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[1], P, 4, 5,
+    pam_forces[4], pam_forces[5], R_knee_flex_L, R_knee_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[1], P, 4, 5,
                                                                                      env.knee_flexor_moment_arm,
                                                                                      env.knee_extensor_moment_arm)
 
     # Rodilla derecha
-    pam_forces[10], pam_forces[11], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[4], P, 6, 7,
+    pam_forces[6], pam_forces[7], R_knee_flex_R, R_knee_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[4], P, 6, 7,
                                                                                                  env.knee_flexor_moment_arm,
                                                                                                  env.knee_extensor_moment_arm)
     
     # Tobillo izquierdo pitch
-    pam_forces[12], pam_forces[13], R_ankle_pitch_flex_L, R_ankle_pitch_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 8, 9,
+    pam_forces[8], pam_forces[9], R_ankle_pitch_flex_L, R_ankle_pitch_ext_L=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 8, 9,
                                                                                                     env.ankle_pitch_flexor_moment_arm,
                                                                                                     env.ankle_pitch_extensor_moment_arm)
 
     # Tobillo derecho pitch
-    pam_forces[14], pam_forces[15], R_ankle_pitch_flex_R, R_ankle_pitch_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[5], P, 10, 11,
+    pam_forces[10], pam_forces[11], R_ankle_pitch_flex_R, R_ankle_pitch_ext_R=obtener_pam_forces_flexor_extensor(env, joint_positions[5], P, 10, 11,
                                                                                                     env.ankle_pitch_flexor_moment_arm,
                                                                                                     env.ankle_pitch_extensor_moment_arm)
     
-    assert env.num_active_pams == env.action_space.shape[0] == 20, \
+    assert env.num_active_pams == env.action_space.shape[0] == 12, \
     f"{env.num_active_pams=} {env.action_space.shape=}"
     
     # Convertir a torques articulares
     joint_torques = np.zeros(len(joint_states))
-    # TODO Ver que cambios tengo que aplicar para los torques ya queno tiene por que tener mismo torque en x que en y
     # Cadera izquierda pitch: flexión positiva por flexor, extensión por extensor
     joint_torques[0] = ( pam_forces[0] * R_flex_pitch_L) + (-pam_forces[1] * R_ext_pitch_L)
 
@@ -536,6 +535,8 @@ def seleccionar_funcion_calculo_torques(env, pam_pressures):
         return calculate_robot_specific_joint_torques_16_pam(env, pam_pressures)
     elif "2_legged_human_like_robot20DOF" in env.robot_name:
         return calculate_robot_specific_joint_torques_20_pam(env, pam_pressures)
+    elif "2_legged_human_like_robot12DOF" in env.robot_name:
+        return calculate_robot_specific_joint_torques_12_pam(env, pam_pressures)
     else:
         raise ValueError(f"Robot '{env.robot_name}' no soportado para sistema PAM.")
 
