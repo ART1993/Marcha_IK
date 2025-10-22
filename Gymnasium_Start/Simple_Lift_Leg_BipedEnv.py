@@ -427,7 +427,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.9,                #0.8,       
+                lateralFriction=0.9,                #0.7,       
                 spinningFriction=0.2,                   #0.15,       
                 rollingFriction=0.01,       
                 restitution=0.01,           
@@ -843,6 +843,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
         for _ in range(int(self.frequency_simulation//10)):
             p.stepSimulation()
+
+        if self.zmp_calculator:
+            try:
+                zmp_xy = self.zmp_calculator.calculate_zmp()
+                self.zmp_x, self.zmp_y = float(zmp_xy[0]), float(zmp_xy[1])
+                # COM (usa tu helper de Pybullet_Robot_Data)
+                try:
+                    com_world, _ = self.robot_data.get_center_of_mass()
+                    self.init_com_x, self.init_com_y, self.init_com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+                    #self.vel_COM=self.robot_data.get_center_of_mass_velocity()
+                except Exception:
+                    self.init_com_x = self.init_com_y = self.init_com_z = 0.0
+            except Exception:
+                self.init_zmp_x, self.init_zmp_y = 0.0, 0.0
+        else:
+            self.init_zmp_x, self.init_zmp_y = 0.0, 0.0
+
         
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()
@@ -1014,7 +1031,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle + np.pi/6)
-        return self.ankle_roll_FLEXOR_BASE_ARM + self.ankle_roll_FLEXOR_VARIATION * angle_factor
+        return self.ankle_pitch_FLEXOR_BASE_ARM + self.ankle_pitch_FLEXOR_VARIATION * angle_factor
     
     def ankle_pitch_extensor_moment_arm(self, angle):
         """
@@ -1074,6 +1091,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     row_com[f'Masa']=round(self.mass,1)
+                    row_com[f'COM_z_init']=round(self.init_com_z,3)
                     row_com['posicion_x']=round(self.pos[0],3)
                     row_com['posicion_y']=round(self.pos[1],3)
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)

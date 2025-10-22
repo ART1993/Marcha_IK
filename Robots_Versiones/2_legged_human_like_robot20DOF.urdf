@@ -232,8 +232,9 @@
     <parent link="base_link"/>
     <child link="right_hip_pitch_link"/>
     <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>  
-    <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
-    <axis xyz="0 -1 0"/>
+    <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de pitch, lo devuelvo al natural si veo que todo funciona bien 
+    y no tengo problemas de co contracción entre caderas -->
+    <axis xyz="0 1 0"/>
     <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
