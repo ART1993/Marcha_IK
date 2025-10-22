@@ -260,16 +260,29 @@ class Simplified_Lift_Leg_Trainer:
                                clip_obs=self.env_configs['clip_obs'],
                                clip_reward=self.env_configs['clip_reward'],
                                training=False)
-        # NEW: cargar stats de normalización del train si existen
-        norm_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
-        if os.path.exists(norm_path):
-            try:
-                eval_env = VecNormalize.load(norm_path, eval_env)
-                eval_env.training = False          # importante para que no actualice stats
-                eval_env.norm_reward = False       # opcional: no normalizar reward en eval
-                print("eval normalization cargado")
-            except Exception as e:
-                print(f"⚠️ Could not load eval normalization: {e}")
+        # # NEW: cargar stats de normalización del train si existen
+        # norm_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
+        # if os.path.exists(norm_path):
+        #     try:
+        #         eval_env = VecNormalize.load(norm_path, eval_env)
+        #         eval_env.training = False          # importante para que no actualice stats
+        #         eval_env.norm_reward = False       # opcional: no normalizar reward en eval
+        #         print("eval normalization cargado")
+        #     except Exception as e:
+        #         print(f"⚠️ Could not load eval normalization: {e}")
+        # Preferencia: usar primero el BEST normalize, luego el genérico
+        best_norm = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_best_normalize.pkl")
+        generic_norm = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
+        for cand in (best_norm, generic_norm):
+            if os.path.exists(cand):
+                try:
+                    eval_env = VecNormalize.load(cand, eval_env)
+                    eval_env.training = False     # no actualizar estadísticas en eval
+                    eval_env.norm_reward = False  # opcional: no normalizar reward en eval
+                    print(f"📊 Eval normalization loaded from: {cand}")
+                except Exception as e:
+                    print(f"⚠️ Could not load eval normalization from {cand}: {e}")
+                break
 
         return eval_env
     
@@ -442,17 +455,19 @@ class Simplified_Lift_Leg_Trainer:
             )
             self.training_info['completed_timesteps'] = self.total_timesteps
             
-            # ===== GUARDAR MODELO FINAL =====
-            
+            # ===== GUARDAR MODELO FINAL + NORMALIZE EMPAREJADO =====
             final_model_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_final")
             model.save(final_model_path)
             print(f"✅ Final model saved at: {final_model_path}")
-            
-            # Guardar normalizaciones
             if isinstance(train_env, VecNormalize):
+                # guardado genérico por compatibilidad
                 norm_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
                 train_env.save(norm_path)
                 print(f"✅ Normalization saved at: {norm_path}")
+                # guardado emparejado con el 'final'
+                final_norm = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_final_normalize.pkl")
+                train_env.save(final_norm)
+                print(f"💾 Saved FINAL VecNormalize -> {final_norm}")
             
             # ===== GUARDAR INFORMACIÓN DE ENTRENAMIENTO =====
 
