@@ -60,8 +60,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.joint_indices=[]
         self.control_joint_names=[]
         for key, values in json_file_robot_joint_info.items():
-            self.joint_indices.append(values.get("index"))
-            self.control_joint_names.append(values.get("name"))
+            if values.get('type')!=4:
+                self.joint_indices.append(values.get("index"))
+                self.control_joint_names.append(values.get("name"))
             if values.get("link_name")=="left_foot_link":
                 self.left_foot_link_id=values.get("index")
             elif values.get("link_name")=="right_foot_link":
@@ -427,7 +428,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.9,                #0.8,       
+                lateralFriction=0.9,                #0.9 bajar a 0.7 si hay problemas,       
                 spinningFriction=0.2,                   #0.15,       
                 rollingFriction=0.01,       
                 restitution=0.01,           
