@@ -59,10 +59,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
         self.joint_indices=[]
         self.control_joint_names=[]
+        # de momento este dict es solo intuitivo
+        self.limit_upper_lower_angles={}
         for key, values in json_file_robot_joint_info.items():
             if values.get('type')!=4:
                 self.joint_indices.append(values.get("index"))
                 self.control_joint_names.append(values.get("name"))
+                self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
             if values.get("link_name")=="left_foot_link":
                 self.left_foot_link_id=values.get("index")
             elif values.get("link_name")=="right_foot_link":
@@ -196,9 +199,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
-        # delta = np.clip(u_final - self.prev_action, -0.05, 0.05)
-        # u_final = self.prev_action + delta
-        # self.prev_action = u_final.copy()
+        delta = np.clip(u_final - self.prev_action, -0.20, 0.20)
+        u_final = self.prev_action + delta
+        self.prev_action = u_final.copy()
         self.ep_total_actions += 1
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
@@ -252,7 +255,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         
         #if self.simple_reward_system:
-        # Joint indices [0,1,2,4,5,6]
+        # Joint indices 
         self.joint_states_properties = self.obtener_estado_articulaciones()
         
         done = self.simple_reward_system.is_episode_done(self.step_count)
@@ -276,9 +279,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         info, reward, done, system_used = self.function_logger_kpi(info, reward, done, system_used)
 
-        
-
-
         self._debug_joint_angles_and_pressures(info, u_final, done)
         
         self.debug_rewards()
@@ -286,20 +286,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         
         return observation, reward, done, False, info
-    
-    def obtener_estado_articulaciones(self):
-        joint_states = p.getJointStates(self.robot_id, self.joint_indices)  # sólo 8 DOF controlados
-        self.left_hip_roll_angle = joint_states[0][0]
-        self.left_hip_pitch_angle = joint_states[1][0]
-        self.left_knee_angle = joint_states[2][0]
-        self.left_ankle_pitch_angle = joint_states[3][0]
-        self.left_ankle_roll_angle = joint_states[4][0]
-        self.right_hip_roll_angle = joint_states[5][0]
-        self.right_hip_pitch_angle = joint_states[6][0]
-        self.right_knee_angle = joint_states[7][0]
-        self.right_ankle_pitch_angle = joint_states[8][0]
-        self.right_ankle_roll_angle = joint_states[9][0]
-        return joint_states
     
 
     def info_pam_torque(self, info):
@@ -516,11 +502,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         if left_contact and not right_contact:
             # Pierna derecha levantada - controlar rodilla derecha (índice 3)
-            knee_joint_id = self.dict_joints["right_knee_joint"] #self.joint_indices[controlled_knee_idx]   6     # right_knee_joint en PyBullet
+            knee_joint_id = self.dict_joints["right_knee_joint"] #self.joint_indices[controlled_knee_idx]        # right_knee_joint en PyBullet
             controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # right_knee en joint_torques ultimo valor
         elif right_contact and not left_contact:
             # Pierna izquierda levantada - controlar rodilla izquierda (índice 1)
-            knee_joint_id = self.dict_joints["left_knee_joint"] #self.joint_indices[controlled_knee_idx]    2    # left_knee_joint en PyBullet
+            knee_joint_id = self.dict_joints["left_knee_joint"] #self.joint_indices[controlled_knee_idx]        # left_knee_joint en PyBullet
             controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # left_knee en joint_torques  tercero
         else:
             # Ambas o ninguna - no aplicar control automático
@@ -786,20 +772,45 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
-        initial_positions = {
-            # Pierna izquierda
-            self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
-            self.joint_indices[1]: 0.0,   # left_hip_roll_joint
-            self.joint_indices[2]: 0.0,   # left_knee_joint      0.1
-            self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
-            self.joint_indices[4]: 0.0,   # left_ankle_roll_joint 0.1
-            # pierna derecha
-            self.joint_indices[5]: 0.0,   # right_hip_roll_joint 0.1
-            self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
-            self.joint_indices[7]: 0.0,   # right_knee_joint    0.1
-            self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
-            self.joint_indices[9]: 0.0    # right_ankle_roll_joint 0.1
-        }
+        if "20" in self.robot_name:
+            initial_positions = {
+                # Pierna izquierda
+                self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
+                self.joint_indices[1]: 0.0,   # left_hip_roll_joint
+                self.joint_indices[2]: 0.0,   # left_knee_joint      0.1
+                self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
+                self.joint_indices[4]: 0.0,   # left_ankle_roll_joint 0.1
+                # pierna derecha
+                self.joint_indices[5]: 0.0,   # right_hip_roll_joint 0.1
+                self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
+                self.joint_indices[7]: 0.0,   # right_knee_joint    0.1
+                self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
+                self.joint_indices[9]: 0.0    # right_ankle_roll_joint 0.1
+            }
+        elif "12" in self.robot_name:
+            initial_positions = {
+                # Pierna izquierda
+                self.joint_indices[0]: 0.0,   
+                self.joint_indices[1]: 0.0,   
+                self.joint_indices[2]: 0.0,   
+                # pierna derecha
+                self.joint_indices[3]: 0.0,   
+                self.joint_indices[4]: 0.0,   
+                self.joint_indices[5]: 0.0,   
+            }
+        elif "16" in self.robot_name:
+            initial_positions = {
+                # Pierna izquierda
+                self.joint_indices[0]: 0.0,   
+                self.joint_indices[1]: 0.0,   
+                self.joint_indices[2]: 0.0,   
+                self.joint_indices[3]: 0.0,   
+                # pierna derecha
+                self.joint_indices[4]: 0.0,   
+                self.joint_indices[5]: 0.0,   
+                self.joint_indices[6]: 0.0,   
+                self.joint_indices[7]: 0.0,   
+            }
         
         for joint_id, pos in initial_positions.items():
             p.resetJointState(self.robot_id, joint_id, pos)
