@@ -1,4 +1,4 @@
-import os
+import os, re
 
 import numpy as np
 from stable_baselines3.common.vec_env import VecNormalize
@@ -13,20 +13,65 @@ from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Mus
 
 
 def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
-        """Load normalization statistics if they exist"""
-        if resume_path and isinstance(train_env, VecNormalize):
-            norm_path = os.path.join(model_dir, f"{config['model_prefix']}_normalize.pkl")
-            if os.path.exists(norm_path):
-                print(f"📊 Loading normalization statistics from: {norm_path}")
+        """
+            Intenta cargar la normalización 'emparejada' con el .zip desde el que reanudamos:
+            - ..._checkpoint_<N>_steps.zip  -> ..._checkpoint_<N>_steps_normalize.pkl  (en checkpoints_dir)
+            - best_model.zip                -> <prefix>_best_normalize.pkl             (en model_dir)
+            - <prefix>_final(.zip)          -> <prefix>_final_normalize.pkl            (en model_dir)
+            Si no encuentra el par, cae a <prefix>_normalize.pkl (comportamiento previo).
+        """
+        if not (resume_path and isinstance(train_env, VecNormalize)):
+            return train_env
+        prefix = config.get('model_prefix', 'model')
+        if checkpoints_dir is None:
+            checkpoints_dir = os.path.join(model_dir, "checkpoints")
+
+        def _try_load(pkl_path):
+            nonlocal train_env
+            if os.path.exists(pkl_path):
+                print(f"📊 Loading MATCHED normalization from: {pkl_path}")
                 try:
-                    # Load normalization statistics
-                    train_env = VecNormalize.load(norm_path, train_env)
-                    # Keep normalization training active
-                    train_env.training = True
-                    train_env.norm_reward = True
+                    env_loaded = VecNormalize.load(pkl_path, train_env)
+                    env_loaded.training = True
+                    env_loaded.norm_reward = True
+                    return env_loaded
                 except Exception as e:
-                    print(f"⚠️ Warning: Could not load normalization stats: {e}")
-                    print("   Continuing with fresh normalization...")
+                    print(f"⚠️ Warning: could not load matched normalization: {e}")
+            return None
+        base = os.path.basename(resume_path)
+        # 1) Checkpoint: <prefix>_checkpoint_<N>_steps.zip
+        m = re.match(rf"{re.escape(prefix)}_checkpoint_(\d+)_steps\.zip$", base)
+        if m:
+            steps = m.group(1)
+            cand = os.path.join(checkpoints_dir, f"{prefix}_checkpoint_{steps}_steps_normalize.pkl")
+            loaded = _try_load(cand)
+            if loaded is not None:
+                return loaded
+        # 2) best_model.zip
+        if base == "best_model.zip":
+            cand = os.path.join(model_dir, f"{prefix}_best_normalize.pkl")
+            loaded = _try_load(cand)
+            if loaded is not None:
+                return loaded
+        # 3) final(.zip)
+        if base in (f"{prefix}_final.zip", f"{prefix}_final"):
+            cand = os.path.join(model_dir, f"{prefix}_final_normalize.pkl")
+            loaded = _try_load(cand)
+            if loaded is not None:
+                return loaded
+
+        # 4) Fallback al normalize "genérico" (comportamiento previo)
+        norm_path = os.path.join(model_dir, f"{prefix}_normalize.pkl")
+        if os.path.exists(norm_path):
+            print(f"📊 Loading normalization (fallback) from: {norm_path}")
+            try:
+                train_env = VecNormalize.load(norm_path, train_env)
+                train_env.training = True
+                train_env.norm_reward = True
+            except Exception as e:
+                print(f"⚠️ Warning: Could not load fallback normalization: {e}")
+                print("   Continuing with fresh normalization...")
+
         return train_env
 
 def buscar_archivo(nombre_archivo, ruta_base="/", select_multiple=False):

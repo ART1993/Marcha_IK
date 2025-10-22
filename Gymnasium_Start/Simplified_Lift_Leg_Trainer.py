@@ -10,12 +10,70 @@ import re
 from datetime import datetime
 import json
 
+from stable_baselines3.common.callbacks import BaseCallback
+
 
 # Import your environments
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
 from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 from Archivos_Apoyo.CSVLogger import CSVLogger
+
+class SaveVecNormalizeOnStep(BaseCallback):
+    """
+    Guarda VecNormalize emparejado con cada checkpoint:
+    <prefix>_checkpoint_<N>_steps.zip -> <prefix>_checkpoint_<N>_steps_normalize.pkl
+    """
+    def __init__(self, vecnorm_env, save_dir, name_prefix, save_every_steps, verbose=0):
+        super().__init__(verbose)
+        self.vecnorm_env = vecnorm_env
+        self.save_dir = save_dir
+        self.name_prefix = name_prefix
+        self.save_every_steps = save_every_steps
+
+    def _on_step(self) -> bool:
+        if self.save_every_steps and (self.num_timesteps % self.save_every_steps == 0):
+            if isinstance(self.vecnorm_env, VecNormalize):
+                path = os.path.join(
+                    self.save_dir,
+                    f"{self.name_prefix}_{self.num_timesteps}_steps_normalize.pkl"
+                )
+                try:
+                    self.vecnorm_env.save(path)
+                    print(f"💾 Saved CHECKPOINT VecNormalize -> {path}")
+                except Exception as e:
+                    print(f"⚠️ Could not save CHECKPOINT VecNormalize: {e}")
+        return True
+
+
+class EvalCallbackSaveVecnorm(EvalCallback):
+    """
+    Amplía EvalCallback: cuando guarda un nuevo best_model.zip,
+    guarda también <prefix>_best_normalize.pkl en model_dir.
+    """
+    def __init__(self, *args, train_vecnorm=None, model_prefix="model", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._train_vecnorm = train_vecnorm
+        self._best_seen = -float("inf")
+        self._model_prefix = model_prefix
+
+    def _on_step(self) -> bool:
+        prev = self._best_seen
+        ok = super()._on_step()
+        cur = getattr(self, "best_mean_reward", -float("inf"))
+        if cur > prev:
+            self._best_seen = cur
+            try:
+                if isinstance(self._train_vecnorm, VecNormalize):
+                    best_norm_path = os.path.join(
+                        self.best_model_save_path,
+                        f"{self._model_prefix}_best_normalize.pkl"
+                    )
+                    self._train_vecnorm.save(best_norm_path)
+                    print(f"💾 Saved BEST VecNormalize -> {best_norm_path}")
+            except Exception as e:
+                print(f"⚠️ Could not save BEST VecNormalize: {e}")
+        return ok
 
 class Simplified_Lift_Leg_Trainer:
     """
@@ -209,6 +267,7 @@ class Simplified_Lift_Leg_Trainer:
                 eval_env = VecNormalize.load(norm_path, eval_env)
                 eval_env.training = False          # importante para que no actualice stats
                 eval_env.norm_reward = False       # opcional: no normalizar reward en eval
+                print("eval normalization cargado")
             except Exception as e:
                 print(f"⚠️ Could not load eval normalization: {e}")
 
@@ -260,7 +319,7 @@ class Simplified_Lift_Leg_Trainer:
     def setup_callbacks(self, eval_env):
         """
             Configurar callbacks optimizados para sistemas antagónicos.
-            
+             (checkpoints + eval + guardado de VecNormalize emparejado)
             Los sistemas antagónicos requieren monitoreo más frecuente y métricas
             más sofisticadas para entender el progreso del entrenamiento.
         """
@@ -283,19 +342,39 @@ class Simplified_Lift_Leg_Trainer:
         
         # Evaluación más frecuente para sistemas complejos
         eval_freq = 25000 //self.n_envs
-        
-        eval_callback = EvalCallback(
-            eval_env,
-            best_model_save_path=self.model_dir,
-            log_path=os.path.join(self.logs_dir, "eval"),
-            eval_freq=eval_freq,
-            n_eval_episodes=10,
-            deterministic=False,
-            render=False,
-            verbose=1
-        )
+         # ⚠️ De momento, no podemos pasar train_vecnorm aquí porque aún no tenemos el train_env definitivo.
+        eval_callback = EvalCallbackSaveVecnorm(
+                eval_env,
+                best_model_save_path=self.model_dir,
+                log_path=os.path.join(self.logs_dir, "eval"),
+                eval_freq=eval_freq,
+                n_eval_episodes=10,
+                deterministic=False,
+                render=False,
+                verbose=1,
+                train_vecnorm=None,                   # ← Se “inyecta” en train()
+                model_prefix=config["model_prefix"],  # ← Para nombrar <prefix>_best_normalize.pkl
+            )
+        # eval_callback = EvalCallback(
+        #     eval_env,
+        #     best_model_save_path=self.model_dir,
+        #     log_path=os.path.join(self.logs_dir, "eval"),
+        #     eval_freq=eval_freq,
+        #     n_eval_episodes=10,
+        #     deterministic=False,
+        #     render=False,
+        #     verbose=1
+        # )
         #kpi_csv_cb = SimpleCsvKpiCallback(logs_dir=self.logs_dir, verbose=0)
-        callbacks = CallbackList([checkpoint_callback, eval_callback])
+        # Guardado de normalize emparejado con cada checkpoint
+        save_vecnorm_cb = SaveVecNormalizeOnStep(
+            vecnorm_env=None,  # ← Se “inyecta” en train()
+            save_dir=self.checkpoints_dir,
+            name_prefix=f'{config["model_prefix"]}_checkpoint',
+            save_every_steps=checkpoint_freq
+        )
+        # callbacks = CallbackList([checkpoint_callback, eval_callback])
+        callbacks = CallbackList([checkpoint_callback, eval_callback, save_vecnorm_cb])
         
         
         return callbacks
@@ -328,7 +407,8 @@ class Simplified_Lift_Leg_Trainer:
         eval_env = self.create_eval_env()
         
         # Cargar normalizaciones existentes si las hay
-        train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
+        train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env,
+                                                 checkpoints_dir=self.checkpoints_dir)
         
         # ===== CREACIÓN DEL MODELO =====
         
@@ -337,6 +417,13 @@ class Simplified_Lift_Leg_Trainer:
         # ===== CONFIGURACIÓN DE CALLBACKS =====
         
         callbacks = self.setup_callbacks(eval_env)
+
+        # Inyectar el VecNormalize real a los nuevos callbacks
+        for cb in callbacks.callbacks:
+            if hasattr(cb, "_train_vecnorm") and cb._train_vecnorm is None:
+                cb._train_vecnorm = train_env
+            if hasattr(cb, "vecnorm_env") and cb.vecnorm_env is None:
+                cb.vecnorm_env = train_env
         
         # ===== REGISTRO DE INICIO =====
         
@@ -552,6 +639,7 @@ def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-
                                           learning_rate=learning_rate, logger=logger, 
                                           csvlog=csvlog, _simple_reward_mode=_simple_reward_mode,
                                           _allow_hops=True, _vx_target=vx_target, robot_name=robot_name)
+    
     print(f"✅ Trainer created (NO CURRICULUM)")
     print(f"   Focus: Balance básico con RL puro")
     print(f"   Expert help: 0% (assist=0 siempre)")
