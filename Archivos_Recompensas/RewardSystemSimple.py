@@ -233,7 +233,7 @@ class SimpleProgressiveReward:
         
         alive = 0.6
         # Pesos de términos normalizados (ajústalos con tus logs)
-        w_v, w_lat, w_post, w_z, w_dp = 0.30, 0.20, 0.15, 0.10, 0.10
+        w_v, w_lat, w_post, w_z, w_dp = 0.30, 0.20, 0.15, 0.10, 0.05
         w_tau = 0.10
         r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
         #r_GRF=_grf_reward(self.foot_links,env.contact_normal_force, masa_robot=self.env.mass, bw_mult=1.2)

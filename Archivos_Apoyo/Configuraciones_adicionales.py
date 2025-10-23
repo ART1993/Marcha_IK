@@ -1,4 +1,4 @@
-import os
+import os, re
 
 import numpy as np
 from stable_baselines3.common.vec_env import VecNormalize
@@ -9,7 +9,56 @@ from os import listdir
 
 from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12
 
+# ===== Utilidad: cargar VecNormalize "emparejado" con el checkpoint/best/final =====
+def load_matching_normalize(self, env, resume_path):
+    """
+    Dado un zip (checkpoint/best/final), intenta cargar el normalize.pkl con el mismo "par".
+    Reglas:
+        - …_checkpoint_<N>_steps.zip → …_checkpoint_<N>_steps_normalize.pkl (en checkpoints_dir)
+        - best_model.zip → <model_prefix>_best_normalize.pkl (en model_dir)
+        - <model_prefix>_final(.zip) → <model_prefix>_final_normalize.pkl (en model_dir)
+    Si no encuentra el par, devuelve env sin cambios.
+    """
+    try:
+        if not resume_path or not os.path.exists(resume_path):
+            return env
+        base = os.path.basename(resume_path)
+        prefix = self.env_configs["model_prefix"]
 
+        # 1) checkpoint_<N>_steps.zip
+        m = re.match(rf"{re.escape(prefix)}_checkpoint_(\d+)_steps\.zip$", base)
+        if m:
+            steps = m.group(1)
+            cand = os.path.join(self.checkpoints_dir, f"{prefix}_checkpoint_{steps}_steps_normalize.pkl")
+            if os.path.exists(cand):
+                env_loaded = VecNormalize.load(cand, env)
+                env_loaded.training = True
+                env_loaded.norm_reward = True
+                print(f"🔗 Loaded MATCHED VecNormalize (checkpoint): {cand}")
+                return env_loaded
+
+        # 2) best_model.zip
+        if base == "best_model.zip":
+            cand = os.path.join(self.model_dir, f"{prefix}_best_normalize.pkl")
+            if os.path.exists(cand):
+                env_loaded = VecNormalize.load(cand, env)
+                env_loaded.training = True
+                env_loaded.norm_reward = True
+                print(f"🔗 Loaded MATCHED VecNormalize (best): {cand}")
+                return env_loaded
+
+        # 3) final(.zip) → final_normalize.pkl
+        if base == f"{prefix}_final.zip" or base == f"{prefix}_final":
+            cand = os.path.join(self.model_dir, f"{prefix}_final_normalize.pkl")
+            if os.path.exists(cand):
+                env_loaded = VecNormalize.load(cand, env)
+                env_loaded.training = True
+                env_loaded.norm_reward = True
+                print(f"🔗 Loaded MATCHED VecNormalize (final): {cand}")
+                return env_loaded
+    except Exception as e:
+        print(f"⚠️ Could not load MATCHED VecNormalize for {resume_path}: {e}")
+    return env
 
 
 def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
