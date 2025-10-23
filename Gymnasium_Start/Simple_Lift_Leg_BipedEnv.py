@@ -1053,7 +1053,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             for key, value in self.dict_joints.items():
                 tau_limit_interp[f"tau_limit_flex_{key}"]= self.tau_limit_interp[value]['flex']
                 tau_limit_interp[f"tau_limit_ext_{key}"]= self.tau_limit_interp[value]['ext']
-                tau_limit_maps[f"thetas_{key}"] =self.tau_limit_maps[value]['thetas']
+                tau_limit_maps[f"thetas_{key}"] =self.tau_limit_maps[value]['theta']
                 tau_limit_maps[f"flex_{key}"] =self.tau_limit_maps[value]['flex']
                 tau_limit_maps[f"ext_{key}"] =self.tau_limit_maps[value]['ext']
             self.csvlog.write("tau_limit", tau_limit_interp)
@@ -1100,8 +1100,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     row_com[f"F_L"]=round(info["kpi"]['F_L'],3)
                     row_com[f"F_R"]=round(info["kpi"]['F_R'],3)
-                    row_com[f"n_l"]=int(info["kpi"]['n_l'])
-                    row_com[f"n_r"]=int(info["kpi"]['n_r'])
+                    row_com[f"n_l"]=int(info["kpi"]['nL'])
+                    row_com[f"n_r"]=int(info["kpi"]['nR'])
                     row_com[f'Masa']=round(self.mass,1)
                     row_com[f"COM_z_inicial"]=round(self.init_com_z,3)
                     row_com['posicion_x']=round(self.pos[0],3)
