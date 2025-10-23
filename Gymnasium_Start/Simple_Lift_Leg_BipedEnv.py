@@ -1055,7 +1055,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
-        
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
                 if self.csvlog:
@@ -1088,13 +1087,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
                         row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
                         row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
-                        row_pressure_PAM[f"Pressure_{name}flexion"]=pam_pressures[idx*2]
-                        row_pressure_PAM[f"Pressure_{name}extension"]=pam_pressures[idx*2+1]
+                        row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
+                        row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
                     row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)
                     row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
+                    row_com[f"F_L"]=round(info["kpi"]['F_L'],3)
+                    row_com[f"F_R"]=round(info["kpi"]['F_R'],3)
+                    row_com[f"n_l"]=int(info["kpi"]['nL'])
+                    row_com[f"n_r"]=int(info["kpi"]['nR'])
                     row_com[f'Masa']=round(self.mass,1)
                     row_com[f"COM_z_inicial"]=round(self.init_com_z,3)
                     row_com['posicion_x']=round(self.pos[0],3)

@@ -244,7 +244,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['reward_height'] = w_z * r_z
         self.reawrd_step['reward_pressure'] = w_dp * r_dp
         self.reawrd_step['reward_lateral'] = w_lat*r_lat
-        
+        self.reawrd_step['reward_pain'] = w_tau * r_tau
         
         reward = (
                 alive
