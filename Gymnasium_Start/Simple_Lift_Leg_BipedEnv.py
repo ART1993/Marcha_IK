@@ -480,14 +480,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             state = self.footcontact_state.PLANTED.value
         return state, n, F
     
-    def debug_contacts_once(self):
-        for name, lid in [("L_foot", self.left_foot_link_id), ("R_foot", self.right_foot_link_id)]:
-            cps = p.getContactPoints(self.robot_id, self.plane_id, linkIndexA=lid, linkIndexB=-1)
-            print(f"[DEBUG] {name} contacts: {len(cps)}")
-            for i, cp in enumerate(cps[:5]):
-                # cp[9]=Fnormal, cp[6]=linkA, cp[4]=linkB
-                print(f"   #{i} nF={cp[9]:.2f}N  linkA={cp[6]}  linkB={cp[4]}  posA={cp[5]}")
-    
 
 # ==================================================================================================================================================================== #
 # =================================================== Métodos de Aplicación de fuerzas PAM =========================================================================== #
@@ -1055,6 +1047,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
+        if done:
+            tau_limit_interp={}
+            tau_limit_maps = {}
+            for key, value in self.dict_joints.items():
+                tau_limit_interp[f"tau_limit_flex_{key}"]= self.tau_limit_interp[value]['flex']
+                tau_limit_interp[f"tau_limit_ext_{key}"]= self.tau_limit_interp[value]['ext']
+                tau_limit_maps[f"thetas_{key}"] =self.tau_limit_maps[value]['thetas']
+                tau_limit_maps[f"flex_{key}"] =self.tau_limit_maps[value]['flex']
+                tau_limit_maps[f"ext_{key}"] =self.tau_limit_maps[value]['ext']
+            self.csvlog.write("tau_limit", tau_limit_interp)
+            self.csvlog.write("tau_limit_map", tau_limit_maps)
         
         if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
             try:
@@ -1111,7 +1114,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     self.csvlog.write("torque_values", row_torque_angle)
                     self.csvlog.write("force_values", row_force_angle)
                     self.csvlog.write("pressure", row_pressure_PAM)
-
 
             except Exception as e:
                 print(f"   ❌ Debug error: {e}")
