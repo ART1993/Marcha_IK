@@ -262,6 +262,43 @@ class SimpleProgressiveReward:
         # actualizar flags de contacto para siguiente paso
         return float(reward)
     
+    def reward_for_knees(self, torque_mapping):
+        # --- Bonus pro-rodilla (solo si hay margen de estabilidad) ---
+        # Contacto de pies
+        left_state, _, _  = self.env.foot_contact_state(self.env.left_foot_link_id,  f_min=20)
+        right_state, _, _ = self.env.foot_contact_state(self.env.right_foot_link_id, f_min=20)
+        NONE, PLANTED = 0, 2
+        is_swing_L = (left_state == NONE)
+        is_swing_R = (right_state == NONE)
+        # Gate por margen ZMP (usa tu ZMP calculator)
+        zmp_margin = self.env.zmp_calculator.stability_margin_distance() if self.env.zmp_calculator else 0.0
+        gate = 1.0 if zmp_margin > 0.02 else 0.0  # ~2 cm de margen
+        # Velocidades articulares
+        qd = [s[1] for s in self.env.joint_states_properties]
+        knee_L = self.env.dict_joints["left_knee_joint"]
+        knee_R = self.env.dict_joints["right_knee_joint"]
+        i_kL = self.env.joint_indices.index(knee_L)
+        i_kR = self.env.joint_indices.index(knee_R)
+        knee_bonus = 0.02 * gate * (
+            (abs(qd[i_kL]) if is_swing_L else 0.0) + (abs(qd[i_kR]) if is_swing_R else 0.0)
+        )
+        reward = knee_bonus
+
+        # --- Tobillo “caro” durante STANCE (evita sostenerse a base de tobillo) ---
+        ankle_L = self.env.dict_joints["left_ankle_pitch_joint"]
+        ankle_R = self.env.dict_joints["right_ankle_pitch_joint"]
+        tau_map = torque_mapping  # ya lo calculas antes
+        tau_aL = abs(float(tau_map.get(ankle_L, 0.0)))
+        tau_aR = abs(float(tau_map.get(ankle_R, 0.0)))
+        ankle_pen = 0.002 * (
+            (tau_aL if left_state  == PLANTED else 0.0) +
+            (tau_aR if right_state == PLANTED else 0.0)
+        )
+        reward -= ankle_pen
+
+        return reward
+
+    
     # Requisitos minimos threshold, smoothing, change_in_adaptation_rate
     # parametros de entrenamiento: r_mean, temporal adaptation_sate, s_mean
     def parametro_pesado_acciones(self):

@@ -329,7 +329,9 @@ class ZMPCalculator:
         """4 vértices (x,y) del rectángulo del pie en mundo a partir de su pose."""
         L = self.FOOT_LENGTH * 0.5
         W = self.FOOT_WIDTH  * 0.5
-        local = [(+L, +W, 0.0), (+L, -W, 0.0), (-L, -W, 0.0), (-L, +W, 0.0)]
+        heel_bias = 0.03  # 3 cm hacia talón
+        local = [(+L-heel_bias, +W, 0.0), (+L-heel_bias, -W, 0.0),
+                 (-L-heel_bias, -W, 0.0), (-L-heel_bias, +W, 0.0)]
         pos, orn = p.getLinkState(self.robot_id, foot_id, computeForwardKinematics=1)[:2]
         verts = []
         for vx, vy, vz in local:

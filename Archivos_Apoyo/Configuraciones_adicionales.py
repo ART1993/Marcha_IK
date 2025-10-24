@@ -455,9 +455,9 @@ def calculate_robot_specific_joint_torques_20_pam(env, pam_pressures):
     joint_torques[4] = (pam_forces[16] * R_ankle_roll_flex_L) + (-pam_forces[17] * R_ankle_roll_ext_L)
 
     # Cadera derecha pitch
-    joint_torques[5] = ( pam_forces[2] * R_flex_roll_R) + (-pam_forces[3] * R_ext_roll_R)
+    joint_torques[5] = ( pam_forces[2] * R_flex_pitch_R) + (-pam_forces[3] * R_ext_pitch_R)
     # Cadera derecha roll
-    joint_torques[6] = ( pam_forces[6] * R_flex_pitch_R) + (-pam_forces[7] * R_ext_pitch_R)
+    joint_torques[6] = ( pam_forces[6] * R_flex_roll_R) + (-pam_forces[7] * R_ext_roll_R)
 
     # Rodilla derecha
     joint_torques[7] = (pam_forces[10] * R_knee_flex_R) + (-pam_forces[11] * R_knee_ext_R) 

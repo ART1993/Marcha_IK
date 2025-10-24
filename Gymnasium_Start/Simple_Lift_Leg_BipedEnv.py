@@ -577,7 +577,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
         joint_torques = seleccionar_funcion_calculo_torques(self, pam_pressures)
-        # joint_torques = self._apply_automatic_knee_control(joint_torques)
+        # Activar control automatico de rodilla
+        joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
@@ -792,13 +793,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         elif "12" in self.robot_name:
             initial_positions = {
                 # Pierna izquierda
-                self.joint_indices[0]: 0.0,   
-                self.joint_indices[1]: 0.0,   
-                self.joint_indices[2]: 0.0,   
+                self.joint_indices[0]: np.deg2rad(12),   
+                self.joint_indices[1]: np.deg2rad(18),   
+                self.joint_indices[2]: np.deg2rad(-5),   
                 # pierna derecha
-                self.joint_indices[3]: 0.0,   
-                self.joint_indices[4]: 0.0,   
-                self.joint_indices[5]: 0.0,   
+                self.joint_indices[3]: np.deg2rad(12),   
+                self.joint_indices[4]: np.deg2rad(18),   
+                self.joint_indices[5]: np.deg2rad(-5),   
             }
         elif "16" in self.robot_name:
             initial_positions = {
@@ -1061,32 +1062,32 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com={"step": int(self.step_count),
                                 "episode": int(self.n_episodes),
                                 "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_q_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_v_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_torque_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_force_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
+                    # row_q_angle={"step": int(self.step_count),
+                    #             "episode": int(self.n_episodes),
+                    #             "t": round(self.step_count / self.frequency_simulation, 5),}
+                    # row_v_angle={"step": int(self.step_count),
+                    #             "episode": int(self.n_episodes),
+                    #             "t": round(self.step_count / self.frequency_simulation, 5),}
+                    # row_torque_angle={"step": int(self.step_count),
+                    #             "episode": int(self.n_episodes),
+                    #             "t": round(self.step_count / self.frequency_simulation, 5),}
+                    # row_force_angle={"step": int(self.step_count),
+                    #             "episode": int(self.n_episodes),
+                    #             "t": round(self.step_count / self.frequency_simulation, 5),}
                     row_pressure_PAM={"step": int(self.step_count),
                                 "episode": int(self.n_episodes),
                                 "t": round(self.step_count / self.frequency_simulation, 5),}
                     for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
                         pos, vel, reaction, applied = state
                         Fx,Fy,Fz,Mx,My,Mz = reaction
-                        row_q_angle[f"q_{name}"]=round(pos,3)
-                        row_v_angle[f"vel_{name}"]=round(vel,3)
-                        row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
-                        row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
-                        row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
-                        row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
-                        row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
-                        row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
+                        # row_q_angle[f"q_{name}"]=round(pos,3)
+                        # row_v_angle[f"vel_{name}"]=round(vel,3)
+                        # row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
+                        # row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
+                        # row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
+                        # row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
+                        # row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
+                        # row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
                         row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
                         row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
@@ -1105,10 +1106,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("COM_values", row_com)
-                    self.csvlog.write("angle_values", row_q_angle)
-                    self.csvlog.write("speed_values", row_v_angle)
-                    self.csvlog.write("torque_values", row_torque_angle)
-                    self.csvlog.write("force_values", row_force_angle)
+                    # self.csvlog.write("angle_values", row_q_angle)
+                    # self.csvlog.write("speed_values", row_v_angle)
+                    # self.csvlog.write("torque_values", row_torque_angle)
+                    # self.csvlog.write("force_values", row_force_angle)
                     self.csvlog.write("pressure", row_pressure_PAM)
 
 
