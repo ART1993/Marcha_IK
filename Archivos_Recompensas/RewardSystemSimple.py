@@ -213,9 +213,7 @@ class SimpleProgressiveReward:
         # Velocidad del CoM: |vx - vcmd|
         vcmd = float(getattr(self, "_vx_target",1.2))
         v_err = abs(vx - vcmd)
-        if vx >= vcmd:
-            r_vel = 1.0
-        elif vx<0:
+        if vx<0:
             r_vel=0
         else:
             r_vel = exp_term(v_err, dv_cmd, r_at_tol=0.5)
@@ -231,12 +229,13 @@ class SimpleProgressiveReward:
         delta_p = np.asarray(action) - np.asarray(accion_previa)
         r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
         
-        alive = 0.6
+        alive = 0.5
         # Pesos de términos normalizados (ajústalos con tus logs)
-        w_v, w_lat, w_post, w_z, w_dp = 0.30, 0.20, 0.15, 0.10, 0.05
+        w_v, w_lat, w_post, w_z, w_dp = 0.35, 0.12, 0.12, 0.08, 0.05
         w_tau = 0.10
+        w_GRF = 0.08
         r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
-        #r_GRF=_grf_reward(self.foot_links,env.contact_normal_force, masa_robot=self.env.mass, bw_mult=1.2)
+        r_GRF=self._grf_reward(self.foot_links,env.foot_contact_state, masa_robot=self.env.mass, bw_mult=1.2)
 
         self._accumulate_task_term(r_vel)
         self.reawrd_step['reward_speed'] = w_v * r_vel
@@ -245,6 +244,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['reward_pressure'] = w_dp * r_dp
         self.reawrd_step['reward_lateral'] = w_lat*r_lat
         self.reawrd_step['reward_pain'] = w_tau * r_tau
+        self.reawrd_step['reward_GRF'] = w_GRF * r_GRF
         
         reward = (
                 alive
@@ -254,6 +254,7 @@ class SimpleProgressiveReward:
                 + w_z   * r_z
                 + w_dp  * r_dp
                 + w_tau * r_tau
+                + w_GRF * r_GRF
         )
         # Se guarda la acción previa
         #self.parametro_pesado_acciones()
@@ -335,17 +336,44 @@ class SimpleProgressiveReward:
         #    tol exceso 0.20: a u_rms≈0.80 => r_tau≈0.6
         return exp_term(e_tau, tol=0.20, r_at_tol=0.6)
     
-    def _grf_reward(self, foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2,
-                    mode="gauss", sigma_bw=0.15):
+    def _grf_reward(self, foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7, bw_max=1.2,
+                    sigma_low=0.10, sigma_high=0.15,# suavidad (Gauss) para defecto/exceso
+                    check_split=True,                # activar reparto por pie (recomendado)
+                    split_hi=0.8, split_lo=0.1,      # límites por pie (en ×BW) durante doble apoyo
+                    split_gain=2.0):                  # “dureza” del reparto por pie
         """
         Devuelve recompensa en [0,1] a partir del exceso en BW.
         - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
         - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
         """
-        exceso_bw = _grf_excess_cost_bw(foot_links, masa_robot, metodo_fuerzas_pies, bw_mult)
-        if mode == "linear":
-            return float(1.0 - np.clip(exceso_bw, 0.0, 1.0))
-        return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2))
+        BW,Fz,feet_state,deficit, exceso = _grf_excess_cost_bw(foot_links, masa_robot, metodo_fuerzas_pies, bw_min, bw_max)
+        if deficit==0 and exceso==0:
+            return 0.0
+        Fz_L, Fz_R=Fz
+        r_band_low  = np.exp(-0.5 * (deficit / max(sigma_low, 1e-6))**2)
+        r_band_high = np.exp(-0.5 * (exceso  / max(sigma_high,1e-6))**2)
+        r_band = min(r_band_low, r_band_high)
+        # Opcional: reparto por pie durante doble apoyo
+        if check_split:
+            bw_L = Fz_L / max(BW, 1e-6)
+            bw_R = Fz_R / max(BW, 1e-6)
+            # si ambos pies están al menos TOUCH, aplicamos chequeos
+            in_double_support = (feet_state[0] != 0) and (len(feet_state) > 1 and feet_state[1] != 0)
+
+            if in_double_support:
+                # Evita que un pie cargue > split_hi BW y que el otro esté casi vacío < split_lo BW
+                excess_one = max(0.0, max(bw_L, bw_R) - split_hi)
+                lack_other = max(0.0, split_lo - min(bw_L, bw_R))
+                r_split = np.exp(-split_gain * (excess_one + lack_other))
+            else:
+                # En apoyo simple, empuja a ~1.0 BW con tolerancia suave
+                bw_active = bw_L if feet_state[0] != 0 else bw_R
+                r_split = np.exp(-0.5 * ((bw_active - 1.0) / 0.2)**2)  # tolerancia ~±0.2 BW
+        else:
+            r_split = 1.0
+    
+        # Combina (ajusta pesos si quieres)
+        return float(0.8 * r_band + 0.2 * r_split)
 
 
 
@@ -359,35 +387,32 @@ def band_error(x, x_star, deadband):
     return max(0.0, abs(float(x) - float(x_star)) - float(deadband))
 
 
-def _grf_excess_cost(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
+def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,bw_max=1.2):
     """
     Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
     Devuelve N (no negativo).
     """
     # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
     Fz_total = 0.0
+    feet_state=[]
+    n_contact_feet=[]
+    Fz=[]
     for link in foot_links:
-        _, _, F_foot= metodo_fuerzas_pies(link_id=link)
+        foot_state, n_foot, F_foot= metodo_fuerzas_pies(link_id=link)
         Fz_total += float(F_foot)
+        Fz.append(max(0.0, float(F_foot)))
+        feet_state.append(foot_state)
+        n_contact_feet.append(n_foot)
 
-    BW = masa_robot*9.81  # N
-    thr = bw_mult * BW
-    return float(max(0.0, Fz_total - thr))
-
-def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
-    """
-    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
-    Devuelve N (no negativo).
-    """
-    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
-    Fz_total = 0.0
-    for link in foot_links:
-        _, _, F_foot= metodo_fuerzas_pies(link_id=link)
-        Fz_total += float(F_foot)
+    # Si ninguno de los pies está en contacto devuelve recompensa nula
+    if n_contact_feet[0]==n_contact_feet[1] and n_contact_feet[0]==0:
+        return 0.0, 0.0
 
     BW = masa_robot*9.81  # N
     bw_sum = Fz_total / BW
-    return float(max(0.0, bw_sum - float(bw_mult)))
+    deficit = max(0.0, bw_min - bw_sum)
+    exceso  = max(0.0, bw_sum - bw_max)
+    return BW,Fz,feet_state, deficit, exceso
     
     
     
