@@ -235,7 +235,7 @@ class SimpleProgressiveReward:
         w_tau = 0.10
         w_GRF = 0.08
         r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
-        r_GRF=self._grf_reward(self.foot_links,env.foot_contact_state, masa_robot=self.env.mass, bw_mult=1.2)
+        r_GRF=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=self.env.mass, )
 
         self._accumulate_task_term(r_vel)
         self.reawrd_step['reward_speed'] = w_v * r_vel
@@ -336,7 +336,7 @@ class SimpleProgressiveReward:
         #    tol exceso 0.20: a u_rms≈0.80 => r_tau≈0.6
         return exp_term(e_tau, tol=0.20, r_at_tol=0.6)
     
-    def _grf_reward(self, foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7, bw_max=1.2,
+    def _grf_reward(self, foot_links, metodo_fuerzas_pies,masa_robot, bw_min=0.7, bw_max=1.2,
                     sigma_low=0.10, sigma_high=0.15,# suavidad (Gauss) para defecto/exceso
                     check_split=True,                # activar reparto por pie (recomendado)
                     split_hi=0.8, split_lo=0.1,      # límites por pie (en ×BW) durante doble apoyo
@@ -346,7 +346,7 @@ class SimpleProgressiveReward:
         - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
         - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
         """
-        BW,Fz,feet_state,deficit, exceso = _grf_excess_cost_bw(foot_links, masa_robot, metodo_fuerzas_pies, bw_min, bw_max)
+        BW,Fz,feet_state,deficit, exceso = _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min, bw_max)
         if deficit==0 and exceso==0:
             return 0.0
         Fz_L, Fz_R=Fz
@@ -403,12 +403,12 @@ def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,
         Fz.append(max(0.0, float(F_foot)))
         feet_state.append(foot_state)
         n_contact_feet.append(n_foot)
-
+    BW = masa_robot*9.81  # N
     # Si ninguno de los pies está en contacto devuelve recompensa nula
     if n_contact_feet[0]==n_contact_feet[1] and n_contact_feet[0]==0:
-        return 0.0, 0.0
+        return BW,Fz,feet_state,0.0, 0.0
 
-    BW = masa_robot*9.81  # N
+    #BW = masa_robot*9.81  # N
     bw_sum = Fz_total / BW
     deficit = max(0.0, bw_min - bw_sum)
     exceso  = max(0.0, bw_sum - bw_max)

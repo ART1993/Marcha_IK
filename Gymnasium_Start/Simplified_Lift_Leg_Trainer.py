@@ -13,7 +13,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 # Import your environments
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
-from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion, load_matching_normalize
+from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
 from Archivos_Apoyo.simple_log_redirect import log_print, both_print
 from Archivos_Apoyo.CSVLogger import CSVLogger
 
@@ -303,7 +303,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 25000 //self.n_envs
+        eval_freq = checkpoint_freq
         
         # eval_callback = EvalCallback(
         #     eval_env,
@@ -390,6 +390,57 @@ class Simplified_Lift_Leg_Trainer:
 
         callbacks = CallbackList([checkpoint_callback, eval_callback, save_vecnorm_cb])
         return callbacks
+    
+    # ===== Utilidad: cargar VecNormalize "emparejado" con el checkpoint/best/final =====
+    def load_matching_normalize(self, env, resume_path):
+        """
+        Dado un zip (checkpoint/best/final), intenta cargar el normalize.pkl con el mismo "par".
+        Reglas:
+            - …_checkpoint_<N>_steps.zip → …_checkpoint_<N>_steps_normalize.pkl (en checkpoints_dir)
+            - best_model.zip → <model_prefix>_best_normalize.pkl (en model_dir)
+            - <model_prefix>_final(.zip) → <model_prefix>_final_normalize.pkl (en model_dir)
+        Si no encuentra el par, devuelve env sin cambios.
+        """
+        try:
+            if not resume_path or not os.path.exists(resume_path):
+                return env
+            base = os.path.basename(resume_path)
+            prefix = self.env_configs["model_prefix"]
+
+            # 1) checkpoint_<N>_steps.zip
+            m = re.match(rf"{re.escape(prefix)}_checkpoint_(\d+)_steps\.zip$", base)
+            if m:
+                steps = m.group(1)
+                cand = os.path.join(self.checkpoints_dir, f"{prefix}_checkpoint_{steps}_steps_normalize.pkl")
+                if os.path.exists(cand):
+                    env_loaded = VecNormalize.load(cand, env)
+                    env_loaded.training = True
+                    env_loaded.norm_reward = True
+                    print(f"🔗 Loaded MATCHED VecNormalize (checkpoint): {cand}")
+                    return env_loaded
+
+            # 2) best_model.zip
+            if base == "best_model.zip":
+                cand = os.path.join(self.model_dir, f"{prefix}_best_normalize.pkl")
+                if os.path.exists(cand):
+                    env_loaded = VecNormalize.load(cand, env)
+                    env_loaded.training = True
+                    env_loaded.norm_reward = True
+                    print(f"🔗 Loaded MATCHED VecNormalize (best): {cand}")
+                    return env_loaded
+
+            # 3) final(.zip) → final_normalize.pkl
+            if base == f"{prefix}_final.zip" or base == f"{prefix}_final":
+                cand = os.path.join(self.model_dir, f"{prefix}_final_normalize.pkl")
+                if os.path.exists(cand):
+                    env_loaded = VecNormalize.load(cand, env)
+                    env_loaded.training = True
+                    env_loaded.norm_reward = True
+                    print(f"🔗 Loaded MATCHED VecNormalize (final): {cand}")
+                    return env_loaded
+        except Exception as e:
+            print(f"⚠️ Could not load MATCHED VecNormalize for {resume_path}: {e}")
+        return env
 
         
     
@@ -419,10 +470,8 @@ class Simplified_Lift_Leg_Trainer:
         train_env = self.create_training_env()
         eval_env = self.create_eval_env()
         
-        # Cargar normalizaciones existentes si las hay
-        #train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
         # 1) Intentar cargar el normalize "emparejado" con el .zip desde el que reanudamos
-        train_env = load_matching_normalize(self, train_env, resume_path)
+        train_env = self.load_matching_normalize(train_env, resume_path)
         # 2) Si no hubo suerte, caer al helper existente (comportamiento previo)
         train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
         

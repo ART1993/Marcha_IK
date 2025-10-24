@@ -8,7 +8,7 @@ from Archivos_Apoyo.CSVLogger import CSVLogger
 
 MODEL_DIR = "./models_lift_leg"
 BEST_PATH = os.path.join(MODEL_DIR, "best_model.zip")
-NORM_PATH = os.path.join(MODEL_DIR, "single_leg_balance_pam_normalize.pkl")
+NORM_PATH = os.path.join(MODEL_DIR, "single_leg_balance_pam_best_normalize.pkl")
 
 def make_env(render=True, robot_name="2_legged_human_like_robot20DOF", simple_reward_mode='march_in_place'):
     csvlog = CSVLogger(only_workers=False)  # escribe desde el main

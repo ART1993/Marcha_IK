@@ -405,7 +405,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id,
                 link_id,
-                lateralFriction=0.1,    # Muy reducida de 0.6 a 0.1
+                lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
                 spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
                 rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
                 restitution=0.05
@@ -416,7 +416,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.9,                #0.9 bajar a 0.7 si hay problemas,       
+                lateralFriction=0.7,                #0.9 bajar a 0.7 si hay problemas,       
                 spinningFriction=0.2,                   #0.15,       
                 rollingFriction=0.01,       
                 restitution=0.01,           
