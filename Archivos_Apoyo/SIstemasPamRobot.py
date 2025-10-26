@@ -54,7 +54,7 @@ def Sistema_Musculos_PAM_12(control_joint_names=None):
             pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.5, r0=0.055, alpha0=np.pi/4)
             pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.5, r0=0.055, alpha0=np.pi/4)
         elif "ankle_pitch" in joint:
-            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.040, alpha0=np.pi/4)
-            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.040, alpha0=np.pi/4)
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.030, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.030, alpha0=np.pi/4)
     return pam_dict
 

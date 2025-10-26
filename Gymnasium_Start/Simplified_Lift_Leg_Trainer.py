@@ -234,7 +234,7 @@ class Simplified_Lift_Leg_Trainer:
             'learning_rate': self.learning_rate,
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
-            'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
+            'ent_coef': 0.02,          # Exploración moderada subir a 0.02 para mayor exploración
             'n_steps': 256,            # 265 es bajo, subir a 1024 para secuencias más largas
             'batch_size': 128,         # 128 subir a 512, multiplo de n_envs
             'n_epochs': 4,             # con n_epoch=3 hay menos pasadas
@@ -282,7 +282,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 25000 //self.n_envs
+        eval_freq = 50000 //self.n_envs
         
         eval_callback = EvalCallback(
             eval_env,

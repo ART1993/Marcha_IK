@@ -192,7 +192,7 @@ class SimpleProgressiveReward:
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
         #r_pitch=0.2 * (roll**2 + pitch**2) Versión anterior tardaba demasiado tiempo
-
+        
         # --- NORMALIZATION: tolerances and half-life mapping ---
         d_theta = np.deg2rad(5.0)   # 5 degrees tolerance for roll/pitch
         dz_band = 0.02              # 2 cm deadband for CoM height
@@ -234,8 +234,12 @@ class SimpleProgressiveReward:
         w_v, w_lat, w_post, w_z, w_dp = 0.35, 0.12, 0.12, 0.08, 0.05
         w_tau = 0.10
         w_GRF = 0.08
+        w_knees=0.10
         r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
-        r_GRF=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=self.env.mass, )
+        r_GRF,n_contact_feet,Fz,feet_state=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=self.env.mass)
+        reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
+        # Trato de maximizar número de pies en contacto
+        reward_contact_feet=max(n_contact_feet)/4
 
         self._accumulate_task_term(r_vel)
         self.reawrd_step['reward_speed'] = w_v * r_vel
@@ -245,6 +249,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['reward_lateral'] = w_lat*r_lat
         self.reawrd_step['reward_pain'] = w_tau * r_tau
         self.reawrd_step['reward_GRF'] = w_GRF * r_GRF
+        self.reawrd_step['reward_knees'] = w_knees *reward_knees
         
         reward = (
                 alive
@@ -255,6 +260,7 @@ class SimpleProgressiveReward:
                 + w_dp  * r_dp
                 + w_tau * r_tau
                 + w_GRF * r_GRF
+                + w_knees *reward_knees
         )
         # Se guarda la acción previa
         #self.parametro_pesado_acciones()
@@ -262,11 +268,11 @@ class SimpleProgressiveReward:
         # actualizar flags de contacto para siguiente paso
         return float(reward)
     
-    def reward_for_knees(self, torque_mapping):
+    def reward_for_knees(self, torque_mapping,contact_feets):
         # --- Bonus pro-rodilla (solo si hay margen de estabilidad) ---
         # Contacto de pies
-        left_state, _, _  = self.env.foot_contact_state(self.env.left_foot_link_id,  f_min=20)
-        right_state, _, _ = self.env.foot_contact_state(self.env.right_foot_link_id, f_min=20)
+        left_state = contact_feets[0]
+        right_state = contact_feets[1]
         NONE, PLANTED = 0, 2
         is_swing_L = (left_state == NONE)
         is_swing_R = (right_state == NONE)
@@ -383,9 +389,9 @@ class SimpleProgressiveReward:
         - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
         - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
         """
-        BW,Fz,feet_state,deficit, exceso = _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min, bw_max)
+        BW,n_contact_feet,Fz,feet_state,deficit, exceso = _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min, bw_max)
         if deficit==0 and exceso==0:
-            return 0.0
+            return 0.0,n_contact_feet,Fz,feet_state
         Fz_L, Fz_R=Fz
         r_band_low  = np.exp(-0.5 * (deficit / max(sigma_low, 1e-6))**2)
         r_band_high = np.exp(-0.5 * (exceso  / max(sigma_high,1e-6))**2)
@@ -410,7 +416,7 @@ class SimpleProgressiveReward:
             r_split = 1.0
     
         # Combina (ajusta pesos si quieres)
-        return float(0.8 * r_band + 0.2 * r_split)
+        return float(0.8 * r_band + 0.2 * r_split), n_contact_feet,Fz,feet_state
 
 
 
@@ -442,14 +448,14 @@ def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,
         n_contact_feet.append(n_foot)
     BW = masa_robot*9.81  # N
     # Si ninguno de los pies está en contacto devuelve recompensa nula
-    if n_contact_feet[0]==n_contact_feet[1] and n_contact_feet[0]==0:
-        return BW,Fz,feet_state,0.0, 0.0
+    if n_contact_feet[0]==0 and n_contact_feet[1]==0:
+        return BW,n_contact_feet,Fz,feet_state,0.0, 0.0
 
     #BW = masa_robot*9.81  # N
     bw_sum = Fz_total / BW
     deficit = max(0.0, bw_min - bw_sum)
     exceso  = max(0.0, bw_sum - bw_max)
-    return BW,Fz,feet_state, deficit, exceso
+    return BW,n_contact_feet,Fz,feet_state, deficit, exceso
     
     
     

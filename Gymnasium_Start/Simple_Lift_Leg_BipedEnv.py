@@ -793,13 +793,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         elif "12" in self.robot_name:
             initial_positions = {
                 # Pierna izquierda
-                self.joint_indices[0]: np.deg2rad(12),   
-                self.joint_indices[1]: np.deg2rad(18),   
-                self.joint_indices[2]: np.deg2rad(-5),   
+                self.joint_indices[0]: np.deg2rad(-20),   
+                self.joint_indices[1]: np.deg2rad(20),   
+                self.joint_indices[2]: np.deg2rad(-10),   
                 # pierna derecha
-                self.joint_indices[3]: np.deg2rad(12),   
-                self.joint_indices[4]: np.deg2rad(18),   
-                self.joint_indices[5]: np.deg2rad(-5),   
+                self.joint_indices[3]: np.deg2rad(-20),   
+                self.joint_indices[4]: np.deg2rad(20),   
+                self.joint_indices[5]: np.deg2rad(-10),   
             }
         elif "16" in self.robot_name:
             initial_positions = {
