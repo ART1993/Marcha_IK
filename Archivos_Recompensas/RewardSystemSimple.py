@@ -224,43 +224,54 @@ class SimpleProgressiveReward:
         r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
         r_lat = r_lat_pos * r_lat_vel
 
+        
+
         # Suavidad en presiones (acciones en [0,1])
         accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
         delta_p = np.asarray(action) - np.asarray(accion_previa)
         r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
+        r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
+
         
+        # 1) GRF band (exceso de cargas en pies) – en [0,1]
+        r_GRF,n_contact_feet,Fz,feet_state=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
+        # 1) Cargas verticales por pie (para ponderar centro de soporte)
+        r_csp  = self._r_zmp_to_csp(Fz_pair=(Fz[0], Fz[1]), tol_xy=0.06, r_at_tol=0.6)
+        r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
+        #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
+        # Trato de maximizar número de pies en contacto
+        #reward_contact_feet=max(n_contact_feet)/4
+
+        # Pesos de recompensa (que debería de recompensar)
         alive = 0.5
         # Pesos de términos normalizados (ajústalos con tus logs)
-        w_v, w_lat, w_post, w_z, w_dp = 0.35, 0.12, 0.12, 0.08, 0.05
-        w_tau = 0.10
-        w_GRF = 0.08
-        w_knees=0.10
-        r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
-        r_GRF,n_contact_feet,Fz,feet_state=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=self.env.mass)
-        reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
-        # Trato de maximizar número de pies en contacto
-        reward_contact_feet=max(n_contact_feet)/4
+        w_v, w_post, w_z, w_dp = 0.35, 0.08, 0.05, 0.05
+        w_tau, w_GRF = 0.10, 0.06
+        w_csp, w_marg = 0.14, 0.09
+        #w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
 
         self._accumulate_task_term(r_vel)
-        self.reawrd_step['reward_speed'] = w_v * r_vel
+        self.reawrd_step['reward_speed']   = w_v   * r_vel
         self.reawrd_step['reward_posture'] = w_post* r_post
-        self.reawrd_step['reward_height'] = w_z * r_z
-        self.reawrd_step['reward_pressure'] = w_dp * r_dp
-        self.reawrd_step['reward_lateral'] = w_lat*r_lat
-        self.reawrd_step['reward_pain'] = w_tau * r_tau
-        self.reawrd_step['reward_GRF'] = w_GRF * r_GRF
-        self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        self.reawrd_step['reward_height']  = w_z   * r_z
+        self.reawrd_step['reward_pressure']= w_dp  * r_dp
+        #self.reawrd_step['reward_lateral'] = w_lat * r_lat
+        self.reawrd_step['reward_grf']     = w_GRF * r_GRF
+        self.reawrd_step['reward_csp']     = w_csp * r_csp
+        self.reawrd_step['reward_margin']  = w_marg* r_marg
+        #self.reawrd_step['reward_knees'] = w_knees *reward_knees
         
         reward = (
-                alive
-                + w_v   * r_vel
-                + w_lat*r_lat
-                + w_post* r_post
-                + w_z   * r_z
-                + w_dp  * r_dp
-                + w_tau * r_tau
-                + w_GRF * r_GRF
-                + w_knees *reward_knees
+            alive
+            + w_v   * r_vel
+            + w_post* r_post
+            + w_z   * r_z
+            + w_dp  * r_dp
+            + w_tau * r_tau
+            + w_GRF * r_GRF
+            + w_csp * r_csp
+            + w_marg* r_marg
+            #+ w_lat * r_lat   # <= si prefieres desactivarlo, pon w_lat=0.0 arriba
         )
         # Se guarda la acción previa
         #self.parametro_pesado_acciones()
@@ -417,6 +428,85 @@ class SimpleProgressiveReward:
     
         # Combina (ajusta pesos si quieres)
         return float(0.8 * r_band + 0.2 * r_split), n_contact_feet,Fz,feet_state
+    
+    # =========================
+    # ZMP / Soporte
+    # =========================
+    def _foot_world_centers(self):
+        """
+        Centros (x,y) de cada pie en coordenadas mundo.
+        Devuelve: [(xL,yL), (xR,yR)]
+        """
+        env = self.env
+        centers = []
+        for link in self.foot_links:
+            ws = p.getLinkState(env.robot_id, link, computeForwardKinematics=True)
+            (x, y, _) = ws[0]
+            centers.append((float(x), float(y)))
+        return centers
+
+    def _get_Fz_pair_and_states(self, f_min=20.0):
+        """
+        Cargas verticales y estado de contacto por pie usando el método del env.
+        Devuelve: ( (FzL, FzR), (stateL, stateR) )
+        """
+        env = self.env
+        (stateL, n_l, FzL) = env.foot_contact_state(env.left_foot_link_id,  f_min=f_min)
+        (stateR, n_r, FzR) = env.foot_contact_state(env.right_foot_link_id, f_min=f_min)
+        return (float(FzL), float(FzR)), (stateL, stateR), (n_l,n_r)
+
+    def _center_of_support(self, Fz_pair):
+        """
+        Centro de soporte ponderado por carga: p_csp = sum_i w_i * c_i / sum_i w_i,
+        con w_i = max(Fz_i, 0). Si no hay apoyo suficiente, devuelve None.
+        """
+        (cL, cR) = self._foot_world_centers()
+        FzL, FzR = max(0.0, Fz_pair[0]), max(0.0, Fz_pair[1])
+        wsum = FzL + FzR
+        if wsum <= 1e-9:
+            return None
+        x = (FzL * cL[0] + FzR * cR[0]) / wsum
+        y = (FzL * cL[1] + FzR * cR[1]) / wsum
+        return (x, y)
+
+    def _r_zmp_to_csp(self, Fz_pair, tol_xy=0.06, r_at_tol=0.6):
+        """
+        Recompensa por llevar ZMP cerca del centro de soporte ponderado (paper-like).
+        tol_xy ~ 6 cm en tu escala. Si no hay apoyo, devuelve 0.
+        """
+        csp = self._center_of_support(Fz_pair)
+        if csp is None:
+            return 0.0
+        zx, zy = float(self.zmp_x), float(self.zmp_y)
+        dx = zx - csp[0]
+        dy = zy - csp[1]
+        d = (dx*dx + dy*dy) ** 0.5
+        return exp_term(d, tol_xy, r_at_tol=r_at_tol)
+
+    def _r_zmp_margin(self, tol=0.02, r_at_tol=0.6):
+        """
+        Recompensa suave del margen ZMP→polígono. Si el margen >= tol, recompensa ~1.
+        Si no hay zmp_calculator, devuelve 0.
+        """
+        zcalc = getattr(self.env, "zmp_calculator", None)
+        if zcalc is None:
+            return 0.0
+        m = float(zcalc.stability_margin_distance())  # puede ser <0 si ZMP fuera
+        m = max(0.0, m)
+        e = max(0.0, (tol - m))  # “error” a 0 cuando el margen ya supera tol
+        return exp_term(e, tol, r_at_tol=r_at_tol)
+    
+    def _grf_reward_old(self, foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2,
+                    mode="gauss", sigma_bw=0.15):
+        """
+        Devuelve recompensa en [0,1] a partir del exceso en BW.
+        - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
+        - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
+        """
+        exceso_bw = _grf_excess_cost_bw_old(foot_links, masa_robot, metodo_fuerzas_pies, bw_mult)
+        if mode == "linear":
+            return float(1.0 - np.clip(exceso_bw, 0.0, 1.0))
+        return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2))
 
 
 
@@ -456,6 +546,23 @@ def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,
     deficit = max(0.0, bw_min - bw_sum)
     exceso  = max(0.0, bw_sum - bw_max)
     return BW,n_contact_feet,Fz,feet_state, deficit, exceso
+
+def _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    for link in foot_links:
+        _, _, F_foot= metodo_fuerzas_pies(link_id=link)
+        Fz_total += float(F_foot)
+
+    BW = masa_robot*9.81  # N
+    bw_sum = Fz_total / BW
+    return float(max(0.0, bw_sum - float(bw_mult)))
+
+
     
     
     
