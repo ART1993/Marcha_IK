@@ -578,7 +578,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # NUEVA LÓGICA: Control automático de rodilla levantada
         joint_torques = seleccionar_funcion_calculo_torques(self, pam_pressures)
         # Activar control automatico de rodilla
-        joint_torques = self._apply_automatic_knee_control(joint_torques)
+        #joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
         if self.step_count%(self.frequency_simulation//10)==0:
@@ -793,13 +793,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         elif "12" in self.robot_name:
             initial_positions = {
                 # Pierna izquierda
-                self.joint_indices[0]: np.deg2rad(-20),   
-                self.joint_indices[1]: np.deg2rad(20),   
-                self.joint_indices[2]: np.deg2rad(-10),   
+                self.joint_indices[0]: np.deg2rad(-5),   # debe ser menor 0
+                self.joint_indices[1]: np.deg2rad(5),   # debe ser mayor 0
+                self.joint_indices[2]: np.deg2rad(-5),   # debe ser menor 0
                 # pierna derecha
-                self.joint_indices[3]: np.deg2rad(-20),   
-                self.joint_indices[4]: np.deg2rad(20),   
-                self.joint_indices[5]: np.deg2rad(-10),   
+                self.joint_indices[3]: np.deg2rad(-5),   # debe ser menor 0
+                self.joint_indices[4]: np.deg2rad(5),   # debe ser mayor 0
+                self.joint_indices[5]: np.deg2rad(-5),   # debe ser menor 0
             }
         elif "16" in self.robot_name:
             initial_positions = {
@@ -917,10 +917,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.HIP_PITCH_EXTENSOR_VARIATION = 0.007#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
 
         self.KNEE_FLEXOR_BASE_ARM = 0.0566     
-        self.KNEE_FLEXOR_VARIATION = 0.010#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)    
+        self.KNEE_FLEXOR_VARIATION = 0.010#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)  
 
         self.KNEE_EXTENSOR_BASE_ARM = 0.0620#0.0640     
         self.KNEE_EXTENSOR_VARIATION = 0.008#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
+
+        self.ankle_pitch_FLEXOR_BASE_ARM = 0.06     
+        self.ankle_pitch_FLEXOR_VARIATION = 0.018#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+
+        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.064#0.055     
+        self.ankle_pitch_EXTENSOR_VARIATION = 0.0145#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
         self.ankle_roll_FLEXOR_BASE_ARM = 0.05     
         self.ankle_roll_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
@@ -928,11 +934,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.ankle_roll_EXTENSOR_BASE_ARM = 0.054#0.055     
         self.ankle_roll_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
-        self.ankle_pitch_FLEXOR_BASE_ARM = 0.06     
-        self.ankle_pitch_FLEXOR_VARIATION = 0.018#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
-
-        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.064#0.055     
-        self.ankle_pitch_EXTENSOR_VARIATION = 0.0145#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+        
 
         self.KP = 80.0   # Ganancia proporcional
         self.KD = 12.0   # Ganancia derivativa    
@@ -1037,7 +1039,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """
         # Flexor de rodilla más efectivo cerca de extensión
         angle_factor = np.cos(angle + np.pi/6)
-        return self.ankle_roll_FLEXOR_BASE_ARM + self.ankle_roll_FLEXOR_VARIATION * angle_factor
+        return self.ankle_pitch_FLEXOR_BASE_ARM + self.ankle_pitch_FLEXOR_VARIATION * angle_factor
     
     def ankle_pitch_extensor_moment_arm(self, angle):
         """

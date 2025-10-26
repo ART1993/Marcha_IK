@@ -41,14 +41,6 @@ class SimpleProgressiveReward:
         # Parametrización útil para modos nuevos
         self.allow_hops = bool(getattr(env, "allow_hops", False))
 
-        # --- Parámetros configurables (puedes sobreescribirlos desde env) ---
-        # Cadera de la pierna en el aire (roll absoluto). Recomendado 0.3–0.5
-        self.swing_hip_target  = float(getattr(env, "swing_hip_target", 0.10))
-        # Ventana suave para cadera y rodilla (ancho de tolerancia)
-        self.swing_hip_tol     = float(getattr(env, "swing_hip_tol",  0.10))  # ±0.10 rad
-        # Rodilla en el aire: rango recomendado 0.45–0.75
-        self.swing_knee_lo     = float(getattr(env, "swing_knee_lo",  0.45))
-        self.swing_knee_hi     = float(getattr(env, "swing_knee_hi",  0.75)) 
         # MODO SIN CURRICULUM: sistema fijo y permisivo
         self.level = 3  # Siempre nivel 3
         self.level_progression_disabled = True
@@ -56,9 +48,7 @@ class SimpleProgressiveReward:
         # ===== CONFIGURACIÓN SUPER SIMPLE =====
         self.episode_count = 0
         self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
-        self.success_streak = 0  # Episodios consecutivos exitosos
         self._no_contact_steps = 0
-        self.contact_both = 0
         
         self.target_leg = getattr(env, "fixed_target_leg", None)  # 'left'|'right'|None self.fixed_target_leg
         self.fixed_target_leg=self.target_leg
@@ -138,7 +128,7 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
             return True
         
-        if self.dx < -1.0 or abs(self.dy)>1.0:
+        if self.dx < -0.6 or abs(self.dy)>1.0:
             self.last_done_reason = "drift"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
@@ -206,7 +196,7 @@ class SimpleProgressiveReward:
         r_post = exp_term(roll, d_theta) * exp_term(pitch, d_theta)
 
         # Altura del CoM (absoluta) alrededor de z*
-        z_star = getattr(self, "com_z_star", 0.69)
+        z_star = getattr(self, "init_com_z", 0.69)
         e_z = band_error(self.env.com_z, z_star, dz_band)
         r_z  = exp_term(e_z, dz_band, r_at_tol=0.6)
 
@@ -220,9 +210,9 @@ class SimpleProgressiveReward:
 
         # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
         y =self.dy
-        r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
-        r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
-        r_lat = r_lat_pos * r_lat_vel
+        # r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
+        # r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
+        # r_lat = r_lat_pos * r_lat_vel
 
         
 
@@ -238,7 +228,7 @@ class SimpleProgressiveReward:
         # 1) Cargas verticales por pie (para ponderar centro de soporte)
         r_csp  = self._r_zmp_to_csp(Fz_pair=(Fz[0], Fz[1]), tol_xy=0.06, r_at_tol=0.6)
         r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
-        #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
+        reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
         # Trato de maximizar número de pies en contacto
         #reward_contact_feet=max(n_contact_feet)/4
 
@@ -248,6 +238,7 @@ class SimpleProgressiveReward:
         w_v, w_post, w_z, w_dp = 0.35, 0.08, 0.05, 0.05
         w_tau, w_GRF = 0.10, 0.06
         w_csp, w_marg = 0.14, 0.09
+        w_knees=0.05
         #w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
 
         self._accumulate_task_term(r_vel)
@@ -259,7 +250,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['reward_grf']     = w_GRF * r_GRF
         self.reawrd_step['reward_csp']     = w_csp * r_csp
         self.reawrd_step['reward_margin']  = w_marg* r_marg
-        #self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        self.reawrd_step['reward_knees'] = w_knees *reward_knees
         
         reward = (
             alive

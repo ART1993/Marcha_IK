@@ -91,11 +91,8 @@ class PAMMcKibben:
         # ✅ CORRECCIÓN: Validación mejorada de contraction_ratio
         eps = np.clip(contraction_ratio, 0.0, self.epsilon_max)
         alpha = self.braid_angle(eps)
-        force_factor = self.force_factor(alpha)
+        force_factor = max(self.force_factor(alpha),0)
         
-        # ✅ CORRECCIÓN: Si force_factor es negativo, usar mínimo
-        if force_factor <= 0:
-            force_factor = 0.1  # Mínima fuerza positiva
         area = self.current_area(eps)
         P_g = max(0.0, pressure - self.min_pressure)
         F = P_g * force_factor * area
