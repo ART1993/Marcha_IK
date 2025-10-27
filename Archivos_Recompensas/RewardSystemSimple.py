@@ -78,16 +78,16 @@ class SimpleProgressiveReward:
         self.autosave_every = 100000//8   # ej.: 5000 para guardar cada 5k pasos; None = desactivado
         self.autoload_scheduler = True # intentar cargar el último estado al iniciar
         # Auto-carga del estado del scheduler si existe alguno
-        if self.autoload_scheduler:
-            try:
-                latest = self._find_latest_scheduler_state(self.checkpoint_dir)
-                if latest is not None:
-                    self.cargar_params_checkpoint(latest)
-                    if self.env.logger:
-                        self.env.logger.log("main", f"🔁 Scheduler state loaded from: {latest}")
-            except Exception as _e:
-                if self.env.logger:
-                    self.env.logger.log("main", f"⚠️ Could not autoload scheduler state: {_e}")
+        # if self.autoload_scheduler:
+        #     try:
+        #         latest = self._find_latest_scheduler_state(self.checkpoint_dir)
+        #         if latest is not None:
+        #             self.cargar_params_checkpoint(latest)
+        #             if self.env.logger:
+        #                 self.env.logger.log("main", f"🔁 Scheduler state loaded from: {latest}")
+        #     except Exception as _e:
+        #         if self.env.logger:
+        #             self.env.logger.log("main", f"⚠️ Could not autoload scheduler state: {_e}")
 
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
@@ -245,56 +245,120 @@ class SimpleProgressiveReward:
         euler = p.getEulerFromQuaternion(orn)
         roll, pitch, yaw = euler
         num_acciones=len(action)
-        # Da la velocidad lineal y angular de la pelvis
-        #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
-        vx = float(self.vel_COM[0])
-        # vy = float(self.vel_COM[1])
-        #r_pitch=0.2 * (roll**2 + pitch**2) Versión anterior tardaba demasiado tiempo
-        
         # --- NORMALIZATION: tolerances and half-life mapping ---
         d_theta = np.deg2rad(5.0)   # 5 degrees tolerance for roll/pitch
         dz_band = 0.02              # 2 cm deadband for CoM height
         #d_s     = 0.04              # 4 cm CoM->support (si lo usas)
-        #dv_foot = 0.05              # 5 cm/s no-slip
+        dv_foot = 0.05              # 5 cm/s no-slip
         dv_cmd  = 0.20              # 0.20 m/s vel tracking (x)
-        #dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
-        #dvy     = 0.10              # 0.10 m/s vel lateral
+        dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
+        dvy     = 0.10              # 0.10 m/s vel lateral
         #d_back  = 0.05              # 0.05 m/s tolerancia hacia atrás (más severo)
+        # Da la velocidad lineal y angular de la pelvis
+        #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
+        vx = float(self.vel_COM[0])
+        vy = float(self.vel_COM[1])
+        # Velocidad del CoM: |vx - vcmd|
+        vcmd = float(getattr(self, "_vx_target",1.2))
+        # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
+        y =self.dy
+        # r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
+        # r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
+        # coste suave lateral
+        c_lat = (y / dy_pos)**2 + (vy / dvy)**2
+        # recompensa (1 en el objetivo, decae suavemente)
+        gain_speed = np.clip(vx / (vcmd + 1e-6), 0.0, 1.0)
+        r_lat = np.exp(-0.5 * c_lat)
+        r_lat *= (0.2 + 0.8 * gain_speed)
+        
+        
 
         # Pesos de recompensa (que debería de recompensar)
         alive = 0.5
         # Pesos de términos normalizados (ajústalos con tus logs)
-        w_v, w_post, w_z = 0.40, 0.08, 0.05
+        w_v, w_post, w_z = 0.40, 0.05, 0.10
         w_tau, w_GRF = 0.10, 0.06
-        w_csp, w_marg = 0.14, 0.09
+        w_csp, w_marg = 0.0, 0.12
         #w_knees=0.05
         w_activos=0.05
         w_smooth =0.05
-        #w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
+        w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
 
-        r_post = exp_term(roll, d_theta) * exp_term(pitch, d_theta)
+        r_post = exp_term(abs(roll), d_theta) * exp_term(abs(pitch), d_theta)
 
         # Altura del CoM (absoluta) alrededor de z*
         z_star = getattr(self, "init_com_z", 0.69)
         e_z = band_error(self.env.com_z, z_star, dz_band)
         r_z  = exp_term(e_z, dz_band, r_at_tol=0.6)
 
-        # Velocidad del CoM: |vx - vcmd|
-        vcmd = float(getattr(self, "_vx_target",1.2))
+        
         v_err = abs(vx - vcmd)
-        if vx<0:
-            r_vel=0
+        if vx>vcmd:
+            r_vel=1.0
         else:
             r_vel = exp_term(v_err, dv_cmd, r_at_tol=0.5)
 
-        # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
-        #y =self.dy
-        # r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
-        # r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
-        # r_lat = r_lat_pos * r_lat_vel
-
         
 
+        
+        #r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
+        r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
+
+        
+        # 1) GRF band (exceso de cargas en pies) – en [0,1]
+        r_GRF = self._grf_reward_old(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
+        # 1) Cargas verticales por pie (para ponderar centro de soporte)
+        r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
+        #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
+        # Trato de maximizar número de pies en contacto
+        #reward_contact_feet=max(n_contact_feet)/4
+        c_tau = 1-r_tau
+        c_grf = (1 - r_GRF)
+        castigo_effort= self.castigo_effort(action=action, w_activos=w_activos, w_smooth=w_smooth)
+
+        #self._accumulate_task_term(r_vel)
+        self.reawrd_step['reward_speed']   = w_v   * r_vel
+        self.reawrd_step['reward_posture'] = w_post* r_post
+        self.reawrd_step['reward_height']  = w_z   * r_z
+        self.reawrd_step['castigo_tau'] = w_tau*c_tau
+        #self.reawrd_step['reward_pressure']= w_dp  * r_dp
+        #self.reawrd_step['reward_lateral'] = w_lat * r_lat
+        self.reawrd_step['castigo_grf']     = w_GRF * c_grf
+        #self.reawrd_step['reward_csp']     = w_csp * r_csp
+        self.reawrd_step['reward_margin']  = w_marg* r_marg
+        self.reawrd_step['castigo']  = castigo_effort
+        # self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        #tau y grf_excess_only son castigo de pain
+        castigo_pain=w_GRF * c_grf+w_tau*c_tau
+        reward = (
+            alive
+            + w_v   * r_vel
+            + w_lat * r_lat
+            + w_post* r_post
+            + w_z   * r_z
+            + w_marg* r_marg
+            - castigo_pain
+            -castigo_effort 
+        )
+        self._accumulate_task_term(r_vel)
+        
+        # Se guarda la acción previa
+        self.parametro_pesado_acciones()
+        # --- Guardado automático del estado del scheduler (opcional) ---
+        # if getattr(self, "autosave_every", None):
+        #     try:
+        #         if step_count % int(self.autosave_every) == 0 and step_count > 0:
+        #             os.makedirs(self.checkpoint_dir, exist_ok=True)
+        #             path = os.path.join(self.checkpoint_dir, f"scheduler_state_{step_count:09d}.json")
+        #             self.guardar_params_checkpoint(path, step_count)
+        #     except Exception as _e:
+        #         # No interrumpir el entrenamiento por fallos de IO
+        #         pass
+        self.action_previous=np.array(action)
+        # actualizar flags de contacto para siguiente paso
+        return float(reward)
+    
+    def castigo_effort(self,action, w_smooth, w_activos):
         # Suavidad en presiones (acciones en [0,1])
         accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
         delta_p = np.asarray(action) - np.asarray(accion_previa)
@@ -303,64 +367,7 @@ class SimpleProgressiveReward:
         actividad_efectiva=float(np.mean(actividad**3))
         smooth_efectivo=float(np.mean(delta_p**2))
         n_activos=float(np.mean(actividad > 0.15))
-        castigo=self.alpha_t*actividad_efectiva + w_smooth*smooth_efectivo + n_activos*w_activos
-        #r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
-        r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
-
-        
-        # 1) GRF band (exceso de cargas en pies) – en [0,1]
-        r_GRF,_,Fz,_=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
-        # 1) Cargas verticales por pie (para ponderar centro de soporte)
-        r_csp  = self._r_zmp_to_csp(Fz_pair=(Fz[0], Fz[1]), tol_xy=0.06, r_at_tol=0.6)
-        r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
-        #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
-        # Trato de maximizar número de pies en contacto
-        #reward_contact_feet=max(n_contact_feet)/4
-
-        
-
-        #self._accumulate_task_term(r_vel)
-        self.reawrd_step['reward_speed']   = w_v   * r_vel
-        self.reawrd_step['reward_posture'] = w_post* r_post
-        self.reawrd_step['reward_height']  = w_z   * r_z
-        #self.reawrd_step['reward_pressure']= w_dp  * r_dp
-        #self.reawrd_step['reward_lateral'] = w_lat * r_lat
-        self.reawrd_step['reward_grf']     = w_GRF * r_GRF
-        self.reawrd_step['reward_csp']     = w_csp * r_csp
-        self.reawrd_step['reward_margin']  = w_marg* r_marg
-        self.reawrd_step['castigo']  = castigo
-        # self.reawrd_step['reward_knees'] = w_knees *reward_knees
-        
-        reward = (
-            alive
-            + w_v   * r_vel
-            + w_post* r_post
-            + w_z   * r_z
-            #+ w_dp  * r_dp
-            + w_tau * r_tau
-            + w_GRF * r_GRF
-            + w_csp * r_csp
-            + w_marg* r_marg
-            
-            #+ w_lat * r_lat   # <= si prefieres desactivarlo, pon w_lat=0.0 arriba
-        )
-        self._accumulate_task_term(r_vel)
-        reward=reward- castigo
-        # Se guarda la acción previa
-        self.parametro_pesado_acciones()
-        # --- Guardado automático del estado del scheduler (opcional) ---
-        if getattr(self, "autosave_every", None):
-            try:
-                if step_count % int(self.autosave_every) == 0 and step_count > 0:
-                    os.makedirs(self.checkpoint_dir, exist_ok=True)
-                    path = os.path.join(self.checkpoint_dir, f"scheduler_state_{step_count:09d}.json")
-                    self.guardar_params_checkpoint(path, step_count)
-            except Exception as _e:
-                # No interrumpir el entrenamiento por fallos de IO
-                pass
-        self.action_previous=np.array(action)
-        # actualizar flags de contacto para siguiente paso
-        return float(reward)
+        return self.alpha_t*actividad_efectiva + w_smooth*smooth_efectivo + n_activos*w_activos
     
     def reward_for_knees(self, torque_mapping,contact_feets):
         # --- Bonus pro-rodilla (solo si hay margen de estabilidad) ---
@@ -590,7 +597,7 @@ class SimpleProgressiveReward:
         - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
         - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
         """
-        exceso_bw = _grf_excess_cost_bw_old(foot_links, masa_robot, metodo_fuerzas_pies, bw_mult)
+        exceso_bw = _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies,masa_robot, bw_mult)
         if mode == "linear":
             return float(1.0 - np.clip(exceso_bw, 0.0, 1.0))
         return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2))

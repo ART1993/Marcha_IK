@@ -370,15 +370,14 @@ class Simplified_Lift_Leg_Trainer:
             render=False,
             verbose=1
         )
-        #kpi_csv_cb = SimpleCsvKpiCallback(logs_dir=self.logs_dir, verbose=0)
-        extra_cb = SaveVecNormAlongCheckpoints(
-            vecnorm_env=self._last_train_env_ref,  # o pásalo como arg
-            save_dir=self.checkpoints_dir,
-            save_freq=checkpoint_freq*self.n_envs,
-            prefix=self.env_configs["model_prefix"],
-            verbose=1
-        )
-        callbacks = CallbackList([checkpoint_callback, eval_callback, extra_cb])
+        # extra_cb = SaveVecNormAlongCheckpoints(
+        #     vecnorm_env=self._last_train_env_ref,  # o pásalo como arg
+        #     save_dir=self.checkpoints_dir,
+        #     save_freq=checkpoint_freq*self.n_envs,
+        #     prefix=self.env_configs["model_prefix"],
+        #     verbose=1
+        # )
+        callbacks = CallbackList([checkpoint_callback, eval_callback])
         
         
         return callbacks

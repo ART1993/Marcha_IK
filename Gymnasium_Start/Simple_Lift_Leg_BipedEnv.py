@@ -201,7 +201,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
-        delta = np.clip(u_final - self.prev_action, -0.20, 0.20)
+        max_step = 0.20
+        raw_delta = u_final - self.prev_action
+        delta = max_step * np.tanh(raw_delta / (max_step + 1e-6))
+        
         u_final = self.prev_action + delta
         u_final = np.clip(u_final, 0.0, 1.0)
         self.prev_action = u_final.copy()
