@@ -142,6 +142,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.action_selector = None
         self.angle_expert_controller= None
         self.step_count = 0
+        self.step_total=0
         self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
@@ -192,6 +193,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             4. ✅ Mejor integración con sistema de recompensas
         """
         self.step_count += 1
+        self.step_total += 1
         self.info = {"kpi": {}}
         # Obtengo posicion y orientación al inicio del paso
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
@@ -201,6 +203,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Probar los dos y ver cual da mejor resultados
         delta = np.clip(u_final - self.prev_action, -0.20, 0.20)
         u_final = self.prev_action + delta
+        u_final = np.clip(u_final, 0.0, 1.0)
         self.prev_action = u_final.copy()
         self.ep_total_actions += 1
 
@@ -250,9 +253,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         else:
             self.zmp_x, self.zmp_y = 0.0, 0.0
 
-
-        system_used = "PROGRESSIVE"
-
         
         #if self.simple_reward_system:
         # Joint indices 
@@ -277,7 +277,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'episode_reward': self.episode_reward
         }
         
-        info, reward, done, system_used = self.function_logger_kpi(info, reward, done, system_used)
+        info, reward, done = self.function_logger_kpi(info, reward, done)
 
         self._debug_joint_angles_and_pressures(info, u_final, done)
         
@@ -317,7 +317,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             info["kpi"][f"q_{joint_name}"] = float(p.getJointState(self.robot_id, joint_index)[0])
         return info
     
-    def function_logger_kpi(self, info, reward, done, system_used):
+    def function_logger_kpi(self, info, reward, done):
         if self.simple_reward_system:
             curriculum_info = self.simple_reward_system.get_info()  # Solo una llamada
             info['curriculum'] = curriculum_info  # Añadir sin reemplazar
@@ -385,11 +385,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             elapsed_time = self.step_count / self.frequency_simulation
             #logger.log(f" {action_source} action, reward={reward:.2f}")
             if self.logger:
-                self.logger.log("main",f"🎮 Active system: {system_used} at step {self.step_count}")
                 self.logger.log("main",f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
                 self.logger.log("main",f"   Current level: {curriculum_info['level']}")
                 self.logger.log("main",f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
-        return info, reward, done, system_used
+        return info, reward, done
     
 
     def _configure_contact_friction(self):
@@ -416,8 +415,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.7,                #0.9 bajar a 0.7 si hay problemas,       
-                spinningFriction=0.2,                   #0.15,       
+                lateralFriction=0.55,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+                spinningFriction=0.12,                   #0.15,       
                 rollingFriction=0.01,       
                 restitution=0.01,           
                 contactDamping=100,         

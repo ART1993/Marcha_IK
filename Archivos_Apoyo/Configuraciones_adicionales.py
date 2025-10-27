@@ -15,12 +15,21 @@ from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Mus
 def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
         """Load normalization statistics if they exist"""
         if resume_path and isinstance(train_env, VecNormalize):
-            norm_path = os.path.join(model_dir, f"{config['model_prefix']}_normalize.pkl")
-            if os.path.exists(norm_path):
-                print(f"📊 Loading normalization statistics from: {norm_path}")
+            prefix = config.get("model_prefix", "rl_model")
+            steps_match = re.search(r"_(\d+)_steps\.zip$", os.path.basename(resume_path))
+            candidate_paths = []
+            if steps_match:
+                steps = steps_match.group(1)
+                candidate_paths.append(os.path.join(model_dir, f"{prefix}_normalize_{steps}_steps.pkl"))
+            else:
+                # Fallback generico, por si por motivos extraños no se encuentra el normalize
+                norm_path = os.path.join(model_dir, f"{config['model_prefix']}_normalize.pkl")
+                candidate_paths.append(norm_path)
+            if os.path.exists(candidate_paths[0]):
+                print(f"📊 Loading normalization statistics from: {candidate_paths[0]}")
                 try:
                     # Load normalization statistics
-                    train_env = VecNormalize.load(norm_path, train_env)
+                    train_env = VecNormalize.load(candidate_paths[0], train_env)
                     # Keep normalization training active
                     train_env.training = True
                     train_env.norm_reward = True
@@ -28,6 +37,46 @@ def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
                     print(f"⚠️ Warning: Could not load normalization stats: {e}")
                     print("   Continuing with fresh normalization...")
         return train_env
+
+def cargar_posible_normalizacion_nuevo(model_dir, resume_path, config, train_env):
+    """Carga SOLO el normalize emparejado con el checkpoint; si falla, usa el normalize final."""
+    if not resume_path or not isinstance(train_env, VecNormalize):
+        return train_env
+
+    prefix = config.get("model_prefix", "rl_model")
+    # 1) Construye candidatos en orden de prioridad
+    cand = []
+
+    # a) Emparejado por steps si el checkpoint lo tiene
+    m = re.search(r"_(\d+)_steps\.zip$", os.path.basename(resume_path))
+    if m:
+        steps = m.group(1)
+        cand.append(os.path.join(model_dir, f"{prefix}_normalize_{steps}_steps.pkl"))
+
+    # b) Fallback final
+    cand.append(os.path.join(model_dir, f"{prefix}_normalize.pkl"))
+
+    # 2) Intenta primero el emparejado (si hay), luego el final
+    last_error = None
+    for norm_path in cand:
+        if not os.path.exists(norm_path):
+            continue
+        print(f"📊 Loading normalization statistics from: {norm_path}")
+        try:
+            train_env = VecNormalize.load(norm_path, train_env)
+            # En TRAIN queremos seguir actualizando stats y normalizando recompensas
+            train_env.training = True
+            train_env.norm_reward = True
+            print("✅ VecNormalize loaded.")
+            return train_env
+        except Exception as e:
+            last_error = e
+            print(f"⚠️ Warning: Could not load normalization stats from {norm_path}: {e}")
+
+    # 3) Si no hubo éxito, seguimos con stats frescas
+    if last_error:
+        print("   Continuing with fresh normalization (no matching/fallback stats loaded).")
+    return train_env
 
 def buscar_archivo(nombre_archivo, ruta_base="/", select_multiple=False):
     for root, dirs, files in os.walk(ruta_base):

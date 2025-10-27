@@ -9,13 +9,89 @@ import glob
 import re
 from datetime import datetime
 import json
+from stable_baselines3.common.callbacks import BaseCallback
 
 
 # Import your environments
 from Gymnasium_Start.Simple_Lift_Leg_BipedEnv import Simple_Lift_Leg_BipedEnv  # Nuevo entorno mejorado
-from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion
-from Archivos_Apoyo.simple_log_redirect import log_print, both_print
+from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizacion_nuevo
+from Archivos_Apoyo.simple_log_redirect import both_print
 from Archivos_Apoyo.CSVLogger import CSVLogger
+
+class SaveVecNormAlongCheckpoints(BaseCallback):
+    def __init__(self, vecnorm_env, save_dir, prefix, save_freq, verbose=0):
+        super().__init__(verbose)
+        self.vecnorm_env = vecnorm_env
+        self.save_dir = save_dir
+        self.prefix = prefix
+        self.save_freq = int(save_freq)
+        self.next_save_at = self.save_freq
+        os.makedirs(save_dir, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        # Detecta si el CheckpointCallback acaba de guardar (por frecuencia, etc.)
+        # Aquí lo hacemos por frecuencia fija; si usas el mismo save_freq, cuadra.
+        if self.n_calls % self.save_freq == 0:
+            steps = self.num_timesteps          # pasos globales (múltiplos de n_envs)
+            path = os.path.join(self.save_dir, f"{self.prefix}_normalize_{steps}_steps.pkl")
+            try:
+                self.vecnorm_env.save(path)
+            except Exception as e:
+                print(f"⚠️ Could not save VecNormalize at {steps}: {e}")
+            return True
+
+        steps = self.num_timesteps
+        if steps >= self.next_save_at:
+            norm_path = os.path.join(
+                self.save_dir, f"{self.prefix}_normalize_{steps}_steps.pkl"
+            )
+            try:
+                self.vecnorm_env.save(norm_path)
+                if self.verbose:
+                    print(f"💾 Saved VecNormalize at {steps} steps -> {norm_path}")
+            except Exception as e:
+                print(f"⚠️ Could not save VecNormalize at {steps}: {e}")
+            # programa el próximo guardado
+            self.next_save_at += self.save_freq
+        return True
+
+    def _on_rollout_end(self) -> None:
+        # Guardar cada X pasos (ajusta a tu frecuencia real de checkpoint)
+        pass
+        # steps = self.num_timesteps
+        # norm_path = os.path.join(self.save_dir, f"{self.prefix}_normalize_{steps}_steps.pkl")
+        # try:
+        #     self.vecnorm_env.save(norm_path)
+        # except Exception as e:
+        #     print(f"⚠️ No pude guardar VecNormalize en {steps}: {e}")
+
+class SaveSchedulerStateCallback(BaseCallback):
+    def __init__(self, save_freq:int, save_dir:str, prefix:str="ckpt", verbose=0):
+        super().__init__(verbose)
+        self.save_freq = int(save_freq)
+        self.save_dir = save_dir
+        self.prefix = prefix
+        os.makedirs(self.save_dir, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        # Ejecuta en el proceso principal
+        if self.n_calls % self.save_freq == 0:
+            steps = self.num_timesteps
+            # lee el estado del reward desde UN solo worker (idx 0)
+            try:
+                states = self.training_env.env_method("get_scheduler_state", indices=[0])
+                if states and len(states) > 0:
+                    state = states[0]
+                    path = os.path.join(self.save_dir, f"{self.prefix}_scheduler_{steps:09d}.json")
+                    with open(path, "w") as f:
+                        json.dump(state, f)
+                    if self.verbose:
+                        print(f"💾 Saved scheduler state at {steps} -> {path}")
+            except Exception as e:
+                if self.verbose:
+                    print(f"⚠️ Could not save scheduler state: {e}")
+        return True
+
 
 class Simplified_Lift_Leg_Trainer:
     """
@@ -30,8 +106,8 @@ class Simplified_Lift_Leg_Trainer:
     
     def __init__(self, 
                  total_timesteps=2000000,
-                 n_envs=4,
-                 learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
+                 n_envs=8,
+                 learning_rate=1e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
                  logger=None,
                  csvlog=None,
@@ -98,8 +174,8 @@ class Simplified_Lift_Leg_Trainer:
         self.env_config = {
                 'clip_obs': 10.0,      
                 'clip_reward': 15.0,
-                'model_prefix': 'single_leg_balance_pam',
-                'description': 'lift_legs with 20 PAMs + Auto Knee Control'
+                'model_prefix': 'Walker_6DOF_3D',
+                'description': 'lift_legs with 12 PAMs + Auto Knee Control'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -166,7 +242,7 @@ class Simplified_Lift_Leg_Trainer:
         
         # Crear entornos paralelos con configuración optimizada
         env = self._create_parallel_env(make_env=make_env, config=config)
-        
+        self._last_train_env_ref = env
         return env
 
     
@@ -234,12 +310,12 @@ class Simplified_Lift_Leg_Trainer:
             'learning_rate': self.learning_rate,
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
-            'ent_coef': 0.02,          # Exploración moderada subir a 0.02 para mayor exploración
-            'n_steps': 256,            # 265 es bajo, subir a 1024 para secuencias más largas
-            'batch_size': 128,         # 128 subir a 512, multiplo de n_envs
+            'ent_coef': 0.015,          # Exploración moderada subir a 0.02 para mayor exploración
+            'n_steps': 1024,            # 256 es bajo, subir a 1024 para secuencias más largas
+            'batch_size': 512,         # 128 subir a 512, multiplo de n_envs
             'n_epochs': 4,             # con n_epoch=3 hay menos pasadas
             'gae_lambda': 0.95,        # Estándar
-            'clip_range': 0.2,         # Estándar
+            'clip_range': 0.15,         # Estándar
             'vf_coef': 0.5,            # Estándar
         }
         
@@ -295,7 +371,14 @@ class Simplified_Lift_Leg_Trainer:
             verbose=1
         )
         #kpi_csv_cb = SimpleCsvKpiCallback(logs_dir=self.logs_dir, verbose=0)
-        callbacks = CallbackList([checkpoint_callback, eval_callback])
+        extra_cb = SaveVecNormAlongCheckpoints(
+            vecnorm_env=self._last_train_env_ref,  # o pásalo como arg
+            save_dir=self.checkpoints_dir,
+            save_freq=checkpoint_freq*self.n_envs,
+            prefix=self.env_configs["model_prefix"],
+            verbose=1
+        )
+        callbacks = CallbackList([checkpoint_callback, eval_callback, extra_cb])
         
         
         return callbacks
@@ -328,7 +411,7 @@ class Simplified_Lift_Leg_Trainer:
         eval_env = self.create_eval_env()
         
         # Cargar normalizaciones existentes si las hay
-        train_env = cargar_posible_normalizacion(self.model_dir, resume_path, self.env_configs, train_env)
+        train_env = cargar_posible_normalizacion_nuevo(self.model_dir, resume_path, self.env_configs, train_env)
         
         # ===== CREACIÓN DEL MODELO =====
         

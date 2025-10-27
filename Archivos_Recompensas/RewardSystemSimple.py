@@ -3,14 +3,12 @@
 import pybullet as p
 import numpy as np
 from enum import Enum
-
+import json, os
 from collections import deque
 
 class RewardMode(Enum):
     PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
     WALK3D = "walk3d"                # caminar en 3D (avance +X)
-    LIFT_LEG = "lift_leg"            # levantar una pierna estable
-    MARCH_IN_PLACE = "march_in_place" # alternar piernas en el sitio (ambos pies en el aire permitido)
     
 
 # =============================================================================
@@ -47,7 +45,7 @@ class SimpleProgressiveReward:
         self.foot_links=(self.env.left_foot_link_id, self.env.right_foot_link_id)
         # ===== CONFIGURACIÓN SUPER SIMPLE =====
         self.episode_count = 0
-        self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
+        #self.recent_episodes = deque(maxlen=5)  # Últimos 5 episodios
         self._no_contact_steps = 0
         
         self.target_leg = getattr(env, "fixed_target_leg", None)  # 'left'|'right'|None self.fixed_target_leg
@@ -73,12 +71,44 @@ class SimpleProgressiveReward:
         self.change_adaptation_rate = 1e-3
         self.decay_term=0.1
         self._vx_target=self.env.vx_target
-        self.com_z_star = 0.69
+        #self.com_z_star = self.env.init_com_z
+
+        # --- Opciones de guardado (puedes cambiarlas desde fuera) ---
+        self.checkpoint_dir = "checkpoints"
+        self.autosave_every = 100000//8   # ej.: 5000 para guardar cada 5k pasos; None = desactivado
+        self.autoload_scheduler = True # intentar cargar el último estado al iniciar
+        # Auto-carga del estado del scheduler si existe alguno
+        if self.autoload_scheduler:
+            try:
+                latest = self._find_latest_scheduler_state(self.checkpoint_dir)
+                if latest is not None:
+                    self.cargar_params_checkpoint(latest)
+                    if self.env.logger:
+                        self.env.logger.log("main", f"🔁 Scheduler state loaded from: {latest}")
+            except Exception as _e:
+                if self.env.logger:
+                    self.env.logger.log("main", f"⚠️ Could not autoload scheduler state: {_e}")
 
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
             self.env.logger.log("main",f"   Frequency: {self.frequency_simulation} Hz")
             self.env.logger.log("main",f"🎯 Simple Progressive System: Starting at Level {self.level}")
+
+    def _find_latest_scheduler_state(self, ckpt_dir:str):
+        """
+        Busca el último archivo scheduler_state_XXXXXXXXX.json en ckpt_dir.
+        Devuelve ruta o None si no hay.
+        """
+        try:
+            if not os.path.isdir(ckpt_dir):
+                return None
+            files = [f for f in os.listdir(ckpt_dir) if f.startswith("scheduler_state_") and f.endswith(".json")]
+            if not files:
+                return None
+            files.sort()  # lexicográfico; con ceros a la izquierda queda por step
+            return os.path.join(ckpt_dir, files[-1])
+        except Exception:
+            return None
 
     def _accumulate_task_term(self, r_task: float):
         try:
@@ -93,6 +123,7 @@ class SimpleProgressiveReward:
         self._task_accum = 0.0
         self._task_N = 0
         self.s_mean=0
+        #self.alpha_t = 0.0
 
     def calculate_s_mean(self):
         s_target=1 if self.r_mean>self.threshold else 0
@@ -156,16 +187,52 @@ class SimpleProgressiveReward:
     
     def get_info(self):
         """Info para debugging"""
-        avg_reward = sum(self.recent_episodes) / len(self.recent_episodes) if self.recent_episodes else 0
         
         return {
             'level': self.level,
             'episodes': self.episode_count,
-            'avg_reward': avg_reward,
             'target_leg': self.target_leg if self.level == 3 else None,
             'curriculum_enabled': False,
             'level_progression_disabled': getattr(self, 'level_progression_disabled', False)
         }
+    
+    def guardar_params_checkpoint(self, path, step_count):
+        if self.env.step_total % self.autosave_every ==0 and self.env.step_total>0:
+            sched_state = {
+                            "alpha_t": self.alpha_t,
+                            "r_mean": self.r_mean,
+                            "s_mean": self.s_mean,
+                            "change_adaptation_rate": self.change_adaptation_rate,
+                            "smoothing": self.smoothing,
+                            "threshold": self.threshold,
+                            "decay_term": self.decay_term,
+                            "step_total": int(self.env.step_total if hasattr(self.env, "step_total") else self.env.step_total),
+                            "action_previous": (self.action_previous.tolist() if self.action_previous is not None else None),
+                            "_task_accum": float(self._task_accum),
+                            "_task_N": int(self._task_N),
+                            
+                        }
+
+            os.makedirs("checkpoints", exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(sched_state, f)
+
+    def cargar_params_checkpoint(self, path):
+        # "checkpoints/scheduler_state.json"
+        with open(path, "r") as f:
+            s = json.load(f)
+            self.alpha_t = float(s.get("alpha_t", 0.0))
+            self.r_mean = float(s.get("r_mean", 0.0))
+            self.s_mean = float(s.get("s_mean", 0.0))
+            self.change_adaptation_rate = float(s.get("change_adaptation_rate", 1e-3))
+            self.smoothing = float(s.get("smoothing", 0.99))
+            self.threshold = float(s.get("threshold", 0.4))
+            self.decay_term = float(s.get("decay_term", 0.1))
+            self.env.step_total = int(s.get("step_total", 0))
+            ap = s.get("action_previous", None)
+            self.action_previous = (np.array(ap, dtype=float) if ap is not None else None)
+            self._task_accum = float(s.get("_task_accum", 0.0))
+            self._task_N = int(s.get("_task_N", 0))
     
     # ============================================================================================================================================= #
     # ================================================= Nuevos metodos de recompensa para nuevas acciones ========================================= #
@@ -177,21 +244,33 @@ class SimpleProgressiveReward:
         pos, orn = p.getBasePositionAndOrientation(env.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         roll, pitch, yaw = euler
+        num_acciones=len(action)
         # Da la velocidad lineal y angular de la pelvis
         #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
         vx = float(self.vel_COM[0])
-        vy = float(self.vel_COM[1])
+        # vy = float(self.vel_COM[1])
         #r_pitch=0.2 * (roll**2 + pitch**2) Versión anterior tardaba demasiado tiempo
         
         # --- NORMALIZATION: tolerances and half-life mapping ---
         d_theta = np.deg2rad(5.0)   # 5 degrees tolerance for roll/pitch
         dz_band = 0.02              # 2 cm deadband for CoM height
-        d_s     = 0.04              # 4 cm CoM->support (si lo usas)
-        dv_foot = 0.05              # 5 cm/s no-slip
+        #d_s     = 0.04              # 4 cm CoM->support (si lo usas)
+        #dv_foot = 0.05              # 5 cm/s no-slip
         dv_cmd  = 0.20              # 0.20 m/s vel tracking (x)
-        dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
-        dvy     = 0.10              # 0.10 m/s vel lateral
-        d_back  = 0.05              # 0.05 m/s tolerancia hacia atrás (más severo)
+        #dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
+        #dvy     = 0.10              # 0.10 m/s vel lateral
+        #d_back  = 0.05              # 0.05 m/s tolerancia hacia atrás (más severo)
+
+        # Pesos de recompensa (que debería de recompensar)
+        alive = 0.5
+        # Pesos de términos normalizados (ajústalos con tus logs)
+        w_v, w_post, w_z = 0.40, 0.08, 0.05
+        w_tau, w_GRF = 0.10, 0.06
+        w_csp, w_marg = 0.14, 0.09
+        #w_knees=0.05
+        w_activos=0.05
+        w_smooth =0.05
+        #w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
 
         r_post = exp_term(roll, d_theta) * exp_term(pitch, d_theta)
 
@@ -209,7 +288,7 @@ class SimpleProgressiveReward:
             r_vel = exp_term(v_err, dv_cmd, r_at_tol=0.5)
 
         # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
-        y =self.dy
+        #y =self.dy
         # r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
         # r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
         # r_lat = r_lat_pos * r_lat_vel
@@ -219,53 +298,66 @@ class SimpleProgressiveReward:
         # Suavidad en presiones (acciones en [0,1])
         accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
         delta_p = np.asarray(action) - np.asarray(accion_previa)
-        r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
+        # a = actividad ≈ acción en [0,1]; términos: (1/M)∑a^3, (1/M)∑(Δu)^2, fracción activa
+        actividad=np.asarray(action)
+        actividad_efectiva=float(np.mean(actividad**3))
+        smooth_efectivo=float(np.mean(delta_p**2))
+        n_activos=float(np.mean(actividad > 0.15))
+        castigo=self.alpha_t*actividad_efectiva + w_smooth*smooth_efectivo + n_activos*w_activos
+        #r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
         r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
 
         
         # 1) GRF band (exceso de cargas en pies) – en [0,1]
-        r_GRF,n_contact_feet,Fz,feet_state=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
+        r_GRF,_,Fz,_=self._grf_reward(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
         # 1) Cargas verticales por pie (para ponderar centro de soporte)
         r_csp  = self._r_zmp_to_csp(Fz_pair=(Fz[0], Fz[1]), tol_xy=0.06, r_at_tol=0.6)
         r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
-        reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
+        #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
         # Trato de maximizar número de pies en contacto
         #reward_contact_feet=max(n_contact_feet)/4
 
-        # Pesos de recompensa (que debería de recompensar)
-        alive = 0.5
-        # Pesos de términos normalizados (ajústalos con tus logs)
-        w_v, w_post, w_z, w_dp = 0.35, 0.08, 0.05, 0.05
-        w_tau, w_GRF = 0.10, 0.06
-        w_csp, w_marg = 0.14, 0.09
-        w_knees=0.05
-        #w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
+        
 
-        self._accumulate_task_term(r_vel)
+        #self._accumulate_task_term(r_vel)
         self.reawrd_step['reward_speed']   = w_v   * r_vel
         self.reawrd_step['reward_posture'] = w_post* r_post
         self.reawrd_step['reward_height']  = w_z   * r_z
-        self.reawrd_step['reward_pressure']= w_dp  * r_dp
+        #self.reawrd_step['reward_pressure']= w_dp  * r_dp
         #self.reawrd_step['reward_lateral'] = w_lat * r_lat
         self.reawrd_step['reward_grf']     = w_GRF * r_GRF
         self.reawrd_step['reward_csp']     = w_csp * r_csp
         self.reawrd_step['reward_margin']  = w_marg* r_marg
-        self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        self.reawrd_step['castigo']  = castigo
+        # self.reawrd_step['reward_knees'] = w_knees *reward_knees
         
         reward = (
             alive
             + w_v   * r_vel
             + w_post* r_post
             + w_z   * r_z
-            + w_dp  * r_dp
+            #+ w_dp  * r_dp
             + w_tau * r_tau
             + w_GRF * r_GRF
             + w_csp * r_csp
             + w_marg* r_marg
+            
             #+ w_lat * r_lat   # <= si prefieres desactivarlo, pon w_lat=0.0 arriba
         )
+        self._accumulate_task_term(r_vel)
+        reward=reward- castigo
         # Se guarda la acción previa
-        #self.parametro_pesado_acciones()
+        self.parametro_pesado_acciones()
+        # --- Guardado automático del estado del scheduler (opcional) ---
+        if getattr(self, "autosave_every", None):
+            try:
+                if step_count % int(self.autosave_every) == 0 and step_count > 0:
+                    os.makedirs(self.checkpoint_dir, exist_ok=True)
+                    path = os.path.join(self.checkpoint_dir, f"scheduler_state_{step_count:09d}.json")
+                    self.guardar_params_checkpoint(path, step_count)
+            except Exception as _e:
+                # No interrumpir el entrenamiento por fallos de IO
+                pass
         self.action_previous=np.array(action)
         # actualizar flags de contacto para siguiente paso
         return float(reward)
@@ -310,8 +402,10 @@ class SimpleProgressiveReward:
     # Requisitos minimos threshold, smoothing, change_in_adaptation_rate
     # parametros de entrenamiento: r_mean, temporal adaptation_sate, s_mean
     def parametro_pesado_acciones(self):
-        self.r_mean=self.smoothing*self.r_mean +(1-self.smoothing)*self.env.episode_reward
-
+        r_inst = (self._task_accum / max(self._task_N, 1)) if self._task_N > 0 else 0.0
+        self.r_mean=self.smoothing*self.r_mean +(1-self.smoothing)*r_inst
+        self._task_N=0
+        self._task_accum=0
         if self.r_mean >self.threshold and self.s_mean < 0.5:
             self.change_adaptation_rate=self.decay_term*self.change_adaptation_rate
         elif self.r_mean > self.threshold and self.s_mean > 0.5:
@@ -319,7 +413,7 @@ class SimpleProgressiveReward:
             self.alpha_t=self.alpha_t+self.change_adaptation_rate
         else:
             self.alpha_t=self.alpha_t-self.change_adaptation_rate
-        #self.alpha_t=np.clip(self.alpha_t,0,0.5)
+        self.alpha_t=np.clip(self.alpha_t,0,0.5)
         self.calculate_s_mean()
 
     def torque_pain_reduction(self, torque_mapping):
@@ -393,6 +487,8 @@ class SimpleProgressiveReward:
         """
         BW,n_contact_feet,Fz,feet_state,deficit, exceso = _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min, bw_max)
         if deficit==0 and exceso==0:
+            return 1.0,n_contact_feet,Fz,feet_state
+        elif n_contact_feet[0]==0 and n_contact_feet[1]==0:
             return 0.0,n_contact_feet,Fz,feet_state
         Fz_L, Fz_R=Fz
         r_band_low  = np.exp(-0.5 * (deficit / max(sigma_low, 1e-6))**2)
@@ -528,9 +624,6 @@ def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,
         feet_state.append(foot_state)
         n_contact_feet.append(n_foot)
     BW = masa_robot*9.81  # N
-    # Si ninguno de los pies está en contacto devuelve recompensa nula
-    if n_contact_feet[0]==0 and n_contact_feet[1]==0:
-        return BW,n_contact_feet,Fz,feet_state,0.0, 0.0
 
     #BW = masa_robot*9.81  # N
     bw_sum = Fz_total / BW
