@@ -259,7 +259,7 @@ class SimpleProgressiveReward:
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
         # Velocidad del CoM: |vx - vcmd|
-        vcmd = float(getattr(self, "_vx_target",1.2))
+        vcmd = float(getattr(self, "_vx_target",0.6))
         # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
         y =self.dy
         r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
