@@ -250,7 +250,7 @@ class SimpleProgressiveReward:
         dz_band = 0.02              # 2 cm deadband for CoM height
         #d_s     = 0.04              # 4 cm CoM->support (si lo usas)
         dv_foot = 0.05              # 5 cm/s no-slip
-        dv_cmd  = 0.20              # 0.20 m/s vel tracking (x)
+        dv_cmd  = 0.10              # 0.20 m/s vel tracking (x)
         dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
         dvy     = 0.10              # 0.10 m/s vel lateral
         #d_back  = 0.05              # 0.05 m/s tolerancia hacia atrás (más severo)
@@ -262,14 +262,10 @@ class SimpleProgressiveReward:
         vcmd = float(getattr(self, "_vx_target",1.2))
         # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
         y =self.dy
-        # r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
-        # r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
+        r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
+        r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
         # coste suave lateral
-        c_lat = (y / dy_pos)**2 + (vy / dvy)**2
-        # recompensa (1 en el objetivo, decae suavemente)
-        gain_speed = np.clip(vx / (vcmd + 1e-6), 0.0, 1.0)
-        r_lat = np.exp(-0.5 * c_lat)
-        r_lat *= (0.2 + 0.8 * gain_speed)
+        r_lat = r_lat_pos * r_lat_vel
         
         
 
@@ -310,7 +306,8 @@ class SimpleProgressiveReward:
         # 1) GRF band (exceso de cargas en pies) – en [0,1]
         r_GRF, n_contacts_feet, states = self._grf_reward_old(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
         # 1) Cargas verticales por pie (para ponderar centro de soporte)
-        r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
+        # Si el modelo esta mal al final lo quito
+        #r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
         #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
         # Trato de maximizar número de pies en contacto
         #reward_contact_feet=max(n_contacts_feet)/4
@@ -328,7 +325,7 @@ class SimpleProgressiveReward:
         #self.reawrd_step['reward_lateral'] = w_lat * r_lat
         self.reawrd_step['castigo_grf']     = w_GRF * c_grf
         #self.reawrd_step['reward_csp']     = w_csp * r_csp
-        self.reawrd_step['reward_margin']  = w_marg* r_marg
+        #self.reawrd_step['reward_margin']  = w_marg* r_marg
         self.reawrd_step['castigo']  = castigo_effort
         # self.reawrd_step['reward_knees'] = w_knees *reward_knees
         #tau y grf_excess_only son castigo de pain
@@ -339,7 +336,7 @@ class SimpleProgressiveReward:
             + w_lat * r_lat
             + w_post* r_post
             + w_z   * r_z
-            + w_marg* r_marg
+            #+ w_marg* r_marg
             - castigo_pain
             -castigo_effort 
         )

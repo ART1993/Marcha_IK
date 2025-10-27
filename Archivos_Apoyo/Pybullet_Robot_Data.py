@@ -1,5 +1,3 @@
-import time
-
 import pybullet as p
 import numpy as np  
 
@@ -90,7 +88,7 @@ class PyBullet_Robot_Data:
         return link_info
     
     @property
-    def get_joint_position_velocities_and_torques(self) -> tuple[dict[str, float]]:
+    def get_joint_position_velocities_and_torques(self) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
         """
         Obtiene las velocidades actuales de todas las articulaciones
         
@@ -106,12 +104,45 @@ class PyBullet_Robot_Data:
                 positions[joint_data['name']] = joint_state[0]  # Posición
                 velocities[joint_data['name']] = joint_state[1]  # Velocidad
                 # if pVELOCITIES o p.TORQUE usado
-                torques[joint_data['name']] = joint_state[3]  # Torque de reacción
+                torques[joint_data['name']] = joint_state[3]  # Par de motor aplicado
+                # reaction_6d = joint_state[2]  # (Fx,Fy,Fz,Mx,My,Mz) reacción del constraint
         
         return positions, velocities, torques
     
+    def get_center_of_mass(self):
+        """
+            Cálculo del COM global del robot.
+            PyBullet ya entrega la **posición mundial del COM del link** en `ls[0]`
+            cuando llamas a `getLinkState(..., computeForwardKinematics=True)`;
+            no hay que volver a sumar el offset inercial local (`ls[2]`).
 
-    def get_center_of_mass(self) -> tuple[np.ndarray, float]:
+            Para la base (-1), transformamos su marco inercial local a mundo una sola vez.
+        """
+        total_mass = 0.0
+        weighted_position = np.zeros(3, dtype=float)
+
+        # --- BASE (-1) ---
+        base_mass = self.link_info[-1]['mass']
+        if base_mass > 0:
+            base_pos, base_orn = p.getBasePositionAndOrientation(self.robot_id)
+            base_com_local, base_com_local_orn = p.getDynamicsInfo(self.robot_id, -1)[3:5]
+            base_com_world, _ = p.multiplyTransforms(base_pos, base_orn, base_com_local, base_com_local_orn)
+            weighted_position += base_mass * np.array(base_com_world, dtype=float)
+            total_mass += base_mass
+
+
+        for joint_index, joint_data in self.joint_info.items():
+            link_mass = self.link_info[joint_index]['mass']
+            if link_mass > 0:
+                ls = p.getLinkState(self.robot_id, joint_index, computeForwardKinematics=True)
+                com_world = ls[0]  # COM del link en mundo
+                weighted_position += link_mass * np.array(com_world, dtype=float)
+                total_mass += link_mass
+
+        return (weighted_position / max(total_mass, 1e-9)).tolist(), total_mass
+    
+
+    def get_center_of_mass_old(self) -> tuple[np.ndarray, float]:
         """
         NOTA: para cada link, getLinkState(..., computeForwardKinematics=True)
             devuelve:
@@ -137,7 +168,6 @@ class PyBullet_Robot_Data:
             link_mass = self.link_info[joint_index]['mass']
             if link_mass > 0:
                 # getLinkState devuelve la posición del COM del link
-                 # getLinkState: [2] = world COM position del link
                 ls = p.getLinkState(self.robot_id, joint_index, computeForwardKinematics=True)
                 # ls[0], ls[1]: pose del link en mundo; ls[2]: COM local inercial
                 # En quickstart guide veo que es 0

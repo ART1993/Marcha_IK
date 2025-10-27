@@ -41,7 +41,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
-                 vx_target: float = 1.2,
+                 vx_target: float = 0.6, # Bajar a 0.4 si da problemas
                  robot_name="2_legged_human_like_robot16DOF"):
         
         """
@@ -164,7 +164,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.fixed_target_leg = fixed_target_leg
         self.raised_leg = self.fixed_target_leg  # 'left' o 'right' - cuál pierna está levantada
         
-        self.target_knee_height = 0.8  # Altura objetivo de la rodilla levantada
         self.episode_reward = 0
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
@@ -201,9 +200,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
-        max_step = 0.20
-        raw_delta = u_final - self.prev_action
-        delta = max_step * np.tanh(raw_delta / (max_step + 1e-6))
+        max_step = 0.20 #SI sale mal probar 0.3 o 0.4
+        delta = np.clip(u_final - self.prev_action, -max_step, max_step)
+        #delta = max_step * np.tanh(raw_delta / (max_step + 1e-6))
         
         u_final = self.prev_action + delta
         u_final = np.clip(u_final, 0.0, 1.0)
@@ -408,9 +407,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.robot_id,
                 link_id,
                 lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
-                spinningFriction=0.005,  # Muy reducida de 0.4 a 0.05
-                rollingFriction=0.00,   # Muy reducida de 0.05 a 0.01
-                restitution=0.02
+                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+                restitution=0.05
             )
 
         # Pie izquierdo - alta fricción para agarre
@@ -418,12 +417,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.90,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
-                spinningFriction=0.015,                   #0.15,       
-                rollingFriction=0.0,       
+                lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+                spinningFriction=0.12,                   #0.15,       
+                rollingFriction=0.01,       
                 restitution=0.01,           
-                contactDamping=120,         
-                contactStiffness=7000,      
+                contactDamping=100,         
+                contactStiffness=12000,      
                 frictionAnchor=1
             )
         
@@ -433,9 +432,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.95,        # Fricción estándar del suelo 0.6
-            spinningFriction=0.01,
-            rollingFriction=0.0
+            lateralFriction=0.9,        # Fricción estándar del suelo 0.6
+            spinningFriction=0.2,
+            rollingFriction=0.005
         )
         
 
@@ -515,14 +514,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         else:
             # Ambas o ninguna - no aplicar control automático
             return base_torques
-        # self.target_knee_height
         # Obtener altura actual de la rodilla
         #knee link state y posición
         knee_state = p.getLinkState(self.robot_id, knee_joint_id)
         current_knee_height = knee_state[0][2]
         
         # Control PD simple hacia altura objetivo
-        height_error = self.target_knee_height - current_knee_height
+        height_error = 0.6 - current_knee_height
         # knee_joint_state y velocidad
         knee_velocity = p.getJointState(self.robot_id, knee_joint_id)[1]
         
@@ -714,7 +712,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     @property
     def contacto_pies(self):
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id, stable_foot=False)
+        left_contact=self.contact_with_force(link_id=self.left_foot_link_id, stable_foot=True)
         right_contact=self.contact_with_force(link_id=self.right_foot_link_id, stable_foot=True)
         return left_contact, right_contact
     
@@ -795,13 +793,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         elif "12" in self.robot_name:
             initial_positions = {
                 # Pierna izquierda
-                self.joint_indices[0]: np.deg2rad(-5),   # debe ser menor 0
-                self.joint_indices[1]: np.deg2rad(5),   # debe ser mayor 0
-                self.joint_indices[2]: np.deg2rad(-5),   # debe ser menor 0
+                self.joint_indices[0]: np.deg2rad(0),   # debe ser menor 0
+                self.joint_indices[1]: np.deg2rad(0),   # debe ser mayor 0
+                self.joint_indices[2]: np.deg2rad(0),   # debe ser menor 0
                 # pierna derecha
-                self.joint_indices[3]: np.deg2rad(-5),   # debe ser menor 0
-                self.joint_indices[4]: np.deg2rad(5),   # debe ser mayor 0
-                self.joint_indices[5]: np.deg2rad(-5),   # debe ser menor 0
+                self.joint_indices[3]: np.deg2rad(0),   # debe ser menor 0
+                self.joint_indices[4]: np.deg2rad(0),   # debe ser mayor 0
+                self.joint_indices[5]: np.deg2rad(0),   # debe ser menor 0
             }
         elif "16" in self.robot_name:
             initial_positions = {
@@ -900,7 +898,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'support_leg': support_leg,
             'raised_leg': raised_leg,
             'balance_time': 0,
-            'target_knee_height': self.target_knee_height,
+            #'target_knee_height': self.target_knee_height,
             'episode_step': self.step_count
         }
         

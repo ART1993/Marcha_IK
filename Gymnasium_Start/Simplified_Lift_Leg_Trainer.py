@@ -173,7 +173,7 @@ class Simplified_Lift_Leg_Trainer:
         # Configuración optimizada para sistemas de 6 músculos antagónicos
         self.env_config = {
                 'clip_obs': 10.0,      
-                'clip_reward': 15.0,
+                'clip_reward': 10.0,
                 'model_prefix': 'Walker_6DOF_3D',
                 'description': 'lift_legs with 12 PAMs + Auto Knee Control'
         }

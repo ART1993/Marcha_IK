@@ -142,6 +142,87 @@ class ZMPCalculator:
         if no_planted and (self._zmp_last is not None):
             return self._zmp_last.copy()
 
+        self._zmp_lp = zmp if self._zmp_lp is None else (1-self.ZMP_ALPHA)*self._zmp_lp + self.ZMP_ALPHA*zmp
+        self._zmp_last = self._zmp_lp.copy()
+        return self._zmp_last.copy()   # <- en lugar de 'return zmp'
+    
+    def calculate_zmp_old(self):
+        """
+            Calcula ZMP:
+            1) Con fuerzas de contacto si ΣFz >= EPS_FZ
+            2) Fallback LIPM (COM-accel) si no hay soporte; hace 'hold' del último ZMP válido.
+            Aplica también un low-pass simple para suavizar ruido.
+        """
+        # --- 0) Estados de pies (si hay callback)
+        # Regla: calculamos ZMP por fuerzas si al menos 1 pie está PLANTED.
+        left_state = right_state = None
+        if self.contact_state_fn is not None:
+            try:
+                left_state, _, _  = self.contact_state_fn(self.left_foot_id)
+                right_state, _, _ = self.contact_state_fn(self.right_foot_id)
+            except Exception:
+                left_state = right_state = None
+
+        # --- 1) Contactos por fuerzas (si hay al menos un pie PLANTED, o no hay callback)
+        samples = self._collect_contact_samples()
+        wsum = sum(Fz for (_, Fz) in samples)
+        planted_ok = (
+            (left_state is None and right_state is None) or
+            (left_state  is not None and left_state  >= self.STATE_PLANTED) or
+            (right_state is not None and right_state >= self.STATE_PLANTED)
+        )
+        if planted_ok and wsum >= self.EPS_FZ:
+            zx = sum(px*Fz for ((px, _), Fz) in samples) / wsum
+            zy = sum(py*Fz for ((_, py), Fz) in samples) / wsum
+            zmp = np.array([zx, zy], dtype=float)
+            # Low-pass
+            self._zmp_lp = zmp if self._zmp_lp is None else (1-self.ZMP_ALPHA)*self._zmp_lp + self.ZMP_ALPHA*zmp
+            self._zmp_last = np.array(self._zmp_lp, dtype=float)
+            # Actualiza historia COM igualmente (para debugging/telemetría)
+            if self.robot_data:
+                com_pos, _ = self.robot_data.get_center_of_mass()
+                self.update_com_history(np.array(com_pos))
+            return self._zmp_last.copy()
+
+        # --- 2) Fallback LIPM (sin soporte suficiente o sin PLANTED)
+        # Obtener posición del centro de masa
+        if self.robot_data:
+            try:
+                com_pos, _ = self.robot_data.get_center_of_mass()
+                com_pos = np.array(com_pos)
+                l_dynamic = com_pos[2]  # Altura Z actual del COM
+            except:
+                # Fallback: usar posición de la base
+                com_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
+                com_pos = np.array(com_pos)
+                l_dynamic = self.l
+        else:
+            com_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
+            com_pos = np.array(com_pos)
+        
+        # Actualizar historia para cálculo de aceleración
+        self.update_com_history(com_pos)
+        
+        # Calcular aceleración básica
+        com_acceleration = self.calculate_simple_acceleration()
+        
+        # ===== ECUACIONES ZMP SIMPLIFICADAS =====
+        
+        # X_zmp = X_com - (l/g) * X_com_accel
+        # Y_zmp = Y_com - (l/g) * Y_com_accel
+        
+        zmp_x = com_pos[0] - (l_dynamic / self.g) * com_acceleration[0]
+        zmp_y = com_pos[1] - (l_dynamic / self.g) * com_acceleration[1]
+        
+        zmp = np.array([zmp_x, zmp_y], dtype=float)
+        # Mantén último ZMP bueno si existe (hold) cuando NO hay pies PLANTED
+        no_planted = (
+            (left_state is not None and left_state  < self.STATE_PLANTED) and
+            (right_state is not None and right_state < self.STATE_PLANTED)
+        ) if (left_state is not None and right_state is not None) else (wsum < self.EPS_FZ)
+        if no_planted and (self._zmp_last is not None):
+            return self._zmp_last.copy()
+
         self._zmp_lp = zmp.copy()
         self._zmp_last = zmp.copy()
         return zmp
@@ -267,11 +348,11 @@ class ZMPCalculator:
         # COM para análisis básico
         com_pos, total_mass = self.robot_data.get_center_of_mass() if self.robot_data else ([0,0,1], 25.0)
         
-        # ZMP para análisis dinámico  
         zmp_point_info = self.get_stability_info()
-        
         # Diferencia entre ZMP y COM (indica actividad dinámica)
-        com_zmp_difference = np.linalg.norm(zmp_point_info["zmp_position"] - com_pos[:2])
+        zmp_xy = np.asarray(zmp_point_info["zmp_position"], dtype=float)
+        com_xy = np.asarray(com_pos[:2], dtype=float)
+        com_zmp_difference = float(np.linalg.norm(zmp_xy - com_xy))
 
         info_stability={"zmp_info":zmp_point_info, 
                         "com_info":{'com_position': com_pos,
@@ -326,6 +407,23 @@ class ZMPCalculator:
         return samples
 
     def _foot_rectangle_world(self, foot_id):
+        """4 vértices (x,y) del rectángulo del pie en mundo a partir de su pose."""
+        L = self.FOOT_LENGTH * 0.5
+        W = self.FOOT_WIDTH  * 0.5
+        heel_bias = 0.03  # 3 cm hacia talón
+        local = [(+L-heel_bias, +W, 0.0), (+L-heel_bias, -W, 0.0),
+                 (-L-heel_bias, -W, 0.0), (-L-heel_bias, +W, 0.0)]
+        #pos, orn = p.getLinkState(self.robot_id, foot_id, computeForwardKinematics=1)[:2]
+        ls = p.getLinkState(self.robot_id, foot_id, computeForwardKinematics=1)
+        # usar el frame del link en mundo (no el COM):
+        pos, orn = ls[4], ls[5]
+        verts = []
+        for vx, vy, vz in local:
+            wx, wy, _ = p.multiplyTransforms(pos, orn, [vx, vy, vz],[0,0,0,1])[0]
+            verts.append((float(wx), float(wy)))
+        return verts
+    
+    def _foot_rectangle_world_old(self, foot_id):
         """4 vértices (x,y) del rectángulo del pie en mundo a partir de su pose."""
         L = self.FOOT_LENGTH * 0.5
         W = self.FOOT_WIDTH  * 0.5
