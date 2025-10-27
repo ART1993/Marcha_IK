@@ -287,7 +287,7 @@ class SimpleProgressiveReward:
         r_post = exp_term(abs(roll), d_theta) * exp_term(abs(pitch), d_theta)
 
         # Altura del CoM (absoluta) alrededor de z*
-        z_star = getattr(self, "init_com_z", 0.69)
+        z_star = getattr(self, "init_com_z", 0.89)
         e_z = band_error(self.env.com_z, z_star, dz_band)
         r_z  = exp_term(e_z, dz_band, r_at_tol=0.6)
 
@@ -295,6 +295,8 @@ class SimpleProgressiveReward:
         v_err = abs(vx - vcmd)
         if vx>vcmd:
             r_vel=1.0
+        elif vx<=0:
+            r_vel=0
         else:
             r_vel = exp_term(v_err, dv_cmd, r_at_tol=0.5)
 
@@ -306,12 +308,13 @@ class SimpleProgressiveReward:
 
         
         # 1) GRF band (exceso de cargas en pies) – en [0,1]
-        r_GRF = self._grf_reward_old(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
+        r_GRF, n_contacts_feet, states = self._grf_reward_old(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
         # 1) Cargas verticales por pie (para ponderar centro de soporte)
         r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
         #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
         # Trato de maximizar número de pies en contacto
-        #reward_contact_feet=max(n_contact_feet)/4
+        #reward_contact_feet=max(n_contacts_feet)/4
+        #recompensa_pisada=0.05*reward_contact_feet
         c_tau = 1-r_tau
         c_grf = (1 - r_GRF)
         castigo_effort= self.castigo_effort(action=action, w_activos=w_activos, w_smooth=w_smooth)
@@ -597,10 +600,10 @@ class SimpleProgressiveReward:
         - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
         - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
         """
-        exceso_bw = _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies,masa_robot, bw_mult)
+        exceso_bw, n_contacts_feet, states = _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies,masa_robot, bw_mult)
         if mode == "linear":
-            return float(1.0 - np.clip(exceso_bw, 0.0, 1.0))
-        return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2))
+            return float(1.0 - np.clip(exceso_bw, 0.0, 1.0)), n_contacts_feet, states
+        return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2)), n_contacts_feet, states
 
 
 
@@ -645,13 +648,17 @@ def _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult
     """
     # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
     Fz_total = 0.0
+    states=[]
+    n_contacts_feet=[]
     for link in foot_links:
-        _, _, F_foot= metodo_fuerzas_pies(link_id=link)
+        state, n_feet, F_foot= metodo_fuerzas_pies(link_id=link)
         Fz_total += float(F_foot)
+        n_contacts_feet.append(n_feet)
+        states.append(state)
 
     BW = masa_robot*9.81  # N
     bw_sum = Fz_total / BW
-    return float(max(0.0, bw_sum - float(bw_mult)))
+    return float(max(0.0, bw_sum - float(bw_mult))), n_contacts_feet, states
 
 
     

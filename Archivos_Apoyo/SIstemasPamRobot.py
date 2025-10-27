@@ -43,6 +43,30 @@ def Sistema_Musculos_PAM_20(control_joint_names=None):
             pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.055, alpha0=np.pi/4)
     return pam_dict
 
+def Sistema_Musculos_PAM_24_prefabricated(control_joint_names=None):
+
+    pam_dict = {}
+    for joint in control_joint_names:
+        if "hip" in joint.lower() and 'roll' in joint.lower():
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.032, alpha0=np.pi/4)
+        elif"hip" in joint.lower() and "pitch" in joint.lower():
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.030, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4)
+        if "hip" in joint.lower() and "yaw" in joint.lower():
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.035, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.032, alpha0=np.pi/4)
+        elif "knee" in joint.lower():
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.5, r0=0.046, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.5, r0=0.046, alpha0=np.pi/4)
+        elif "ankle" in joint.lower() and "roll" in joint.lower():
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.055, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.055, alpha0=np.pi/4)
+        elif "ankle" in joint.lower() and "pitch" in joint.lower():
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.055, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.055, alpha0=np.pi/4)
+    return pam_dict
+
 def Sistema_Musculos_PAM_12(control_joint_names=None):
 
     pam_dict = {}
