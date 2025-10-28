@@ -41,7 +41,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
-                 vx_target: float = 0.6, # Bajar a 0.4 si da problemas
+                 vx_target: float = 1.2, # Bajar a 0.4 si da problemas
                  robot_name="2_legged_human_like_robot16DOF"):
         
         """
@@ -200,11 +200,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
        
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
-        max_step = 0.20 #SI sale mal probar 0.3 o 0.4
-        delta = np.clip(u_final - self.prev_action, -max_step, max_step)
+        #max_step = 0.20 #SI sale mal probar 0.3 o 0.4
+        #delta = np.clip(u_final - self.prev_action, -max_step, max_step)
         #delta = max_step * np.tanh(raw_delta / (max_step + 1e-6))
         
-        u_final = self.prev_action + delta
+        #u_final = self.prev_action + delta
         u_final = np.clip(u_final, 0.0, 1.0)
         self.prev_action = u_final.copy()
         self.ep_total_actions += 1

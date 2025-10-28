@@ -7,7 +7,7 @@ from pathlib import Path
 from enum import Enum
 from os import listdir
 
-from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12
+from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, Sistema_Musculos_PAM_12_done
 
 
 
@@ -128,6 +128,8 @@ def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_name
         return Sistema_Musculos_PAM_20(control_joint_names)
     elif "2_legged_human_like_robot12DOF" in robot_name:
         return Sistema_Musculos_PAM_12(control_joint_names)
+    #elif "2_legged_human_like_robot12DOF_done" in robot_name:
+    #    return Sistema_Musculos_PAM_12_done(control_joint_names)
     else:
         raise ValueError(f"Robot '{robot_name}' no soportado para sistema PAM.")
     
@@ -755,11 +757,11 @@ def calculate_robot_specific_joint_torques_24_pam(env, pam_pressures, robot_name
 
 
 def seleccionar_funcion_calculo_torques(env, pam_pressures):
-    if "2_legged_human_like_robot16DOF" in env.robot_name:
+    if "16DOF" in env.robot_name:
         return calculate_robot_specific_joint_torques_16_pam(env, pam_pressures)
-    elif "2_legged_human_like_robot20DOF" in env.robot_name:
+    elif "20DOF" in env.robot_name:
         return calculate_robot_specific_joint_torques_20_pam(env, pam_pressures)
-    elif "2_legged_human_like_robot12DOF" in env.robot_name:
+    elif "12DOF" in env.robot_name:
         return calculate_robot_specific_joint_torques_12_pam(env, pam_pressures)
     else:
         raise ValueError(f"Robot '{env.robot_name}' no soportado para sistema PAM.")

@@ -310,7 +310,7 @@ class Simplified_Lift_Leg_Trainer:
             'learning_rate': self.learning_rate,
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
-            'ent_coef': 0.015,          # Exploración moderada subir a 0.02 para mayor exploración
+            'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
             'n_steps': 1024//self.n_envs,            # 256 es bajo, subir a 1024 para secuencias más largas
             'batch_size': 512//self.n_envs,         # 128 subir a 512, multiplo de n_envs
             'n_epochs': 4,             # con n_epoch=3 hay menos pasadas
@@ -346,7 +346,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== CHECKPOINT CALLBACK =====
         
         # Sistemas antagónicos se benefician de checkpoints más frecuentes
-        checkpoint_freq = 100000//self.n_envs  # Cada 100k timesteps dividido por el número de entornos
+        checkpoint_freq = 200000//self.n_envs  # Cada 200k timesteps dividido por el número de entornos
         
         checkpoint_callback = CheckpointCallback(
             save_freq=checkpoint_freq,
