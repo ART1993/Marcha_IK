@@ -153,7 +153,7 @@ class SimpleProgressiveReward:
         self.dx = float(pos[0])
         self.dy = float(pos[1])
         # Caída
-        if pos[2] <= 0.5:
+        if pos[2] <= 0.6:
             self.last_done_reason = "fall"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
@@ -273,6 +273,16 @@ class SimpleProgressiveReward:
         
         reward= supervivencia + w_velocidad*reward_speed -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ 
                                                            w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo)
+        self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
+        self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
+        self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
+        self.reawrd_step['castigo_velocidad_y'] =  w_lateral*castigo_velocidad_lateral
+        #self.reawrd_step['castigo_grf']     = w_GRF * c_grf
+        #self.reawrd_step['reward_csp']     = w_csp * r_csp
+        #self.reawrd_step['reward_margin']  = w_marg* r_marg
+        self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
+        # self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        #tau y grf_excess_only son castigo de pain
         self.action_previous=action
         return float(reward)
     
