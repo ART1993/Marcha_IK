@@ -252,8 +252,8 @@ class SimpleProgressiveReward:
         w_velocidad=0.6
         w_altura=0.3
         # Este para las acciones de y
-        w_lateral=0.1
-        w_smooth=0.2
+        w_lateral=0.2
+        w_smooth=0.3
         w_activos = 0.2
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
@@ -294,7 +294,7 @@ class SimpleProgressiveReward:
         #actividad=np.asarray(action)
         #actividad_efectiva=float(np.mean(actividad**3))
         smooth_efectivo=float(np.mean(delta_p**2))
-        n_activos=float(np.mean(np.asarray(action) > 0.15))
+        n_activos=float(np.mean(np.asarray(action) > 0.20))
         return w_smooth*smooth_efectivo + n_activos*w_activos
     
     def reward_for_knees(self, torque_mapping,contact_feets):

@@ -908,7 +908,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.HIP_ROLL_FLEXOR_VARIATION = 0.008     # ±1.01cm variación por ángulo
         
         self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.052    
-        self.HIP_ROLL_EXTENSOR_VARIATION = 0.004 
+        self.HIP_ROLL_EXTENSOR_VARIATION = 0.006 
 
         self.HIP_PITCH_FLEXOR_BASE_ARM = 0.045
         self.HIP_PITCH_FLEXOR_VARIATION = 0.0085#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
@@ -921,11 +921,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         self.KNEE_EXTENSOR_BASE_ARM = 0.0620#0.0640     
         self.KNEE_EXTENSOR_VARIATION = 0.008#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
-
-        self.ankle_pitch_FLEXOR_BASE_ARM = 0.06     
+        # Cambiar a un valor más bajo si ese es el origen del problema
+        # Si está versión no sirve, reducir la variación del brazo.
+        self.ankle_pitch_FLEXOR_BASE_ARM = 0.04     
         self.ankle_pitch_FLEXOR_VARIATION = 0.018#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
 
-        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.064#0.055     
+        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044#0.055     
         self.ankle_pitch_EXTENSOR_VARIATION = 0.0145#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
         self.ankle_roll_FLEXOR_BASE_ARM = 0.05     

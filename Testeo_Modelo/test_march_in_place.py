@@ -63,7 +63,7 @@ def make_env(render=True, robot_name="2_legged_human_like_robot20DOF", simple_re
     )
     return env
 
-def run_test(episodes=5, render=True, max_steps=6000, best_model=BEST_PATH,
+def run_test(episodes=5, render=True, max_steps=6000, best_model=BEST_PATH,deterministic=True,
              robot_name="2_legged_human_like_robot20DOF", simple_reward_mode='march_in_place'):
     # 1) Crear env
     base = DummyVecEnv([lambda: make_env(render=render, robot_name=robot_name, simple_reward_mode=simple_reward_mode)])
@@ -85,7 +85,7 @@ def run_test(episodes=5, render=True, max_steps=6000, best_model=BEST_PATH,
         ep_ret = 0.0
         for t in range(max_steps):
             action, state = model.predict(
-                obs, state=state, episode_start=episode_starts, deterministic=True
+                obs, state=state, episode_start=episode_starts, deterministic=deterministic
             )
             obs, reward, dones, infos = base.step(action)
             episode_starts = dones
