@@ -155,11 +155,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         #ID Links de los pies (igual al de los tobillos)
 
-        self.swing_hip_target = 0.05
-        self.swing_hip_tol=0.10 
-
-        self.swing_knee_lo = 0.40
-        self.swing_knee_hi = 0.85
         # Añadir tracking de pierna levantada
         self.fixed_target_leg = fixed_target_leg
         self.raised_leg = self.fixed_target_leg  # 'left' o 'right' - cuál pierna está levantada
@@ -191,8 +186,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             3. ✅ Configuración de fricción en PyBullet
             4. ✅ Mejor integración con sistema de recompensas
         """
-        self.step_count += 1
-        self.step_total += 1
+        
         self.info = {"kpi": {}}
         # Obtengo posicion y orientación al inicio del paso
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
@@ -231,8 +225,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-
-        p.stepSimulation()
+        for _ in range(self.frame_skip):
+            self.step_count += 1
+            self.step_total += 1
+            p.stepSimulation()
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -259,12 +255,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #if self.simple_reward_system:
         # Joint indices 
         self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
-        
+        # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
-        # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
-       
-        
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
@@ -284,8 +277,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self._debug_joint_angles_and_pressures(info, u_final, done)
         
         self.debug_rewards()
-        
-        
         
         return observation, reward, done, False, info
     
@@ -362,7 +353,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     self.logger.log("main", f"📈 Episode {info['curriculum']['episodes']} | Nivel {info['curriculum']['level']} | Reward: {info['episode_reward']:.1f}")
         
         # === CSVLogger: volcado per-step (~10 Hz) ===
-        if (self.step_count % (self.frequency_simulation//10) == 0 or done) and self.simple_reward_system:
+        if (self.step_count % (self.frequency_simulation//self.frame_skip) == 0 or done) and self.simple_reward_system:
             if self.logger:
                 self.logger.log("main",f"🔍 Step {self.step_count} - Control Analysis:")
                 self.logger.log("main",f"   Height: {self.pos[2]:.2f}m")
@@ -446,7 +437,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         fuerzas_puntos=[cp[9] for cp in cps]
         num_contactos=len(fuerzas_puntos)
         F_total=sum(fuerzas_puntos)
-        if self.step_count % (self.frequency_simulation//10) == 0:  # Cada segundos aprox
+        if self.step_count % (self.frequency_simulation//self.frame_skip) == 0:  # Cada segundos aprox
             if self.logger:
                 self.logger.log("main",f"Contact force on link {link_id}: {F_total:.2f} N")
         if stable_foot:
@@ -493,58 +484,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 # ==================================================================================================================================================================== #
 # =================================================== Métodos de Aplicación de fuerzas PAM =========================================================================== #
 # ==================================================================================================================================================================== #
-    
-    def _apply_automatic_knee_control(self, base_torques):
-        """Control automático de la rodilla levantada basado en altura"""
-        
-        # Determinar qué pierna está levantada basado en contactos
-        left_contact  = self.contact_with_force(link_id=self.left_foot_link_id,  stable_foot=True,  min_F= 20.0)
-        right_contact = self.contact_with_force(link_id=self.right_foot_link_id,  stable_foot=True,  min_F= 20.0)
-
-        
-        
-        if left_contact and not right_contact:
-            # Pierna derecha levantada - controlar rodilla derecha (índice 3)
-            knee_joint_id = self.dict_joints["right_knee_joint"] #self.joint_indices[controlled_knee_idx]        # right_knee_joint en PyBullet
-            controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # right_knee en joint_torques ultimo valor
-        elif right_contact and not left_contact:
-            # Pierna izquierda levantada - controlar rodilla izquierda (índice 1)
-            knee_joint_id = self.dict_joints["left_knee_joint"] #self.joint_indices[controlled_knee_idx]        # left_knee_joint en PyBullet
-            controlled_knee_idx = self.joint_indices.index(knee_joint_id)  # left_knee en joint_torques  tercero
-        else:
-            # Ambas o ninguna - no aplicar control automático
-            return base_torques
-        # Obtener altura actual de la rodilla
-        #knee link state y posición
-        knee_state = p.getLinkState(self.robot_id, knee_joint_id)
-        current_knee_height = knee_state[0][2]
-        
-        # Control PD simple hacia altura objetivo
-        height_error = 0.6 - current_knee_height
-        # knee_joint_state y velocidad
-        knee_velocity = p.getJointState(self.robot_id, knee_joint_id)[1]
-        
-        # Torque de control automático
-        kp = self.KP  # Ganancia proporcional para h
-        kd = self.KD   # Ganancia derivativa de h
-        
-        control_torque = kp * height_error - kd * knee_velocity
-        
-        # Combinar con torque base (PAM) usando peso
-        base_torques[controlled_knee_idx] = (
-            0.4 * base_torques[controlled_knee_idx] +  # 40% PAM
-            0.6 * control_torque                        # 60% control automático
-        )
-
-        # Limitar torque final
-        max_knee_torque = self.MAX_REASONABLE_TORQUE
-        base_torques[controlled_knee_idx] = np.clip(
-            base_torques[controlled_knee_idx], 
-            -max_knee_torque, 
-            max_knee_torque
-        )
-        
-        return base_torques
 
     def _apply_pam_forces(self, pam_pressures):
         """
@@ -578,10 +517,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # NUEVA LÓGICA: Control automático de rodilla levantada
         joint_torques = seleccionar_funcion_calculo_torques(self, pam_pressures)
         # Activar control automatico de rodilla
-        #joint_torques = self._apply_automatic_knee_control(joint_torques)
 
         balance_info = self.current_balance_status
-        if self.step_count%(self.frequency_simulation//10)==0:
+        if self.step_count%(self.frequency_simulation//self.frame_skip)==0:
             if self.logger:
                 self.logger.log("main",f"Pierna de apoyo: {balance_info['support_leg']}")
                 self.logger.log("main",f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
@@ -856,7 +794,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        for _ in range(int(self.frequency_simulation//10)):
+        for _ in range(int(self.frame_skip)):
             p.stepSimulation()
 
         if self.zmp_calculator:
@@ -910,7 +848,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.052    
         self.HIP_ROLL_EXTENSOR_VARIATION = 0.006 
 
-        self.HIP_PITCH_FLEXOR_BASE_ARM = 0.045
+        self.HIP_PITCH_FLEXOR_BASE_ARM = 0.050
         self.HIP_PITCH_FLEXOR_VARIATION = 0.0085#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
         
         self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.054#0.0628    
@@ -924,10 +862,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Cambiar a un valor más bajo si ese es el origen del problema
         # Si está versión no sirve, reducir la variación del brazo.
         self.ankle_pitch_FLEXOR_BASE_ARM = 0.04     
-        self.ankle_pitch_FLEXOR_VARIATION = 0.018#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+        self.ankle_pitch_FLEXOR_VARIATION = 0.010#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
 
         self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044#0.055     
-        self.ankle_pitch_EXTENSOR_VARIATION = 0.0145#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+        self.ankle_pitch_EXTENSOR_VARIATION = 0.012#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
         self.ankle_roll_FLEXOR_BASE_ARM = 0.05     
         self.ankle_roll_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
@@ -1059,7 +997,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
-        if self.step_count % (self.frequency_simulation//10) == 0 or done:  # Cada segundo aprox
+        if self.step_count % (self.frequency_simulation//self.frame_skip) == 0 or done:  # Cada segundo aprox
             try:
                 if self.csvlog:
                     row_com={"step": int(self.step_count),
@@ -1120,7 +1058,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 print(f"   ❌ Debug error: {e}")
 
     def debug_rewards(self):
-        if self.step_count % 10==0 and len(self.reawrd_step)>0:
+        if self.step_count % self.frame_skip==0 and len(self.reawrd_step)>0:
             if self.csvlog:
                 row_rewards={
                     "step":self.step_count,
