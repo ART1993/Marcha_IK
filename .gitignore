@@ -7,3 +7,4 @@
 Creacion_CSV_Blender/CSV_creator.py
 *.png
 *\venv*
+parametros_Robot.txt
