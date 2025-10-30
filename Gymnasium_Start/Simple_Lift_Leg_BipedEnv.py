@@ -191,7 +191,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Obtengo posicion y orientación al inicio del paso
         self.pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         self.euler = p.getEulerFromQuaternion(orn)
-       
+        self.step_count += 1
+        self.step_total += 1
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
         #max_step = 0.20 #SI sale mal probar 0.3 o 0.4
@@ -226,8 +227,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 force=torque
             )
         for _ in range(self.frame_skip):
-            self.step_count += 1
-            self.step_total += 1
+            
             p.stepSimulation()
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
