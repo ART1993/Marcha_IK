@@ -200,8 +200,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #delta = max_step * np.tanh(raw_delta / (max_step + 1e-6))
         
         #u_final = self.prev_action + delta
-        u_final = np.clip(u_final, 0.0, 1.0)
-        self.prev_action = u_final.copy()
+        # u_final = np.clip(u_final, 0.0, 1.0)
+        
         self.ep_total_actions += 1
 
         # ===== NORMALIZAR Y VALIDAR ACCIÓN =====
@@ -258,7 +258,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
-        
+        self.prev_action = u_final.copy()
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
         
