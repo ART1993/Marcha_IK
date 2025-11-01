@@ -76,7 +76,10 @@ def run_test(episodes=5, render=True, max_steps=6000, best_model=BEST_PATH,deter
 
     # 3) Cargar modelo
     model = RecurrentPPO.load(best_model, env=base, device='auto')
-
+    p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+    p.configureDebugVisualizer(p.COV_ENABLE_RGB_BUFFER_PREVIEW, 0)
+    p.configureDebugVisualizer(p.COV_ENABLE_DEPTH_BUFFER_PREVIEW, 0)
+    p.configureDebugVisualizer(p.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, 0)
     # 4) Rollouts deterministas
     for ep in range(episodes):
         obs = base.reset()

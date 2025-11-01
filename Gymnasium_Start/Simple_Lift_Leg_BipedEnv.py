@@ -226,9 +226,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-        for _ in range(self.frame_skip):
-            
-            p.stepSimulation()
+        self.sim_time += self.dt
+        p.stepSimulation()
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -255,6 +254,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #if self.simple_reward_system:
         # Joint indices 
         self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
+        self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
+        self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
+        cmd_speed = float(np.hypot(self.vx_target, 0.0))
+        self.left_timer.update(self.L_in, cmd_speed)
+        self.right_timer.update(self.R_in, cmd_speed)
+        # opcional: incluir en info
+        info["kpi"]["air_time_L"] = float(self.left_timer.air_time_last)
+        info["kpi"]["air_time_R"] = float(self.right_timer.air_time_last)
+        info["kpi"]["phase_L"]    = float(self.left_timer.phase)
+        info["kpi"]["phase_R"]    = float(self.right_timer.phase)
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
@@ -454,6 +463,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         F_total=sum(fuerzas_puntos)
         fuerza_contacto_y_puntos=(num_contactos, F_total)
         return fuerza_contacto_y_puntos
+    
+    def pie_tocando_suelo(self, robot_id, foot_link, fz_min=5.0):
+        return any(cp[9] > fz_min for cp in p.getContactPoints(bodyA=robot_id, linkIndexA=foot_link))
     
     def foot_contact_state(self, link_id:int, f_min:float=20.0, n_touch:int=2):
         """
@@ -671,6 +683,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.resetSimulation()
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(self.time_step)
+        try:
+            self.dt = p.getPhysicsEngineParameters().get('fixedTimeStep', self.time_step)
+        except Exception:
+            self.dt = self.time_step
+        self.sim_time = 0.0
+        self.left_timer  = FootPhaseTimer(self.dt)
+        self.right_timer = FootPhaseTimer(self.dt)
         
         # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
@@ -795,6 +814,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
         for _ in range(int(self.frame_skip)):
+
             p.stepSimulation()
 
         if self.zmp_calculator:
@@ -862,15 +882,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Cambiar a un valor más bajo si ese es el origen del problema
         # Si está versión no sirve, reducir la variación del brazo.
         self.ankle_pitch_FLEXOR_BASE_ARM = 0.04     
-        self.ankle_pitch_FLEXOR_VARIATION = 0.010#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+        self.ankle_pitch_FLEXOR_VARIATION = 0.0102#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
 
         self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044#0.055     
-        self.ankle_pitch_EXTENSOR_VARIATION = 0.012#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+        self.ankle_pitch_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
-        self.ankle_roll_FLEXOR_BASE_ARM = 0.05     
+        self.ankle_roll_FLEXOR_BASE_ARM = 0.04     
         self.ankle_roll_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
 
-        self.ankle_roll_EXTENSOR_BASE_ARM = 0.054#0.055     
+        self.ankle_roll_EXTENSOR_BASE_ARM = 0.044#0.055     
         self.ankle_roll_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
 
         
@@ -1179,4 +1199,24 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
 
 
-
+#Se usa para dar un periodo al paso del pie durante recompensas
+class FootPhaseTimer:
+    def __init__(self, dt, f_swing_hz=1.5, z_mid=0.03, z_amp=0.04):
+        self.dt=dt; self.set_freq(f_swing_hz)
+        self.z_mid=z_mid; self.z_amp=z_amp
+        self.is_contact=True; self.prev_contact=True
+        self.phase=0.0; self.t_swing=0.0; self.air_time_last=0.0
+        self.touchdown_event=False; self.liftoff_event=False
+    def set_freq(self, f): self.f_swing_hz=float(np.clip(f,0.6,3.0)); self.omega=2*np.pi*self.f_swing_hz
+    def update(self, in_contact, cmd_speed=None):
+        if cmd_speed is not None: self.set_freq(0.8 + 1.5*abs(cmd_speed))
+        self.prev_contact=self.is_contact; self.is_contact=bool(in_contact)
+        self.touchdown_event=(not self.prev_contact) and self.is_contact
+        self.liftoff_event  = self.prev_contact and (not self.is_contact)
+        if not self.is_contact:
+            if self.liftoff_event: self.phase=0.0; self.t_swing=0.0
+            else: self.phase=(self.phase + self.omega*self.dt)%(2*np.pi); self.t_swing+=self.dt
+        elif self.touchdown_event:
+            self.air_time_last=self.t_swing; self.phase=0.0; self.t_swing=0.0
+    def z_ref(self):
+        return self.z_mid + 0.5*self.z_amp*(1 - np.cos(self.phase))

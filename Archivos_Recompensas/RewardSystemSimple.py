@@ -257,6 +257,8 @@ class SimpleProgressiveReward:
         w_activos = 0.2
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
+        #Recompensas de ciclo del pie
+        w_phase, w_air, w_slip = 0.3, 0.2, 0.2
         # Recompensa velocidad
         if 0<=vx<vcmd:
             reward_speed= np.exp(-(vx-vcmd)**2)
@@ -270,21 +272,58 @@ class SimpleProgressiveReward:
         castigo_velocidad_lateral=(vy)**2
 
         castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
+
+        L = self.env.left_foot_link_id;  R = self.env.right_foot_link_id
+        r_phase = (
+            self.feet_phase_reward(L, self.env.left_timer) +
+            self.feet_phase_reward(R, self.env.right_timer)
+        )
+        r_air = (
+            self.feet_airtime_reward(self.env.left_timer) +
+            self.feet_airtime_reward(self.env.right_timer)
+        )
+        c_slip = self.foot_slip_penalty()  # coste (positivo) → restar
+
+        recompensa_fase=w_phase*r_phase
+        recompensa_t_aire=w_air*r_air
+        castigo_deslizante=w_slip*c_slip
         
-        reward= supervivencia + w_velocidad*reward_speed -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ 
-                                                           w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo)
+        reward= ((supervivencia + w_velocidad*reward_speed+ recompensa_fase + recompensa_t_aire) 
+                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ castigo_deslizante +
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
         self.reawrd_step['castigo_velocidad_y'] =  w_lateral*castigo_velocidad_lateral
-        #self.reawrd_step['castigo_grf']     = w_GRF * c_grf
-        #self.reawrd_step['reward_csp']     = w_csp * r_csp
-        #self.reawrd_step['reward_margin']  = w_marg* r_marg
         self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
-        # self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        self.reawrd_step['recompensa_fase'] = recompensa_fase
+        self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
+        self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
         #tau y grf_excess_only son castigo de pain
         self.action_previous=action
         return float(reward)
+    
+    def foot_slip_penalty(self):
+        left_foot_id, right_foot_id = self.foot_links
+        def slip_for(foot_id, in_contact):
+            if not in_contact: return 0.0
+            ls = p.getLinkState(self.robot_id, foot_id, computeLinkVelocity=1)
+            v = np.array(ls[6]); w = np.array(ls[7])
+            return float(np.dot(v[:2], v[:2]) + 0.1*np.dot(w[:2], w[:2]))
+        L_in = self.env.foot_in_contact(self.robot_id, left_foot_id)
+        R_in = self.env.foot_in_contact(self.robot_id, right_foot_id)
+        return slip_for(left_foot_id, L_in) + slip_for(right_foot_id, R_in)
+    
+    def feet_phase_reward(self, foot_link, timer, sigma_z=0.01):
+        z_real = p.getLinkState(self.robot_id, foot_link, computeForwardKinematics=True)[0][2]
+        if timer.is_contact: return 0.0
+        z_err = z_real - timer.z_ref()
+        return float(np.exp(- (z_err*z_err) / (2*sigma_z*sigma_z)))
+
+    def feet_airtime_reward(self, timer, t_thresh=0.25, k=1.0):
+        if timer.touchdown_event:
+            return float(k * max(0.0, timer.air_time_last - t_thresh))
+        return 0.0
     
     def castigo_effort(self,action, w_smooth, w_activos):
         # Suavidad en presiones (acciones en [0,1])
