@@ -259,11 +259,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         cmd_speed = float(np.hypot(self.vx_target, 0.0))
         self.left_timer.update(self.L_in, cmd_speed)
         self.right_timer.update(self.R_in, cmd_speed)
-        # opcional: incluir en info
-        info["kpi"]["air_time_L"] = float(self.left_timer.air_time_last)
-        info["kpi"]["air_time_R"] = float(self.right_timer.air_time_last)
-        info["kpi"]["phase_L"]    = float(self.left_timer.phase)
-        info["kpi"]["phase_R"]    = float(self.right_timer.phase)
+        
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
         reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
@@ -351,6 +347,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         }
             # Debug simple
             info = self.info_pam_torque(info)
+            # opcional: incluir en info
+            info["kpi"]["air_time_L"] = float(self.left_timer.air_time_last)
+            info["kpi"]["air_time_R"] = float(self.right_timer.air_time_last)
+            info["kpi"]["phase_L"]    = float(self.left_timer.phase)
+            info["kpi"]["phase_R"]    = float(self.right_timer.phase)
             if done:
                 info["ep_kpi"] = {
                                     "ep_return": float(self.episode_reward),

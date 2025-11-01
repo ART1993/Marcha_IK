@@ -80,6 +80,7 @@ def run_test(episodes=5, render=True, max_steps=6000, best_model=BEST_PATH,deter
     p.configureDebugVisualizer(p.COV_ENABLE_RGB_BUFFER_PREVIEW, 0)
     p.configureDebugVisualizer(p.COV_ENABLE_DEPTH_BUFFER_PREVIEW, 0)
     p.configureDebugVisualizer(p.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, 0)
+    p.configureDebugVisualizer(p.COV_ENABLE_MOUSE_PICKING, 0) 
     # 4) Rollouts deterministas
     for ep in range(episodes):
         obs = base.reset()

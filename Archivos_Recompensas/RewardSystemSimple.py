@@ -273,10 +273,10 @@ class SimpleProgressiveReward:
 
         castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
 
-        L = self.env.left_foot_link_id;  R = self.env.right_foot_link_id
+        self.left_foot_id = self.foot_links[0];  self.right_foot_id = self.foot_links[1]
         r_phase = (
-            self.feet_phase_reward(L, self.env.left_timer) +
-            self.feet_phase_reward(R, self.env.right_timer)
+            self.feet_phase_reward(self.left_foot_id, self.env.left_timer) +
+            self.feet_phase_reward(self.right_foot_id, self.env.right_timer)
         )
         r_air = (
             self.feet_airtime_reward(self.env.left_timer) +
@@ -310,8 +310,8 @@ class SimpleProgressiveReward:
             ls = p.getLinkState(self.robot_id, foot_id, computeLinkVelocity=1)
             v = np.array(ls[6]); w = np.array(ls[7])
             return float(np.dot(v[:2], v[:2]) + 0.1*np.dot(w[:2], w[:2]))
-        L_in = self.env.foot_in_contact(self.robot_id, left_foot_id)
-        R_in = self.env.foot_in_contact(self.robot_id, right_foot_id)
+        L_in = self.env.L_in
+        R_in = self.env.R_in
         return slip_for(left_foot_id, L_in) + slip_for(right_foot_id, R_in)
     
     def feet_phase_reward(self, foot_link, timer, sigma_z=0.01):
