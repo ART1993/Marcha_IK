@@ -249,6 +249,7 @@ class SimpleProgressiveReward:
         vy = float(self.vel_COM[1])
         z_star = getattr(self, "init_com_z", 0.89)
         vcmd = float(getattr(self, "_vx_target",0.6))
+        #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.6
         w_altura=0.3
         # Este para las acciones de y
@@ -288,8 +289,8 @@ class SimpleProgressiveReward:
         recompensa_t_aire=w_air*r_air
         castigo_deslizante=w_slip*c_slip
         
-        reward= ((supervivencia + w_velocidad*reward_speed+ recompensa_fase + recompensa_t_aire) 
-                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ castigo_deslizante +
+        reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
+                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ #castigo_deslizante +
                     w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
@@ -398,43 +399,11 @@ class SimpleProgressiveReward:
             - Devuelve un valor en [0,1] (1 = nada de dolor).
             - Fallback a clip global si no hay mapas.
         """
-        env = self.env
+        
         # 1) ¿Tenemos mapas de límite por ángulo?
-        has_maps = hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0
-        # 2) Estados actuales de las articulaciones (para θ)
-        try:
-            joint_states = p.getJointStates(env.robot_id, env.joint_indices)
-            joint_positions = [float(s[0]) for s in joint_states]
-        except Exception:
-            joint_positions = None
-            has_maps = False
+        tau_utils = self.env.torque_max_generation(torque_mapping=torque_mapping)
 
-        tau_utils = []
-        if has_maps and joint_positions is not None:
-            # === Utilización con límites asimétricos dependientes de θ
-            for i, jid in enumerate(env.joint_indices):
-                tau_cmd = float(torque_mapping.get(jid, 0.0))
-                th_i = joint_positions[i]
-                lims = env.tau_limit_interp.get(jid, None)
-                if lims is None:
-                    continue
-                # límites positivos/negativos en el ángulo actual
-                tau_flex_max = max(0.0, float(lims["flex"](th_i)))  # + (flex)
-                tau_ext_max  = max(0.0, float(lims["ext"](th_i)))   # - (ext)
-                denom = tau_flex_max if tau_cmd >= 0.0 else tau_ext_max
-                denom = max(denom, 1e-6)  # seguridad
-                tau_utils.append(abs(tau_cmd) / denom)
-        else:
-            # === Fallback: escalado global previo
-            joint_tau_scale = getattr(env, "joint_tau_scale", None)
-            max_reasonable = float(getattr(env, "MAX_REASONABLE_TORQUE", 240.0))
-            for jid, tau_cmd in torque_mapping.items():
-                scale = max_reasonable
-                if isinstance(joint_tau_scale, dict):
-                    scale = float(joint_tau_scale.get(jid, max_reasonable))
-                tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
-
-        if not tau_utils:
+        if len(tau_utils)==0:
             return 1.0  # sin info → sin dolor
 
         # 3) Agregación tipo RMS de utilización
