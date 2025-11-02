@@ -1,0 +1,466 @@
+{
+    "0": {
+        "index": 0,
+        "name": "LeftHipRoll",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3927,
+        "upper_limit": 0.3927,
+        "max_force": 4.5,
+        "max_velocity": 12.15,
+        "link_name": "lefthiproll",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            -0.09966,
+            0.134654,
+            -0.02841
+        ],
+        "parent_frame_orn": [
+            0.0,
+            -0.7071067811865477,
+            0.0,
+            0.7071067811865474
+        ],
+        "parent_index": -1
+    },
+    "1": {
+        "index": 1,
+        "name": "LeftHipYaw",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3927,
+        "upper_limit": 0.3927,
+        "max_force": 4.5,
+        "max_velocity": 12.15,
+        "link_name": "lefthipyaw",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.10793,
+            -0.0001,
+            -0.0257
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.7071067811865477,
+            0.0,
+            0.7071067811865474
+        ],
+        "parent_index": 0
+    },
+    "2": {
+        "index": 2,
+        "name": "LeftHipPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.8727,
+        "upper_limit": 1.3963,
+        "max_force": 12.2,
+        "max_velocity": 8.5,
+        "link_name": "lefthippitch",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.0,
+            0.0,
+            -0.0557
+        ],
+        "parent_frame_orn": [
+            -0.5,
+            -0.5,
+            0.49999999999755174,
+            0.5000000000024483
+        ],
+        "parent_index": 1
+    },
+    "3": {
+        "index": 3,
+        "name": "LeftKneePitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.8623,
+        "upper_limit": -0.95,
+        "max_force": 12.2,
+        "max_velocity": 8.5,
+        "link_name": "leftknee",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.06054,
+            -5e-05,
+            0.04031
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 2
+    },
+    "4": {
+        "index": 4,
+        "name": "LeftShinPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3,
+        "upper_limit": 0.3,
+        "max_force": 0.0,
+        "max_velocity": 20.0,
+        "link_name": "leftshin",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.014817999999999998,
+            0.006170700000000001,
+            0.0016676
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 3
+    },
+    "5": {
+        "index": 5,
+        "name": "LeftTarsusPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": 0.75,
+        "upper_limit": 3.0,
+        "max_force": 0.0,
+        "max_velocity": 20.0,
+        "link_name": "lefttarsus",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.25138,
+            0.018831,
+            -0.0002123
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 4
+    },
+    "6": {
+        "index": 6,
+        "name": "LeftAchillesSpring",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3,
+        "upper_limit": 0.3,
+        "max_force": 0.0,
+        "max_velocity": 20.0,
+        "link_name": "leftheelspring",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            -0.133837466,
+            -0.008001386409999998,
+            -0.00233857427
+        ],
+        "parent_frame_orn": [
+            0.010860502246752089,
+            -0.03755586389655682,
+            0.9770581963778553,
+            -0.2093534988214526
+        ],
+        "parent_index": 5
+    },
+    "7": {
+        "index": 7,
+        "name": "LeftFootPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.4435,
+        "upper_limit": -0.5236,
+        "max_force": 0.9,
+        "max_velocity": 11.52,
+        "link_name": "leftfoot",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.286852534,
+            -0.01741138641,
+            -0.00325857427
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 5
+    },
+    "8": {
+        "index": 8,
+        "name": "RightHipRoll",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3927,
+        "upper_limit": 0.3927,
+        "max_force": 4.5,
+        "max_velocity": 12.15,
+        "link_name": "righthiproll",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            -0.09966,
+            -0.13534600000000002,
+            -0.02841
+        ],
+        "parent_frame_orn": [
+            0.0,
+            -0.7071067811865477,
+            0.0,
+            0.7071067811865474
+        ],
+        "parent_index": -1
+    },
+    "9": {
+        "index": 9,
+        "name": "RightHipYaw",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3927,
+        "upper_limit": 0.3927,
+        "max_force": 4.5,
+        "max_velocity": 12.15,
+        "link_name": "righthipyaw",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.10793,
+            0.0001,
+            -0.0257
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.7071067811865477,
+            0.0,
+            0.7071067811865474
+        ],
+        "parent_index": 8
+    },
+    "10": {
+        "index": 10,
+        "name": "RightHipPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.8727,
+        "upper_limit": 1.3963,
+        "max_force": 12.2,
+        "max_velocity": 8.5,
+        "link_name": "righthippitch",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.0,
+            0.0,
+            -0.0557
+        ],
+        "parent_frame_orn": [
+            -0.5,
+            -0.5,
+            0.49999999999755174,
+            0.5000000000024483
+        ],
+        "parent_index": 9
+    },
+    "11": {
+        "index": 11,
+        "name": "RightKneePitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.8623,
+        "upper_limit": -0.95,
+        "max_force": 12.2,
+        "max_velocity": 8.5,
+        "link_name": "rightknee",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.06054,
+            -5e-05,
+            -0.04031
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 10
+    },
+    "12": {
+        "index": 12,
+        "name": "RightShinPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3,
+        "upper_limit": 0.3,
+        "max_force": 0.0,
+        "max_velocity": 20.0,
+        "link_name": "rightshin",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.014817999999999998,
+            0.006170700000000001,
+            -0.0016676
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 11
+    },
+    "13": {
+        "index": 13,
+        "name": "RightTarsusPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": 0.75,
+        "upper_limit": 3.0,
+        "max_force": 0.0,
+        "max_velocity": 20.0,
+        "link_name": "righttarsus",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.25138,
+            0.018831,
+            0.0002123
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 12
+    },
+    "14": {
+        "index": 14,
+        "name": "RightAchillesSpring",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -0.3,
+        "upper_limit": 0.3,
+        "max_force": 0.0,
+        "max_velocity": 20.0,
+        "link_name": "rightheelspring",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            -0.133837466,
+            -0.008001386409999998,
+            0.00233857427
+        ],
+        "parent_frame_orn": [
+            -0.010860502246752089,
+            0.03755586389655682,
+            0.9770581963778553,
+            -0.2093534988214526
+        ],
+        "parent_index": 13
+    },
+    "15": {
+        "index": 15,
+        "name": "RightFootPitch",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.4435,
+        "upper_limit": -0.5236,
+        "max_force": 0.9,
+        "max_velocity": 11.52,
+        "link_name": "rightfoot",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            0.286852534,
+            -0.01741138641,
+            0.00325857427
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 13
+    }
+}

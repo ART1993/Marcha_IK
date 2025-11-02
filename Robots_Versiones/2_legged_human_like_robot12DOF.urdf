@@ -49,7 +49,7 @@
   <joint name="left_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="left_hip_pitch_link"/>
-    <origin xyz="0 0.25 -0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 0.3 -0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
     <limit lower=" -1.2" upper="1.2" effort="120" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
@@ -231,7 +231,7 @@
   <joint name="right_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="right_hip_pitch_link"/>
-    <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>  
+    <origin xyz="0 -0.3 -0.0" rpy="0 0 0"/>  
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
     <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>

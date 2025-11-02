@@ -174,7 +174,7 @@ class SimpleProgressiveReward:
             return True
 
         # Tiempo máximo (crece con nivel)
-        max_steps =  6000 # 6000 steps
+        max_steps =  2000 # 2000 steps Creo que me he excedido con 6000 steps. Reducir a 2000 en un futuro
         if step_count >= max_steps:
             self.last_done_reason = "time"
             if self.env.logger:
@@ -274,20 +274,20 @@ class SimpleProgressiveReward:
 
         castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
 
-        self.left_foot_id = self.foot_links[0];  self.right_foot_id = self.foot_links[1]
-        r_phase = (
-            self.feet_phase_reward(self.left_foot_id, self.env.left_timer) +
-            self.feet_phase_reward(self.right_foot_id, self.env.right_timer)
-        )
-        r_air = (
-            self.feet_airtime_reward(self.env.left_timer) +
-            self.feet_airtime_reward(self.env.right_timer)
-        )
-        c_slip = self.foot_slip_penalty()  # coste (positivo) → restar
+        #self.left_foot_id = self.foot_links[0];  self.right_foot_id = self.foot_links[1]
+        # r_phase = (
+        #     self.feet_phase_reward(self.left_foot_id, self.env.left_timer) +
+        #     self.feet_phase_reward(self.right_foot_id, self.env.right_timer)
+        # )
+        # r_air = (
+        #     self.feet_airtime_reward(self.env.left_timer) +
+        #     self.feet_airtime_reward(self.env.right_timer)
+        # )
+        # c_slip = self.foot_slip_penalty()  # coste (positivo) → restar
 
-        recompensa_fase=w_phase*r_phase
-        recompensa_t_aire=w_air*r_air
-        castigo_deslizante=w_slip*c_slip
+        # recompensa_fase=w_phase*r_phase
+        # recompensa_t_aire=w_air*r_air
+        # castigo_deslizante=w_slip*c_slip
         
         reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
                   -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ #castigo_deslizante +
@@ -297,8 +297,8 @@ class SimpleProgressiveReward:
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
         self.reawrd_step['castigo_velocidad_y'] =  w_lateral*castigo_velocidad_lateral
         self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
-        self.reawrd_step['recompensa_fase'] = recompensa_fase
-        self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
+        # self.reawrd_step['recompensa_fase'] = recompensa_fase
+        # self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
         self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
         #tau y grf_excess_only son castigo de pain
         self.action_previous=action
