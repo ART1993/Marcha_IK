@@ -434,7 +434,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.plane_id,
             -1,                         # -1 for base link
             lateralFriction=0.9,        # Fricción estándar del suelo 0.6
-            spinningFriction=0.2,
+            spinningFriction=0.05,
             rollingFriction=0.005
         )
         
@@ -875,6 +875,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.054#0.0628    
         self.HIP_PITCH_EXTENSOR_VARIATION = 0.007#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
 
+        self.HIP_YAW_FLEXOR_BASE_ARM = 0.048
+        self.HIP_YAW_FLEXOR_VARIATION = 0.0080#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        
+        self.HIP_YAW_EXTENSOR_BASE_ARM = 0.05#0.0628    
+        self.HIP_YAW_EXTENSOR_VARIATION = 0.0065#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+
         self.KNEE_FLEXOR_BASE_ARM = 0.0566     
         self.KNEE_FLEXOR_VARIATION = 0.010#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)  
 
@@ -908,12 +914,38 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        self.MAX_REASONABLE_TORQUE = 240.0     # N⋅m (factor de seguridad incluido)
+        self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
+        self.MAX_REASONABLE_TORQUE_FEET = 75.0
         self.joint_tau_scale = {}
-        max_reasonable = self.MAX_REASONABLE_TORQUE
+        #control_joint_names
         for jid in self.joint_indices:
             # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
-            self.joint_tau_scale[jid] = max_reasonable
+            if "ankle" in self.control_joint_names[jid]:
+                self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
+            else:
+                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
+
+    def hip_yaw_flexor_moment_arm(self, angle):
+        """
+        Momento de brazo del flexor de cadera específico para tu robot.
+        Basado en geometría real: circunferencia muslo = 0.503m
+        """
+        # Flexor más efectivo cuando cadera está extendida (ángulo negativo)
+        angle_factor = np.cos(angle + np.pi/6.0)  # Desplazamiento para peak en extensión
+        return self.HIP_ROLL_FLEXOR_BASE_ARM + self.HIP_ROLL_FLEXOR_VARIATION * angle_factor
+    
+    def hip_yaw_extensor_moment_arm(self, angle):
+        """
+        Momento de brazo del extensor de cadera (glúteos).
+        Más efectivo en rango medio de flexión.
+        """
+        # Extensor más efectivo en flexión ligera-moderada
+        angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
+        R_raw = self.HIP_ROLL_EXTENSOR_BASE_ARM + self.HIP_ROLL_EXTENSOR_VARIATION * angle_factor
+        # theta_cut, slope = -0.15, 0.08
+        # sig = 1.0 / (1.0 + np.exp((angle - theta_cut)/slope))   # ~1 si angle << theta_cut
+        # atten = 0.60 + 0.40 * (1.0 - sig)  # → 0.60 en negativos, → 1.0 en positivos
+        return R_raw
 
     def hip_roll_flexor_moment_arm(self, angle):
         """
@@ -1030,9 +1062,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     # row_v_angle={"step": int(self.step_count),
                     #             "episode": int(self.n_episodes),
                     #             "t": round(self.step_count / self.frequency_simulation, 5),}
-                    # row_torque_angle={"step": int(self.step_count),
-                    #             "episode": int(self.n_episodes),
-                    #             "t": round(self.step_count / self.frequency_simulation, 5),}
+                    row_torque_angle={"step": int(self.step_count),
+                                 "episode": int(self.n_episodes),
+                                 "t": round(self.step_count / self.frequency_simulation, 5),}
                     # row_force_angle={"step": int(self.step_count),
                     #             "episode": int(self.n_episodes),
                     #             "t": round(self.step_count / self.frequency_simulation, 5),}
@@ -1043,10 +1075,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         pos, vel, reaction, applied = state
                         Fx,Fy,Fz,Mx,My,Mz = reaction
                         # row_q_angle[f"q_{name}"]=round(pos,3)
-                        # row_v_angle[f"vel_{name}"]=round(vel,3)
-                        # row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
-                        # row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
-                        # row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
+                        #row_v_angle[f"vel_{name}"]=round(vel,3)
+                        row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
+                        row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
+                        row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
                         # row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
                         # row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
                         # row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
@@ -1070,7 +1102,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     self.csvlog.write("COM_values", row_com)
                     # self.csvlog.write("angle_values", row_q_angle)
                     # self.csvlog.write("speed_values", row_v_angle)
-                    # self.csvlog.write("torque_values", row_torque_angle)
+                    self.csvlog.write("torque_values", row_torque_angle)
                     # self.csvlog.write("force_values", row_force_angle)
                     self.csvlog.write("pressure", row_pressure_PAM)
 
@@ -1233,7 +1265,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 if isinstance(joint_tau_scale, dict):
                     scale = float(joint_tau_scale.get(jid, max_reasonable))
                 tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
-        print(tau_max_values)
         return tau_utils
     
 
