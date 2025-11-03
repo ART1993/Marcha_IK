@@ -9,7 +9,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.3 0.1"/>  <!-- Reducido tamaño de la caja A ver si el problema tiene que ver con el COM -->
+        <box size="0.3 0.6 0.1"/>  <!-- aumentado el tamaño de la caja para ver si mejora el entrenamiento Quizas con mayores dimensiones mejora el movimiento -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.3 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.3 0.6 0.1"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
@@ -49,7 +49,7 @@
   <joint name="left_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="left_hip_pitch_link"/>
-    <origin xyz="0 0.15 -0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 0.3 -0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
     <limit lower=" -1.2" upper="1.2" effort="120" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
@@ -91,13 +91,13 @@
   <!-- Link: Left Thigh -->
   <link name="left_thigh_link">
     <inertial>
-      <mass value="2.0"/>
+      <mass value="3.0"/>
       <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <cylinder radius="0.06" length="0.6"/>
+        <cylinder radius="0.08" length="0.6"/>
       </geometry>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
       <material name="blue">
@@ -106,7 +106,7 @@
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.06" length="0.6"/>
+        <cylinder radius="0.08" length="0.6"/>
       </geometry>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
@@ -129,7 +129,7 @@
   <!-- Link: Left Shin -->
   <link name="left_shin_link">
     <inertial>
-      <mass value="2.0"/>
+      <mass value="3.0"/>
       <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
       <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </inertial>
@@ -231,7 +231,7 @@
   <joint name="right_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="right_hip_pitch_link"/>
-    <origin xyz="0 -0.15 -0.0" rpy="0 0 0"/>  
+    <origin xyz="0 -0.3 -0.0" rpy="0 0 0"/>  
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
     <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>
@@ -260,13 +260,13 @@
   <!-- Link: Right Thigh -->
   <link name="right_thigh_link">
     <inertial>
-      <mass value="2.0"/>
+      <mass value="3.0"/>
       <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <cylinder radius="0.06" length="0.6"/>
+        <cylinder radius="0.08" length="0.6"/>
       </geometry>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
       <material name="blue">
@@ -275,7 +275,7 @@
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.06" length="0.6"/>
+        <cylinder radius="0.08" length="0.6"/>
       </geometry>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
@@ -295,7 +295,7 @@
   <!-- Link: Right Shin -->
   <link name="right_shin_link">
     <inertial>
-      <mass value="2.0"/>
+      <mass value="3.0"/>
       <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
       <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </inertial>
