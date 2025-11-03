@@ -9,7 +9,7 @@
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.3 0.1"/>  <!-- Reducido tamaño de la caja A ver si el problema tiene que ver con el COM -->
+        <box size="0.15 0.15 0.15"/>  <!-- Reducido tamaño de la caja A ver si el problema tiene que ver con el COM -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.3 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.15 0.15 0.15"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
@@ -49,9 +49,9 @@
   <joint name="left_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="left_hip_pitch_link"/>
-    <origin xyz="0 0.15 -0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 0.075 0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
-    <limit lower=" -1.2" upper="1.2" effort="120" velocity="6.0"/>
+    <limit lower=" -1.2" upper="1.2" effort="200" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
@@ -67,7 +67,7 @@
     <child  link="left_thigh_link"/>
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="200" velocity="6.0"/>
     <dynamics damping="0.15" friction="0.0"/>
   </joint>
 
@@ -231,10 +231,10 @@
   <joint name="right_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="right_hip_pitch_link"/>
-    <origin xyz="0 -0.15 -0.0" rpy="0 0 0"/>  
+    <origin xyz="0 -0.075 -0.0" rpy="0 0 0"/>  
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
-    <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>
+    <limit lower="-1.2" upper="1.2" effort="200" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
@@ -252,7 +252,7 @@
     <child  link="right_thigh_link"/>
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="200" velocity="6.0"/>
     <dynamics damping="0.15" friction="0.0"/>
   </joint>
 
@@ -288,7 +288,7 @@
     <child link="right_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <limit lower="0" upper="1.571" effort="200" velocity="6.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 

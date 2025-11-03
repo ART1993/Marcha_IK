@@ -111,10 +111,10 @@ class Simplified_Lift_Leg_Trainer:
                  resume_from=None,
                  logger=None,
                  csvlog=None,
-                 robot_name="2_legged_human_like_robot16DOF",
-                 _simple_reward_mode="progressive",  # Modo de recompensa por defecto
+                 robot_name="2_legged_minihuman_legs_robot12DOF",
+                 _simple_reward_mode="walk3d",  # Modo de recompensa por defecto
                  _allow_hops=False,
-                 _vx_target=0.6
+                 _vx_target=0.5
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -174,8 +174,8 @@ class Simplified_Lift_Leg_Trainer:
         self.env_config = {
                 'clip_obs': 10.0,      
                 'clip_reward': 10.0,
-                'model_prefix': 'Walker_6DOF_3D',
-                'description': 'lift_legs with 12 PAMs + Auto Knee Control'
+                'model_prefix': 'MiniWalker_12DOF_3D',
+                'description': 'mini-biped 12 PAMs, WALK3D default'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -304,15 +304,15 @@ class Simplified_Lift_Leg_Trainer:
         if model is not None:
             return model
 
-        print(f"🧠 Creating new RecurrentPPO model for lift_leg...")
+        print(f"🧠 Creating new RecurrentPPO model for mini-biped walk3d...")
         # ===== CREACIÓN DEL MODELO =====
         model_params = {
             'learning_rate': self.learning_rate,
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
             'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
-            'n_steps': 1024//self.n_envs,            # 256 es bajo, subir a 1024 para secuencias más largas
-            'batch_size': 512//self.n_envs,         # 128 subir a 512, multiplo de n_envs
+            'n_steps': max(128, 1024//self.n_envs),
+            'batch_size': max(64, 512//self.n_envs),
             'n_epochs': 4,             # con n_epoch=3 hay menos pasadas
             'gae_lambda': 0.95,        # Estándar
             'clip_range': 0.15,         # Estándar

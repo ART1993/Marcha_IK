@@ -40,9 +40,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
-                 simple_reward_mode="progressive",allow_hops:bool=False,
-                 vx_target: float = 1.2, # Bajar a 0.4 si da problemas
-                 robot_name="2_legged_human_like_robot16DOF"):
+                 simple_reward_mode="walk3d",allow_hops:bool=False,
+                 vx_target: float = 0.5, # Bajar a 0.4 si da problemas
+                 robot_name="2_legged_minihuman_legs_robot12DOF"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -87,9 +87,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.num_active_pams = len(self.muscle_names)
         
-        self.frequency_simulation=400.0
+        self.frequency_simulation=400.0 # antes era 400, pero parece que causaba problemas
         #Probar para ver si evita tembleques
-        self.frequency_control=40.0
+        self.frequency_control=100.0
         self.time_step = 1.0 / self.frequency_simulation
         # Action-repeat/frame-skip: aplicar una acción a 400 Hz simulación pero 50 Hz control
         self.frame_skip = max(1, int(self.frequency_simulation // self.frequency_control))
@@ -226,9 +226,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-        for _ in range(self.frame_skip):
-            p.stepSimulation()
-            self.sim_time += self.dt
+        #for _ in range(self.frame_skip):
+        p.stepSimulation()
+        self.sim_time += self.dt
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -404,28 +404,27 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
-        for link_id in self.joint_indices:
-            p.changeDynamics(
-                self.robot_id,
-                link_id,
-                lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
-                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
-                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
-                restitution=0.05
-            )
+        # for link_id in self.joint_indices:
+        #     p.changeDynamics(
+        #         self.robot_id,
+        #         link_id,
+        #         lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
+        #         spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+        #         rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+        #         restitution=0.05
+        #     )
 
         # Pie izquierdo - alta fricción para agarre
         for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
-                spinningFriction=0.12,                   #0.15,       
-                rollingFriction=0.01,       
-                restitution=0.01,           
-                contactDamping=100,         
-                contactStiffness=12000,      
-                frictionAnchor=1
+                lateralFriction=0.9,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+                spinningFriction=0.001,                   #0.15,       
+                rollingFriction=0.001,       
+                restitution=0.0,           
+                contactDamping=700,         
+                contactStiffness=2e5,      
             )
         
         # ===== FRICCIÓN DEL SUELO =====
@@ -434,9 +433,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.9,        # Fricción estándar del suelo 0.6
-            spinningFriction=0.05,
-            rollingFriction=0.005
+            lateralFriction=0.95,        # Fricción estándar del suelo 0.6
+            rollingFriction=0.001,
+            spinningFriction=0.001,
+            restitution=0.0,
+            contactStiffness=3e5,
+            contactDamping=800
         )
         
 
@@ -684,26 +686,25 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== RESET FÍSICO =====
         p.resetSimulation()
         p.setGravity(0, 0, -9.81)
-        p.setTimeStep(self.time_step)
+        #p.setTimeStep(self.time_step)
+        
+        self.sim_time = 0.0
+        
+        
+        # Configurar solver para estabilidad
+        p.setPhysicsEngineParameter(
+            fixedTimeStep=self.time_step,
+            numSolverIterations=80,         # antes 50  
+            numSubSteps=4,                  # se baja de 6 a 4
+            useSplitImpulse=1,
+            splitImpulsePenetrationThreshold=-0.02,
+            contactERP=0.2,
+            erp=0.2                    # antes 0.9
+        )
         try:
             self.dt = p.getPhysicsEngineParameters().get('fixedTimeStep', self.time_step)
         except Exception:
             self.dt = self.time_step
-        self.sim_time = 0.0
-        self.left_timer  = FootPhaseTimer(self.dt)
-        self.right_timer = FootPhaseTimer(self.dt)
-        
-        # Configurar solver para estabilidad
-        p.setPhysicsEngineParameter(
-            numSolverIterations=80,         # antes 50  
-            numSubSteps=6,
-            contactBreakingThreshold=0.001, #subo de 0.0005 a 0.001
-            erp=0.2,                    # antes 0.9
-            contactERP=0.3,            # antes 0.95
-            frictionERP=0.2,            # antes  0.9
-            enableConeFriction=1,        # Habilitar fricción cónica
-            deterministicOverlappingPairs=1
-        )
         if self.logger:
             self.logger.log("main",f"🔧 Contact friction CORRECTED for single leg balance:")
             self.logger.log("main",f"   Feet: μ=0.8 (moderate grip, less spinning)")
@@ -715,11 +716,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.21],  # Altura inicial ligeramente mayor
-            useFixedBase=False,
+            [0, 0, 0.6],
+            flags=p.URDF_USE_SELF_COLLISION  
+            #useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
+        self.left_timer  = FootPhaseTimer(self.dt)
+        self.right_timer = FootPhaseTimer(self.dt)
 
         # ===== SISTEMAS ESPECÍFICOS PARA EQUILIBRIO EN UNA PIERNA =====
         # Sistemas de recompensas
@@ -915,17 +919,24 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
-        self.MAX_REASONABLE_TORQUE_FEET = 40.0
+        if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
+            self.MAX_REASONABLE_TORQUE_HIP_ = 45.0     # N⋅m (factor de seguridad incluido)
+            self.MAX_REASONABLE_TORQUE_KNEE = 38.0
+            self.MAX_REASONABLE_TORQUE_FEET = 22.0
+        else:
+            self.MAX_REASONABLE_TORQUE_HIP = 200.0     # N⋅m (factor de seguridad incluido)
+            self.MAX_REASONABLE_TORQUE_KNEE = 200.0
+            self.MAX_REASONABLE_TORQUE_FEET = 60.0
         self.joint_tau_scale = {}
         #control_joint_names
         for i, jid in enumerate(self.joint_indices):
-            # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
-            print(i, self.control_joint_names[i])
+            #print(i, self.control_joint_names[i])
             if "ankle" in self.control_joint_names[i]:
                 self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
+            elif "knee" in self.control_joint_names[i]:
+                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_KNEE
             else:
-                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
+                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """

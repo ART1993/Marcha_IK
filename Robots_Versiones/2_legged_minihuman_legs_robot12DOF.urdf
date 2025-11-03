@@ -1,0 +1,275 @@
+<?xml version="1.0"?>
+<!--
+  Minimal 6-DOF pitch-only biped for PyBullet/Gymnasium
+  Scale reference: ~0.5 m height. Dimensions in meters, masses in kg, inertias approximate.
+  Links: pelvis, [left/right] upper_leg, lower_leg, foot
+  Joints per leg (pitch only): hip -> knee -> ankle
+
+  Notes:
+  - Cylinders/capsules are aligned with the +Z axis in URDF. We place joints so +Z points downward.
+  - Joint pitch axis is Y (0 1 0).
+  - Contact parameters under <contact> use PyBullet URDF extensions.
+  - Tune joint <dynamics> and link masses/inertias as needed.
+-->
+<robot name="biped_12dof_pitch" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- ===== Global constants (for readability, not xacro) ===== -->
+  <!-- Pelvis box: 0.16 x 0.06 x 0.05 -->
+  <!-- Upper/Lower leg lengths: 0.19 m; radii: 0.02 (upper), 0.0175 (lower) -->
+  <!-- Foot box: 0.12 x 0.07 x 0.03 -->
+
+  <!-- ================= Base link: Pelvis ================= -->
+  <link name="pelvis">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="1.0"/>
+      <!-- Box inertia approx: Ixx = 1/12 m (y^2+z^2), etc. -->
+      <inertia ixx="0.00054" ixy="0" ixz="0" iyy="0.0012" iyz="0" izz="0.0014"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.16 0.06 0.05"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.6 0.6 0.6 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.16 0.06 0.05"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- =============== LEFT LEG =============== -->
+  <!-- Hip (pelvis -> left_upper_leg) -->
+  <joint name="left_hip_pitch" type="revolute">
+    <!-- Place hip 0.08 m to the left (x>0 or x<0 depends on convention). We'll use +X for left. -->
+    <parent link="pelvis"/>
+    <child link="left_upper_leg"/>
+    <origin xyz="0.08 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.785" upper="1.571" effort="45" velocity="8"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+
+  <link name="left_upper_leg">
+    <inertial>
+      <origin xyz="0 0 -0.095"/>
+      <mass value="0.45"/>
+      <!-- Solid capsule approx around center; inertia values are rough -->
+      <inertia ixx="0.0022" ixy="0" ixz="0" iyy="0.0022" iyz="0" izz="0.0006"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.02" length="0.19"/>
+      </geometry>
+      <material name="blue"><color rgba="0.2 0.4 0.9 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.02" length="0.19"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Knee (left_upper_leg -> left_lower_leg) at distal end of upper leg -->
+  <joint name="left_knee_pitch" type="revolute">
+    <parent link="left_upper_leg"/>
+    <child link="left_lower_leg"/>
+    <origin xyz="0 0 -0.19" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="2.356" effort="38" velocity="8"/>
+    <dynamics damping="0.08" friction="0.0"/>
+  </joint>
+
+  <link name="left_lower_leg">
+    <inertial>
+      <origin xyz="0 0 -0.095"/>
+      <mass value="0.40"/>
+      <inertia ixx="0.0018" ixy="0" ixz="0" iyy="0.0018" iyz="0" izz="0.0005"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.0175" length="0.19"/>
+      </geometry>
+      <material name="green"><color rgba="0.2 0.8 0.5 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.0175" length="0.19"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Ankle (left_lower_leg -> left_foot) at distal end of lower leg -->
+  <joint name="left_ankle_pitch" type="revolute">
+    <parent link="left_lower_leg"/>
+    <child link="left_foot"/>
+    <origin xyz="0 0 -0.19" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.523" upper="0.523" effort="22" velocity="8"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+
+  <link name="left_foot">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="0.35"/>
+      <inertia ixx="0.00025" ixy="0" ixz="0" iyy="0.0005" iyz="0" izz="0.0006"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.07 0.03"/>
+      </geometry>
+      <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+    </visual>
+    <collision>
+      <!-- Centered; ankle joint connects at z = +0.015 relative to foot center -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.07 0.03"/>
+      </geometry>
+      <contact>
+        <lateral_friction value="0.9"/>
+        <rolling_friction value="0.001"/>
+        <spinning_friction value="0.001"/>
+        <restitution value="0.0"/>
+      </contact>
+    </collision>
+  </link>
+
+  <!-- Shift ankle joint child frame so the joint sits at the top of the foot (z = +0.015) -->
+  <joint name="left_foot_mount" type="fixed">
+    <parent link="left_foot"/>
+    <child link="left_foot_top"/>
+    <origin xyz="0 0 0.015" rpy="0 0 0"/>
+  </joint>
+  <link name="left_foot_top"/>
+  <!-- (Note: Some engines prefer the ankle joint to attach to a frame at the top of the foot. If undesired, you can remove left_foot_top and attach ankle directly to left_foot.) -->
+
+  <!-- =============== RIGHT LEG =============== -->
+  <!-- Hip (pelvis -> right_upper_leg) -->
+  <joint name="right_hip_pitch" type="revolute">
+    <!-- Right side at x = -0.08 m -->
+    <parent link="pelvis"/>
+    <child link="right_upper_leg"/>
+    <origin xyz="-0.08 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.785" upper="1.571" effort="45" velocity="8"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+
+  <link name="right_upper_leg">
+    <inertial>
+      <origin xyz="0 0 -0.095"/>
+      <mass value="0.45"/>
+      <inertia ixx="0.0022" ixy="0" ixz="0" iyy="0.0022" iyz="0" izz="0.0006"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.02" length="0.19"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.02" length="0.19"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Knee (right_upper_leg -> right_lower_leg) -->
+  <joint name="right_knee_pitch" type="revolute">
+    <parent link="right_upper_leg"/>
+    <child link="right_lower_leg"/>
+    <origin xyz="0 0 -0.19" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="2.356" effort="38" velocity="8"/>
+    <dynamics damping="0.08" friction="0.0"/>
+  </joint>
+
+  <link name="right_lower_leg">
+    <inertial>
+      <origin xyz="0 0 -0.095"/>
+      <mass value="0.40"/>
+      <inertia ixx="0.0018" ixy="0" ixz="0" iyy="0.0018" iyz="0" izz="0.0005"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.0175" length="0.19"/>
+      </geometry>
+      <material name="green"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.095" rpy="0 0 0"/>
+      <geometry>
+        <capsule radius="0.0175" length="0.19"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Ankle (right_lower_leg -> right_foot) -->
+  <joint name="right_ankle_pitch" type="revolute">
+    <parent link="right_lower_leg"/>
+    <child link="right_foot"/>
+    <origin xyz="0 0 -0.19" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-0.523" upper="0.523" effort="22" velocity="8"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+
+  <link name="right_foot">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="0.35"/>
+      <inertia ixx="0.00025" ixy="0" ixz="0" iyy="0.0005" iyz="0" izz="0.0006"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.07 0.03"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.07 0.03"/>
+      </geometry>
+      <contact>
+        <lateral_friction value="0.9"/>
+        <rolling_friction value="0.001"/>
+        <spinning_friction value="0.001"/>
+        <restitution value="0.0"/>
+      </contact>
+    </collision>
+  </link>
+
+  <!-- Optional top frame for right foot (to mirror left) -->
+  <joint name="right_foot_mount" type="fixed">
+    <parent link="right_foot"/>
+    <child link="right_foot_top"/>
+    <origin xyz="0 0 0.015" rpy="0 0 0"/>
+  </joint>
+  <link name="right_foot_top"/>
+
+  <!-- ================== Visual groups (optional) ================== -->
+  <group_state name="pose_stand_neutral">
+    <joint name="left_hip_pitch" value="0.087"/>
+    <joint name="left_knee_pitch" value="0.261"/>
+    <joint name="left_ankle_pitch" value="-0.087"/>
+    <joint name="right_hip_pitch" value="0.087"/>
+    <joint name="right_knee_pitch" value="0.261"/>
+    <joint name="right_ankle_pitch" value="-0.087"/>
+  </group_state>
+</robot>

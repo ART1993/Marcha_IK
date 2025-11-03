@@ -71,7 +71,7 @@ class SimpleProgressiveReward:
         self.change_adaptation_rate = 1e-3
         self.decay_term=0.1
         self._vx_target=self.env.vx_target
-        #self.com_z_star = self.env.init_com_z
+        self.com_z_star = self.env.init_com_z
 
         # --- Opciones de guardado (puedes cambiarlas desde fuera) ---
         self.checkpoint_dir = "checkpoints"
@@ -153,7 +153,7 @@ class SimpleProgressiveReward:
         self.dx = float(pos[0])
         self.dy = float(pos[1])
         # Caída
-        if pos[2] <= 0.6:
+        if pos[2] <= self.com_z_star/2:
             self.last_done_reason = "fall"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: Robot fell")

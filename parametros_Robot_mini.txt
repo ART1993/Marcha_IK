@@ -1,0 +1,185 @@
+def parametros_torque_pam(self):
+        # Momentos de brazo calculados desde dimensiones reales
+        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.055      # 5.03cm - basado en circunferencia del muslo
+        self.HIP_ROLL_FLEXOR_VARIATION = 0.008     # ±1.01cm variación por ángulo
+        
+        self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.052    
+        self.HIP_ROLL_EXTENSOR_VARIATION = 0.006 
+
+        self.HIP_PITCH_FLEXOR_BASE_ARM = 0.050
+        self.HIP_PITCH_FLEXOR_VARIATION = 0.0085#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        
+        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.054#0.0628    
+        self.HIP_PITCH_EXTENSOR_VARIATION = 0.007#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+
+        self.HIP_YAW_FLEXOR_BASE_ARM = 0.048
+        self.HIP_YAW_FLEXOR_VARIATION = 0.0080#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        
+        self.HIP_YAW_EXTENSOR_BASE_ARM = 0.05#0.0628    
+        self.HIP_YAW_EXTENSOR_VARIATION = 0.0065#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+
+        self.KNEE_FLEXOR_BASE_ARM = 0.0566     
+        self.KNEE_FLEXOR_VARIATION = 0.010#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)  
+
+        self.KNEE_EXTENSOR_BASE_ARM = 0.0620#0.0640     
+        self.KNEE_EXTENSOR_VARIATION = 0.008#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
+        # Cambiar a un valor más bajo si ese es el origen del problema
+        # Si está versión no sirve, reducir la variación del brazo.
+        self.ankle_pitch_FLEXOR_BASE_ARM = 0.04     
+        self.ankle_pitch_FLEXOR_VARIATION = 0.0102#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+
+        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044#0.055     
+        self.ankle_pitch_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+
+        self.ankle_roll_FLEXOR_BASE_ARM = 0.04     
+        self.ankle_roll_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+
+        self.ankle_roll_EXTENSOR_BASE_ARM = 0.044#0.055     
+        self.ankle_roll_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+
+def Sistema_Musculos_PAM_12(control_joint_names=None):
+
+    pam_dict = {}
+    for joint in control_joint_names:
+        if "hip_pitch" in joint:
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.055, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.055, alpha0=np.pi/4)
+        elif "knee" in joint:
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.5, r0=0.055, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.5, r0=0.055, alpha0=np.pi/4)
+        elif "ankle_pitch" in joint:
+            # Ver si 35, 40, 45 para
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.040, alpha0=np.pi/4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.040, alpha0=np.pi/4)
+    return pam_dict
+
+Recompensas:
+w_velocidad=0.6
+        w_altura=0.3
+        # Este para las acciones de y
+        w_lateral=0.2
+        w_smooth=0.3
+        w_activos = 0.2
+        # Para indicar al modelo que más tiempo igual a más recompensa
+        supervivencia=0.8
+
+if 0<=vx<vcmd:
+            reward_speed= np.exp(-(vx-vcmd)**2)
+        elif vx<0:
+            reward_speed=0
+        else:
+            reward_speed = 1
+
+castigo_altura = ((self.com_z-z_star)/0.1)**2
+        castigo_posicion = (self.com_y/0.1)**2
+        castigo_velocidad_lateral=(vy)**2
+
+        castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
+	castigo_altura = ((self.com_z-z_star)/0.1)**2
+        castigo_posicion = (self.com_y/0.1)**2
+        castigo_velocidad_lateral=(vy)**2
+
+def castigo_effort(self,action, w_smooth, w_activos):
+        # Suavidad en presiones (acciones en [0,1])
+        accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
+        delta_p = np.asarray(action) - np.asarray(accion_previa)
+        # a = actividad ≈ acción en [0,1]; términos: (1/M)∑a^3, (1/M)∑(Δu)^2, fracción activa
+        #actividad=np.asarray(action)
+        #actividad_efectiva=float(np.mean(actividad**3))
+        smooth_efectivo=float(np.mean(delta_p**2))
+        n_activos=float(np.mean(np.asarray(action**3) > 0.20))
+        return w_smooth*smooth_efectivo + n_activos*w_activos
+
+def _configure_contact_friction(self):
+        """
+        Configurar propiedades de fricción dinámicamente en PyBullet
+        (Complementa las propiedades del URDF)
+        """
+        
+        # ===== FRICCIÓN PARA OTROS LINKS =====
+        
+        # Links de piernas - fricción moderada
+        for link_id in self.joint_indices:
+            p.changeDynamics(
+                self.robot_id,
+                link_id,
+                lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
+                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+                restitution=0.05
+            )
+
+        # Pie izquierdo - alta fricción para agarre
+        for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
+            p.changeDynamics(
+                self.robot_id, 
+                foot_id,
+                lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+                spinningFriction=0.12,                   #0.15,       
+                rollingFriction=0.01,       
+                restitution=0.01,           
+                contactDamping=100,         
+                contactStiffness=12000,      
+                frictionAnchor=1
+            )
+        
+        # ===== FRICCIÓN DEL SUELO =====
+        
+        # Configurar fricción del plano del suelo
+        p.changeDynamics(
+            self.plane_id,
+            -1,                         # -1 for base link
+            lateralFriction=0.9,        # Fricción estándar del suelo 0.6
+            spinningFriction=0.05,      # Recordar que en anteriores entrenamientos era 0.2
+            rollingFriction=0.005
+        )
+    p.setPhysicsEngineParameter(
+        fixedTimeStep=1/240,
+        numSubSteps=4,
+        numSolverIterations=80,
+        useSplitImpulse=1,
+        splitImpulsePenetrationThreshold=-0.02,
+        contactERP=0.2,
+        erp=0.2
+    )
+
+
+# siguiente
+def parametros_torque_pam(self):
+        # Momentos de brazo calculados desde dimensiones reales
+        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.055      # 5.03cm - basado en circunferencia del muslo
+        self.HIP_ROLL_FLEXOR_VARIATION = 0.008     # ±1.01cm variación por ángulo
+        
+        self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.052    
+        self.HIP_ROLL_EXTENSOR_VARIATION = 0.006 
+
+        self.HIP_PITCH_FLEXOR_BASE_ARM = 0.060
+        self.HIP_PITCH_FLEXOR_VARIATION = 0.0115#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        
+        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.064#0.0628    
+        self.HIP_PITCH_EXTENSOR_VARIATION = 0.010#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+
+        self.HIP_YAW_FLEXOR_BASE_ARM = 0.048
+        self.HIP_YAW_FLEXOR_VARIATION = 0.0080#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        
+        self.HIP_YAW_EXTENSOR_BASE_ARM = 0.05#0.0628    
+        self.HIP_YAW_EXTENSOR_VARIATION = 0.0065#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+
+        self.KNEE_FLEXOR_BASE_ARM = 0.066     
+        self.KNEE_FLEXOR_VARIATION = 0.015#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)  
+
+        self.KNEE_EXTENSOR_BASE_ARM = 0.0720#0.0640     
+        self.KNEE_EXTENSOR_VARIATION = 0.014#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
+        # Cambiar a un valor más bajo si ese es el origen del problema
+        # Si está versión no sirve, reducir la variación del brazo.
+        self.ankle_pitch_FLEXOR_BASE_ARM = 0.04     
+        self.ankle_pitch_FLEXOR_VARIATION = 0.0102#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+
+        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044#0.055     
+        self.ankle_pitch_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+
+        self.ankle_roll_FLEXOR_BASE_ARM = 0.04     
+        self.ankle_roll_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+
+        self.ankle_roll_EXTENSOR_BASE_ARM = 0.044#0.055     
+        self.ankle_roll_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)

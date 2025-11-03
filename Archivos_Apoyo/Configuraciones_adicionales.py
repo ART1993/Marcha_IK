@@ -7,7 +7,7 @@ from pathlib import Path
 from enum import Enum
 from os import listdir
 
-from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, Sistema_Musculos_PAM_12_done
+from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, Sistema_Musculos_PAM_12_mini
 
 
 
@@ -128,8 +128,8 @@ def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_name
         return Sistema_Musculos_PAM_20(control_joint_names)
     elif "2_legged_human_like_robot12DOF" in robot_name:
         return Sistema_Musculos_PAM_12(control_joint_names)
-    #elif "2_legged_human_like_robot12DOF_done" in robot_name:
-    #    return Sistema_Musculos_PAM_12_done(control_joint_names)
+    elif "2_legged_minihuman_legs_robot12DOF" in robot_name:
+       return Sistema_Musculos_PAM_12_mini(control_joint_names)
     else:
         raise ValueError(f"Robot '{robot_name}' no soportado para sistema PAM.")
     
