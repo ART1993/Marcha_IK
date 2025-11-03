@@ -4,12 +4,12 @@
   <link name="base_link">
     <inertial>
       <mass value="10.0"/>
-      <inertia ixx="0.325" ixy="0" ixz="0" iyy="0.050" iyz="0" izz="0.365"/>
+      <inertia ixx="0.15" ixy="0" ixz="0" iyy="0.15" iyz="0" izz="0.15"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <box size="0.3 0.3 0.1"/>  <!-- Reducido tamaño de la caja A ver si el problema tiene que ver con el COM -->
+        <box size="0.30 0.30 0.30"/>  <!-- Reducido tamaño de la caja A ver si el problema tiene que ver con el COM -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <material name="gray">
@@ -18,7 +18,7 @@
     </visual>
     <collision>
       <geometry>
-        <box size="0.3 0.3 0.1"/>  <!-- Wider waist for more stability -->
+        <box size="0.30 0.30 0.30"/>  <!-- Wider waist for more stability -->
       </geometry>
       <origin xyz="0 0 0" rpy="0 0 0"/>
     </collision>
@@ -49,9 +49,9 @@
   <joint name="left_hip_pitch_joint" type="revolute">
     <parent link="base_link"/>
     <child link="left_hip_pitch_link"/>
-    <origin xyz="0 0.15 -0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
+    <origin xyz="0 0.15 0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
-    <limit lower=" -1.2" upper="1.2" effort="120" velocity="6.0"/>
+    <limit lower=" -1.2" upper="1.2" effort="200" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
@@ -67,7 +67,7 @@
     <child  link="left_thigh_link"/>
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="200" velocity="6.0"/>
     <dynamics damping="0.15" friction="0.0"/>
   </joint>
 
@@ -92,7 +92,7 @@
   <link name="left_thigh_link">
     <inertial>
       <mass value="2.0"/>
-      <inertia ixx="0.005" ixy="0" ixz="0" iyy="0.005" iyz="0" izz="0.005"/>
+      <inertia ixx="0.0618" ixy="0" ixz="0" iyy="0.0618" iyz="0" izz="0.0036"/>
       <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </inertial>
     <visual>
@@ -130,23 +130,23 @@
   <link name="left_shin_link">
     <inertial>
       <mass value="2.0"/>
-      <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
-      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
+      <inertia ixx="0.0618" ixy="0" ixz="0" iyy="0.0618" iyz="0" izz="0.0036"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
       <material name="red">
         <color rgba="1 0 0 1"/>
       </material>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -184,7 +184,7 @@
   <link name="left_foot_link">
     <inertial>
       <mass value="0.4"/>  <!-- Heavier feet for stability -->
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <inertia ixx="0.0014167" ixy="0" ixz="0" iyy="0.0030833" iyz="0" izz="0.0043333"/>
       <origin xyz="0.0 0 -0.035" rpy="0 0 0"/>
     </inertial>
     <visual>
@@ -234,7 +234,7 @@
     <origin xyz="0 -0.15 -0.0" rpy="0 0 0"/>  
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
-    <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>
+    <limit lower="-1.2" upper="1.2" effort="200" velocity="6.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
@@ -252,7 +252,7 @@
     <child  link="right_thigh_link"/>
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="200" velocity="6.0"/>
     <dynamics damping="0.15" friction="0.0"/>
   </joint>
 
@@ -288,7 +288,7 @@
     <child link="right_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <limit lower="0" upper="1.571" effort="200" velocity="6.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
@@ -296,23 +296,23 @@
   <link name="right_shin_link">
     <inertial>
       <mass value="2.0"/>
-      <inertia ixx="0.004" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.004"/>
+      <inertia ixx="0.0618" ixy="0" ixz="0" iyy="0.0618" iyz="0" izz="0.0036"/>
       <origin xyz="0 0 -0.25" rpy="0 0 0"/>
     </inertial>
     <visual>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
       <material name="red">
         <color rgba="1 0 0 1"/>
       </material>
     </visual>
     <collision>
       <geometry>
-        <cylinder radius="0.06" length="0.5"/>
+        <cylinder radius="0.06" length="0.6"/>
       </geometry>
-      <origin xyz="0 0 -0.25" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.3" rpy="0 0 0"/>
     </collision>
   </link>
 
@@ -350,7 +350,7 @@
   <link name="right_foot_link">
     <inertial>
       <mass value="0.4"/>  <!-- Heavier feet for stability -->
-      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <inertia ixx="0.0014167" ixy="0" ixz="0" iyy="0.0030833" iyz="0" izz="0.0043333"/>
       <origin xyz="0 0 -0.035" rpy="0 0 0"/>
     </inertial>
     <visual>

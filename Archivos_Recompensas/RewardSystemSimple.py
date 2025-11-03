@@ -165,13 +165,13 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
             return True
         
-        max_tilt = 0.8
-        #Inclinación extrema
-        if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
-            self.last_done_reason = "tilt"
-            if self.env.logger:
-                self.env.logger.log("main","❌ Episode done: Robot tilted too much")
-            return True
+        # max_tilt = 0.8
+        # #Inclinación extrema
+        # if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
+        #     self.last_done_reason = "tilt"
+        #     if self.env.logger:
+        #         self.env.logger.log("main","❌ Episode done: Robot tilted too much")
+        #     return True
 
         # Tiempo máximo (crece con nivel)
         max_steps =  2000 # 2000 steps Creo que me he excedido con 6000 steps. Reducir a 2000 en un futuro
