@@ -61,15 +61,26 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.control_joint_names=[]
         # de momento este dict es solo intuitivo
         self.limit_upper_lower_angles={}
-        for key, values in json_file_robot_joint_info.items():
-            if values.get('type')!=4:
-                self.joint_indices.append(values.get("index"))
-                self.control_joint_names.append(values.get("name"))
-                self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
-            if values.get("link_name")=="left_foot_link":
-                self.left_foot_link_id=values.get("index")
-            elif values.get("link_name")=="right_foot_link":
-                self.right_foot_link_id=values.get("index")
+        if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
+            for key, values in json_file_robot_joint_info.items():
+                if values.get('type')!=4:
+                    self.joint_indices.append(values.get("index"))
+                    self.control_joint_names.append(values.get("name"))
+                    self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                if values.get("link_name")=="left_foot_top":
+                    self.left_foot_link_id=values.get("index")
+                elif values.get("link_name")=="right_foot_top":
+                    self.right_foot_link_id=values.get("index")
+        else:
+            for key, values in json_file_robot_joint_info.items():
+                if values.get('type')!=4:
+                    self.joint_indices.append(values.get("index"))
+                    self.control_joint_names.append(values.get("name"))
+                    self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                if values.get("link_name")=="left_foot_link":
+                    self.left_foot_link_id=values.get("index")
+                elif values.get("link_name")=="right_foot_link":
+                    self.right_foot_link_id=values.get("index")
 
         self.footcontact_state=FootContactState
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -226,9 +237,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-        #for _ in range(self.frame_skip):
-        p.stepSimulation()
-        self.sim_time += self.dt
+        for _ in range(self.frame_skip):
+            p.stepSimulation()
+            self.sim_time += self.dt
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -364,7 +375,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     self.logger.log("main", f"📈 Episode {info['curriculum']['episodes']} | Nivel {info['curriculum']['level']} | Reward: {info['episode_reward']:.1f}")
         
         # === CSVLogger: volcado per-step (~10 Hz) ===
-        if (self.step_count % (self.frequency_simulation//self.frame_skip) == 0 or done) and self.simple_reward_system:
+        if (self.step_count % (self.frame_skip) == 0 or done) and self.simple_reward_system:
             if self.logger:
                 self.logger.log("main",f"🔍 Step {self.step_count} - Control Analysis:")
                 self.logger.log("main",f"   Height: {self.pos[2]:.2f}m")
@@ -450,7 +461,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         fuerzas_puntos=[cp[9] for cp in cps]
         num_contactos=len(fuerzas_puntos)
         F_total=sum(fuerzas_puntos)
-        if self.step_count % (self.frequency_simulation//self.frame_skip) == 0:  # Cada segundos aprox
+        if self.step_count % (self.frame_skip) == 0:  # Cada segundos aprox
             if self.logger:
                 self.logger.log("main",f"Contact force on link {link_id}: {F_total:.2f} N")
         if stable_foot:
@@ -535,7 +546,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Activar control automatico de rodilla
 
         balance_info = self.current_balance_status
-        if self.step_count%(self.frequency_simulation//self.frame_skip)==0:
+        if self.step_count%(self.frame_skip)==0:
             if self.logger:
                 self.logger.log("main",f"Pierna de apoyo: {balance_info['support_leg']}")
                 self.logger.log("main",f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
@@ -713,12 +724,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.logger.log("main",f"   Solver: Enhanced stability parameters")
         
         # Cargar entorno
+        if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
+            z_pos=0.4
+        else:
+            z_pos=1.19
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 0.6],
-            flags=p.URDF_USE_SELF_COLLISION  
-            #useFixedBase=False,
+            [0, 0, z_pos],
+            #flags=p.URDF_USE_SELF_COLLISION  
+            useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
@@ -920,12 +935,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
         if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
-            self.MAX_REASONABLE_TORQUE_HIP_ = 45.0     # N⋅m (factor de seguridad incluido)
+            self.MAX_REASONABLE_TORQUE_HIP = 45.0     # N⋅m (factor de seguridad incluido)
             self.MAX_REASONABLE_TORQUE_KNEE = 38.0
             self.MAX_REASONABLE_TORQUE_FEET = 22.0
         else:
-            self.MAX_REASONABLE_TORQUE_HIP = 200.0     # N⋅m (factor de seguridad incluido)
-            self.MAX_REASONABLE_TORQUE_KNEE = 200.0
+            self.MAX_REASONABLE_TORQUE_HIP = 300.0     # N⋅m (factor de seguridad incluido)
+            self.MAX_REASONABLE_TORQUE_KNEE = 300.0
             self.MAX_REASONABLE_TORQUE_FEET = 60.0
         self.joint_tau_scale = {}
         #control_joint_names
@@ -1063,7 +1078,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
-        if self.step_count % (self.frequency_simulation//self.frame_skip) == 0 or done:  # Cada segundo aprox
+        if self.step_count % (self.frame_skip) == 0 or done:  # Cada segundo aprox
             try:
                 if self.csvlog:
                     row_com={"step": int(self.step_count),
