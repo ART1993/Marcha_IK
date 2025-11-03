@@ -792,6 +792,27 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.joint_indices[6]: 0.0,   
                 self.joint_indices[7]: 0.0,   
             }
+        elif "cassie" in self.robot_name:
+            initial_positions = {
+                # Pierna izquierda
+                self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
+                self.joint_indices[1]: 0.0,   # left_hip_roll_joint
+                self.joint_indices[2]: 0.0,   # left_knee_joint      0.1
+                self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
+                self.joint_indices[4]: 0.0,   # left_ankle_roll_joint 0.1
+                self.joint_indices[5]: 0.0,   # right_hip_roll_joint 0.1
+                self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
+                self.joint_indices[7]: 0.0,   # right_knee_joint
+                # pierna derecha
+                self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
+                self.joint_indices[9]: 0.0,    # right_ankle_roll_joint 0.1
+                self.joint_indices[10]: 0.0,   # right_hip_roll_joint 0.1
+                self.joint_indices[11]: 0.0,   # right_hip_pitch_joint
+                self.joint_indices[12]: 0.0,   # right_knee_joint    0.1
+                self.joint_indices[13]: 0.0,   # right_ankle_pitch_joint
+                self.joint_indices[14]: 0.0,   # right_hip_pitch_joint
+                self.joint_indices[15]: 0.0
+            }
         
         for joint_id, pos in initial_positions.items():
             p.resetJointState(self.robot_id, joint_id, pos)
