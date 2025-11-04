@@ -91,7 +91,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.num_active_pams = len(self.muscle_names)
         
-        self.frequency_simulation=400.0
+        self.frequency_simulation=240.0
         #Probar para ver si evita tembleques
         self.frequency_control=40.0
         self.time_step = 1.0 / self.frequency_simulation
@@ -230,9 +230,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-        for _ in range(self.frame_skip):
-            p.stepSimulation()
-            self.sim_time += self.dt
+        #for _ in range(self.frame_skip):
+        p.stepSimulation()
+        self.sim_time += self.dt
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)

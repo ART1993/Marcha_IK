@@ -134,9 +134,7 @@ class SimpleProgressiveReward:
         """
         Método principal: calcula reward según el nivel actual
         """
-        self.com_x,self.com_y,self.com_z=self.env.com_x,self.env.com_y,self.env.com_z
-        self.zmp_x, self.zmp_y=self.env.zmp_x, self.env.zmp_y
-        self.vel_COM=self.env.vel_COM
+        
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
         if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
             return self.calculate_reward_walk3d(action, torque_mapping, step_count)
@@ -149,11 +147,14 @@ class SimpleProgressiveReward:
         
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
+        self.com_x,self.com_y,self.com_z=self.env.com_x,self.env.com_y,self.env.com_z
+        self.zmp_x, self.zmp_y=self.env.zmp_x, self.env.zmp_y
+        self.vel_COM=self.env.vel_COM
         # Penalizo deriva frente y lateral
         self.dx = float(pos[0])
         self.dy = float(pos[1])
         # Caída
-        if pos[2] <= 0.6:
+        if pos[2] <= self.env.init_com_z/2:
             self.last_done_reason = "fall"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
@@ -240,10 +241,10 @@ class SimpleProgressiveReward:
 
     # ===================== NUEVO: Caminar 3D =====================
     def calculate_reward_walk3d(self, action, torque_mapping:dict, step_count):
-        #env = self.env
-        #pos, orn = p.getBasePositionAndOrientation(env.robot_id)
-        #euler = p.getEulerFromQuaternion(orn)
-        #roll, pitch, yaw = euler
+        env = self.env
+        pos, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = euler
         #num_acciones=len(action)
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
@@ -271,6 +272,7 @@ class SimpleProgressiveReward:
         castigo_altura = ((self.com_z-z_star)/0.1)**2
         castigo_posicion = (self.com_y/0.1)**2
         castigo_velocidad_lateral=(vy)**2
+        #castigo_roll=np.exp(-0.2*roll*roll)+np.exp(-0.2*pitch*pitch)
 
         castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
 
