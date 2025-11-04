@@ -9,7 +9,18 @@ from os import listdir
 
 from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, Sistema_Musculos_PAM_12_mini
 
-
+# Función de Rungen kutta para calcular derivadas de f(x) en función de x
+def runge5step(f,x,step,*args):
+    k1=step*f(x,*args)
+    k2=step*f((x + k1/5),*args)
+    k3=step*f((x + 3*k1/40 + 9*k2/40),*args)
+    k4=step*f((x + 3*k1/10 - 9*k2/10 + 6*k3/5),*args)
+    k5=step*f((x - 11*k1/54 + 5*k2/2 - 70*k3/27 +35*k4/27),*args)
+    k6=step*f((x + 1631*k1/55296 + 175*k2/512 + 575*k3/13824 +44275*k4/110592 +253*k5/4096),*args)
+    x1a=x + 37*k1/378 + 250*k3/621 +125*k4/594 +512*k6/1771
+    x1b=x + 2825*k1/27648 +18575*k3/48384 +13525*k4/55296 +277*k5/14336 +k6/4
+    error= np.abs(x1a-x1b)
+    return x1a ,error
 
 
 def cargar_posible_normalizacion(model_dir, resume_path, config, train_env):
