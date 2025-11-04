@@ -61,11 +61,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.control_joint_names=[]
         # de momento este dict es solo intuitivo
         self.limit_upper_lower_angles={}
+        self.limit_angular_speed=[]
+        self.joint_tau_scale = {}
         for key, values in json_file_robot_joint_info.items():
             if values.get('type')!=4:
                 self.joint_indices.append(values.get("index"))
                 self.control_joint_names.append(values.get("name"))
                 self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                self.limit_angular_speed.append(values.get("max_velocity"))
+                self.joint_tau_scale[values.get("index")]=values.get("max_force")
             if values.get("link_name")=="left_foot_link":
                 self.left_foot_link_id=values.get("index")
             elif values.get("link_name")=="right_foot_link":
@@ -753,13 +757,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         elif "12" in self.robot_name:
             initial_positions = {
                 # Pierna izquierda
-                self.joint_indices[0]: np.deg2rad(0),   # debe ser menor 0
-                self.joint_indices[1]: np.deg2rad(0),   # debe ser mayor 0
-                self.joint_indices[2]: np.deg2rad(0),   # debe ser menor 0
+                self.joint_indices[0]: 0.3,   # debe ser menor 0
+                self.joint_indices[1]: -0.3,   # debe ser mayor 0
+                self.joint_indices[2]: 0.0,   # debe ser menor 0
                 # pierna derecha
-                self.joint_indices[3]: np.deg2rad(0),   # debe ser menor 0
-                self.joint_indices[4]: np.deg2rad(0),   # debe ser mayor 0
-                self.joint_indices[5]: np.deg2rad(0),   # debe ser menor 0
+                self.joint_indices[3]: 0.3,   # debe ser menor 0
+                self.joint_indices[4]: -0.3,   # debe ser mayor 0
+                self.joint_indices[5]: 0.0,   # debe ser menor 0
             }
         elif "16" in self.robot_name:
             initial_positions = {
@@ -920,15 +924,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
         self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
         self.MAX_REASONABLE_TORQUE_FEET = 40.0
-        self.joint_tau_scale = {}
-        #control_joint_names
-        for i, jid in enumerate(self.joint_indices):
-            # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
-            print(i, self.control_joint_names[i])
-            if "ankle" in self.control_joint_names[i]:
-                self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
-            else:
-                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
+        # self.joint_tau_scale = {}
+        # #control_joint_names
+        # for i, jid in enumerate(self.joint_indices):
+        #     # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
+        #     print(i, self.control_joint_names[i])
+        #     if "ankle" in self.control_joint_names[i]:
+        #         self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
+        #     else:
+        #         self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """
