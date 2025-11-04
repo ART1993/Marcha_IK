@@ -426,16 +426,18 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             )
 
         # Pie izquierdo - alta fricción para agarre
+        # Pie izquierdo - alta fricción para agarre
         for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
             p.changeDynamics(
                 self.robot_id, 
                 foot_id,
-                lateralFriction=0.9,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
-                spinningFriction=0.001,                   #0.15,       
-                rollingFriction=0.001,       
-                restitution=0.0,           
-                contactDamping=700,         
-                contactStiffness=2e5,      
+                lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+                spinningFriction=0.12,                   #0.15,       
+                rollingFriction=0.01,       
+                restitution=0.01,           
+                contactDamping=100,         
+                contactStiffness=12000,      
+                frictionAnchor=1
             )
         
         # ===== FRICCIÓN DEL SUELO =====
@@ -444,12 +446,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.95,        # Fricción estándar del suelo 0.6
-            rollingFriction=0.001,
-            spinningFriction=0.001,
-            restitution=0.0,
-            contactStiffness=3e5,
-            contactDamping=800
+            lateralFriction=0.9,        # Fricción estándar del suelo 0.6
+            spinningFriction=0.05,
+            rollingFriction=0.005
         )
         
 
