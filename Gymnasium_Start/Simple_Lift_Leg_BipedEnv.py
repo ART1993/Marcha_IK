@@ -415,15 +415,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
-        # for link_id in self.joint_indices:
-        #     p.changeDynamics(
-        #         self.robot_id,
-        #         link_id,
-        #         lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
-        #         spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
-        #         rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
-        #         restitution=0.05
-        #     )
+        for link_id in self.joint_indices:
+            p.changeDynamics(
+                self.robot_id,
+                link_id,
+                lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
+                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+                restitution=0.05
+            )
 
         # Pie izquierdo - alta fricción para agarre
         for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
@@ -704,13 +704,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
-            fixedTimeStep=self.time_step,
             numSolverIterations=80,         # antes 50  
-            numSubSteps=4,                  # se baja de 6 a 4
-            useSplitImpulse=1,
-            splitImpulsePenetrationThreshold=-0.02,
-            contactERP=0.2,
-            erp=0.2                    # antes 0.9
+            numSubSteps=6,
+            contactBreakingThreshold=0.001, #subo de 0.0005 a 0.001
+            erp=0.2,                    # antes 0.9
+            contactERP=0.3,            # antes 0.95
+            frictionERP=0.2,            # antes  0.9
+            enableConeFriction=1,        # Habilitar fricción cónica
+            deterministicOverlappingPairs=1
         )
         try:
             self.dt = p.getPhysicsEngineParameters().get('fixedTimeStep', self.time_step)
