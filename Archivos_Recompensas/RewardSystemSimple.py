@@ -247,7 +247,7 @@ class SimpleProgressiveReward:
         #num_acciones=len(action)
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
-        z_star = getattr(self, "init_com_z", 0.89)
+        z_star = getattr(self.env, "init_com_z", 0.89)
         vcmd = float(getattr(self, "_vx_target",0.6))
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.6
@@ -582,7 +582,7 @@ class SimpleProgressiveReward:
         r_post = exp_term(abs(roll), d_theta) * exp_term(abs(pitch), d_theta)
 
         # Altura del CoM (absoluta) alrededor de z*
-        z_star = getattr(self, "init_com_z", 0.89)
+        z_star = getattr(self.env, "init_com_z", 0.89)
         e_z = band_error(self.env.com_z, z_star, dz_band)
         r_z  = exp_term(e_z, dz_band, r_at_tol=0.6)
 

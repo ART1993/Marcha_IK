@@ -559,12 +559,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Velocidades
         #obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
 
-        yaw = p.getEulerFromQuaternion(orn)[2]
-        cy, sy = np.cos(yaw), np.sin(yaw)
+        #yaw = p.getEulerFromQuaternion(orn)[2]
+        #cy, sy = np.cos(euler[2]), np.sin(euler[2])
         # rotación mundo->cuerpo (2D yaw)
-        vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
-        vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
-        obs.extend([vx_b, vy_b, lin_vel[2], init_ang_vel[0], init_ang_vel[1]])
+        #vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
+        #vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
+        # Velocidad de centro de masas y velocidad angular de 
+        obs.extend([self.vel_COM[0], self.vel_COM[1], self.vel_COM[2], init_ang_vel[0], init_ang_vel[1]])
         
         
         # Observaciones ¿Por que no son posiciones del robot y V_com?
@@ -619,21 +620,21 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         # Velocidades
         # obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
-        yaw = p.getEulerFromQuaternion(self.orn_post)[2]
-        cy, sy = np.cos(yaw), np.sin(yaw)
-        # rotación mundo->cuerpo (2D yaw)
-        vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
-        vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
-        obs.extend([vx_b, vy_b, lin_vel[2], ang_vel[0], ang_vel[1]])
+        #yaw = p.getEulerFromQuaternion(self.orn_post)[2]
+        # cy, sy = np.cos(yaw), np.sin(yaw)
+        # Ver
+        # vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
+        # vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
+        # Cambio velocidad lineal de cabeza por la del centro de masas
+        obs.extend([self.vel_COM[0], self.vel_COM[1], self.vel_COM[2], ang_vel[0], ang_vel[1]])
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         
         joint_states = p.getJointStates(self.robot_id, self.joint_indices)
         joint_positions = [state[0] for state in joint_states]
-        obs.extend(joint_positions)
-
         # NUEVO: velocidades
         joint_vels = [s[1] for s in joint_states]
+        obs.extend(joint_positions)
         obs.extend(joint_vels)
         
         # ===== ZMP BÁSICO (2 elementos) =====
@@ -824,8 +825,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             try:
                 com_world, _ = self.robot_data.get_center_of_mass()
                 self.init_com_x, self.init_com_y, self.init_com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+                self.vel_COM=self.robot_data.get_center_of_mass_velocity()
             except Exception:
                 self.init_com_x = self.init_com_y = self.init_com_z = 0.0
+                self.vel_COM=np.asarray([0,0,0])
         
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()
