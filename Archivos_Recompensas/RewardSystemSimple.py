@@ -134,9 +134,6 @@ class SimpleProgressiveReward:
         """
         Método principal: calcula reward según el nivel actual
         """
-        self.com_x,self.com_y,self.com_z=self.env.com_x,self.env.com_y,self.env.com_z
-        self.zmp_x, self.zmp_y=self.env.zmp_x, self.env.zmp_y
-        self.vel_COM=self.env.vel_COM
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
         if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
             return self.calculate_reward_walk3d(action, torque_mapping, step_count)
@@ -146,14 +143,16 @@ class SimpleProgressiveReward:
     
     def is_episode_done(self, step_count):
         """Criterios simples de terminación"""
-        
+        self.com_x,self.com_y,self.com_z=self.env.com_x,self.env.com_y,self.env.com_z
+        self.zmp_x, self.zmp_y=self.env.zmp_x, self.env.zmp_y
+        self.vel_COM=self.env.vel_COM
         pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
         # Penalizo deriva frente y lateral
         self.dx = float(pos[0])
         self.dy = float(pos[1])
         # Caída
-        if pos[2] <= 0.6:
+        if pos[2] <= self.env.init_com_z/2:
             self.last_done_reason = "fall"
             if self.env.logger:
                 self.env.logger.log("main","❌ Episode done: Robot fell")
