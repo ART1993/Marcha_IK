@@ -130,13 +130,13 @@ class SimpleProgressiveReward:
         self.s_mean=self.s_mean*self.smoothing + (1-self.smoothing)*s_target
         self.s_mean=np.clip(self.s_mean,0.0,1.0)
 
-    def calculate_reward(self, action, torque_mapping, step_count):
+    def calculate_reward(self, action, joint_state_properties, torque_mapping, step_count):
         """
         Método principal: calcula reward según el nivel actual
         """
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
         if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
-            return self.calculate_reward_walk3d(action, torque_mapping, step_count)
+            return self.calculate_reward_walk3d(action, joint_state_properties, torque_mapping, step_count)
         else:
             raise Exception ("Solo se acepta caminar ahora")
 
@@ -164,13 +164,13 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
             return True
         
-        # max_tilt = 0.8
-        # #Inclinación extrema
-        # if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
-        #     self.last_done_reason = "tilt"
-        #     if self.env.logger:
-        #         self.env.logger.log("main","❌ Episode done: Robot tilted too much")
-        #     return True
+        max_tilt = 0.8
+        #Inclinación extrema
+        if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
+            self.last_done_reason = "tilt"
+            if self.env.logger:
+                self.env.logger.log("main","❌ Episode done: Robot tilted too much")
+            return True
 
         # Tiempo máximo (crece con nivel)
         max_steps =  2000 # 2000 steps Creo que me he excedido con 6000 steps. Reducir a 2000 en un futuro
@@ -238,7 +238,7 @@ class SimpleProgressiveReward:
     # ============================================================================================================================================= #
 
     # ===================== NUEVO: Caminar 3D =====================
-    def calculate_reward_walk3d(self, action, torque_mapping:dict, step_count):
+    def calculate_reward_walk3d(self, action, joint_state_properties, torque_mapping:dict, step_count):
         #env = self.env
         #pos, orn = p.getBasePositionAndOrientation(env.robot_id)
         #euler = p.getEulerFromQuaternion(orn)
@@ -258,7 +258,7 @@ class SimpleProgressiveReward:
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
         #Recompensas de ciclo del pie
-        w_phase, w_air, w_slip = 0.3, 0.2, 0.2
+        # w_phase, w_air, w_slip = 0.3, 0.2, 0.2
         # Recompensa velocidad
         if 0<=vx<vcmd:
             reward_speed= np.exp(-(vx-vcmd)**2)
@@ -266,6 +266,8 @@ class SimpleProgressiveReward:
             reward_speed=0
         else:
             reward_speed = 1
+        # Se debería de incluir en supervivencia para aumentar el valor conforme riempo transcurrido
+        #recompensa_supervivencia=step_count/2000
         #SI com_z esta fuera de la altura objetivo
         castigo_altura = ((self.com_z-z_star)/0.1)**2
         castigo_posicion = (self.com_y/0.1)**2

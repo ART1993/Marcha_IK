@@ -96,12 +96,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.num_active_pams = len(self.muscle_names)
         
-        self.frequency_simulation=400.0
+        self.frequency_simulation=240.0
         #Probar para ver si evita tembleques
-        self.frequency_control=40.0
+        #self.frequency_control=40.0
         self.time_step = 1.0 / self.frequency_simulation
         # Action-repeat/frame-skip: aplicar una acción a 400 Hz simulación pero 50 Hz control
-        self.frame_skip = max(1, int(self.frequency_simulation // self.frequency_control))
+        self.frame_skip = 40
         
         # Estados PAM básicos
         self.pam_states = {
@@ -235,9 +235,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-        for _ in range(self.frame_skip):
-            p.stepSimulation()
-            self.sim_time += self.dt
+        p.stepSimulation()
+        self.sim_time += self.dt
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -272,7 +271,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
-        reward = self.simple_reward_system.calculate_reward(u_final, torque_mapping, self.step_count)
+        reward = self.simple_reward_system.calculate_reward(u_final, self.joint_states_properties, torque_mapping, self.step_count)
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
