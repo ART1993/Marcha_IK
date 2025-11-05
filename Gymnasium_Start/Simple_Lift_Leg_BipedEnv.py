@@ -59,28 +59,26 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
         self.joint_indices=[]
         self.control_joint_names=[]
-        # de momento este dict es solo intuitivo
-        self.limit_upper_lower_angles={}
+        # de momento este dict es solo intuitivo, ver si se puede hacer para castigar al robot si está en angulos extremos durante x tiempo
+        #self.limit_upper_lower_angles={}
+        self.joint_tau_scale = {}
+        self.joint_limit_angular_speed = {}
         if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
-            for key, values in json_file_robot_joint_info.items():
-                if values.get('type')!=4:
-                    self.joint_indices.append(values.get("index"))
-                    self.control_joint_names.append(values.get("name"))
-                    self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
-                if values.get("link_name")=="left_foot_top":
-                    self.left_foot_link_id=values.get("index")
-                elif values.get("link_name")=="right_foot_top":
-                    self.right_foot_link_id=values.get("index")
+            foot_name="foot_top"
         else:
-            for key, values in json_file_robot_joint_info.items():
-                if values.get('type')!=4:
-                    self.joint_indices.append(values.get("index"))
-                    self.control_joint_names.append(values.get("name"))
-                    self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
-                if values.get("link_name")=="left_foot_link":
-                    self.left_foot_link_id=values.get("index")
-                elif values.get("link_name")=="right_foot_link":
-                    self.right_foot_link_id=values.get("index")
+            foot_name="foot_link"
+        for key, values in json_file_robot_joint_info.items():
+            if values.get('type')!=4:
+                self.joint_indices.append(values.get("index"))
+                self.control_joint_names.append(values.get("name"))
+                #self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                self.joint_tau_scale[values.get("index")]=values.get("max_force")
+                self.joint_limit_angular_speed[values.get("index")]=values.get("index")
+            
+            if values.get("link_name")==f"left_{foot_name}":
+                self.left_foot_link_id=values.get("index")
+            elif values.get("link_name")==f"right_{foot_name}":
+                self.right_foot_link_id=values.get("index")
 
         self.footcontact_state=FootContactState
         # ===== CONFIGURACIÓN BÁSICA =====
@@ -98,12 +96,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.num_active_pams = len(self.muscle_names)
         
-        self.frequency_simulation=400.0 # antes era 400, pero parece que causaba problemas
+        self.frequency_simulation=240.0 # antes era 400, pero parece que causaba problemas
         #Probar para ver si evita tembleques
         self.frequency_control=100.0
         self.time_step = 1.0 / self.frequency_simulation
         # Action-repeat/frame-skip: aplicar una acción a 400 Hz simulación pero 50 Hz control
-        self.frame_skip = max(1, int(self.frequency_simulation // self.frequency_control))
+        self.frame_skip = 10
         
         # Estados PAM básicos
         self.pam_states = {
@@ -237,9 +235,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 p.TORQUE_CONTROL,
                 force=torque
             )
-        for _ in range(self.frame_skip):
-            p.stepSimulation()
-            self.sim_time += self.dt
+        
+        p.stepSimulation()
+        self.sim_time += self.dt
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -954,25 +952,25 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.INHIBITION_FACTOR = 0.3           # 30% inhibición recíproca
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
-        # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
-            self.MAX_REASONABLE_TORQUE_HIP = 45.0     # N⋅m (factor de seguridad incluido)
-            self.MAX_REASONABLE_TORQUE_KNEE = 38.0
-            self.MAX_REASONABLE_TORQUE_FEET = 22.0
-        else:
-            self.MAX_REASONABLE_TORQUE_HIP = 300.0     # N⋅m (factor de seguridad incluido)
-            self.MAX_REASONABLE_TORQUE_KNEE = 300.0
-            self.MAX_REASONABLE_TORQUE_FEET = 60.0
-        self.joint_tau_scale = {}
-        #control_joint_names
-        for i, jid in enumerate(self.joint_indices):
-            #print(i, self.control_joint_names[i])
-            if "ankle" in self.control_joint_names[i]:
-                self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
-            elif "knee" in self.control_joint_names[i]:
-                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_KNEE
-            else:
-                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP
+        # # Límites de seguridad (basados en fuerzas PAM reales calculadas)
+        # if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
+        #     self.MAX_REASONABLE_TORQUE_HIP = 45.0     # N⋅m (factor de seguridad incluido)
+        #     self.MAX_REASONABLE_TORQUE_KNEE = 38.0
+        #     self.MAX_REASONABLE_TORQUE_FEET = 22.0
+        # else:
+        #     self.MAX_REASONABLE_TORQUE_HIP = 300.0     # N⋅m (factor de seguridad incluido)
+        #     self.MAX_REASONABLE_TORQUE_KNEE = 300.0
+        #     self.MAX_REASONABLE_TORQUE_FEET = 60.0
+        # self.joint_tau_scale = {}
+        # #control_joint_names
+        # for i, jid in enumerate(self.joint_indices):
+        #     #print(i, self.control_joint_names[i])
+        #     if "ankle" in self.control_joint_names[i]:
+        #         self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
+        #     elif "knee" in self.control_joint_names[i]:
+        #         self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_KNEE
+        #     else:
+        #         self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """
