@@ -538,6 +538,150 @@ class SimpleProgressiveReward:
         if mode == "linear":
             return float(1.0 - np.clip(exceso_bw, 0.0, 1.0)), n_contacts_feet, states
         return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2)), n_contacts_feet, states
+
+
+    def penalty_joint_speed_guard(self, qd_vec=None, qd_max_map=None, deadband=0.10, r_at_tol=0.6):
+        """
+        Penaliza |qd| cerca/sobre su límite. Útil en TORQUE_MODE como “cinturón de seguridad”.
+        - qd_max_map: dict {joint_id: vmax_pos} (usa |vmax| simétrica).
+        - deadband: fracción del límite sin penalización (10% por defecto).
+        Devuelve c in [0,1] con 0=sin coste, 1=exceso fuerte.
+        """
+        import numpy as np
+        env = self.env
+        if qd_vec is None:
+            # usa tu buffer de estados si lo expones; si no, lee de PyBullet
+            try:
+                qd_vec = [s[1] for s in env.joint_states_properties]
+            except Exception:
+                qd_vec = [s[1] for s in p.getJointStates(env.robot_id, env.joint_indices)]
+        if qd_max_map is None:
+            qd_max_map = {}
+            for jid in env.joint_indices:
+                info = p.getJointInfo(env.robot_id, jid)
+                vmax = float(info[11]) if info[11] is not None else 0.0  # maxVelocity
+                qd_max_map[jid] = max(1e-6, abs(vmax))  # fallback seguro
+
+        errs = []
+        for i, jid in enumerate(env.joint_indices):
+            vmax = max(1e-6, float(qd_max_map.get(jid, 1.0)))
+            qd = abs(float(qd_vec[i]))
+            tol = deadband * vmax
+            e = max(0.0, qd - (vmax - tol))  # solo “dueLE” cerca del tope
+            # Mapear e∈[0,tol] -> c∈[0,1] con tu exp_term
+            errs.append(exp_term(e, tol=max(tol,1e-6), r_at_tol=r_at_tol))
+        # Queremos un castigo: 1-mean(recompensa_suavizada)
+        return 1.0 - float(np.mean(errs))
+    
+    # 2) "Headroom" de presión/acción (evita saturaciones 0 ó 1, favorece controlador neumático estable)
+    def reward_pressure_headroom(self, action, mid=0.5, band=0.25, r_at_tol=0.6):
+        """
+        Recompensa alta cuando la acción está en banda útil [mid-band, mid+band].
+        Penaliza saturaciones (0 ó 1) que en PAMs dificultan control fino y generan golpes.
+        """
+        import numpy as np
+        a = np.asarray(action, dtype=float)
+        # error = distancia a la banda
+        low, high = mid - band, mid + band
+        # e=0 dentro de la banda, positivo fuera
+        e = np.maximum.reduce([low - a, a - high, np.zeros_like(a)])
+        e = np.maximum(e, 0.0)
+        r = exp_term(np.linalg.norm(e) / max(np.sqrt(len(a)),1e-6), tol=0.10, r_at_tol=r_at_tol)
+        return float(r)
+    
+    def penalty_cocontraction(self, action, antagonists, v_thresh=0.2, contact_gate=True, k=1.0):
+        """
+        antagonists: dict { joint_name_or_id: (idx_flex, idx_ext) } índices en 'action'
+        Penaliza a_flex * a_ext cuando |qdot| es baja (no hay razón para "tirar de ambos").
+        Durante touchdown (si contact_gate) suaviza penalización (rigidez útil en impacto).
+        """
+        import numpy as np
+        qd = [s[1] for s in getattr(self.env, "joint_states_properties", p.getJointStates(self.env.robot_id, self.env.joint_indices))]
+        qd = np.asarray(qd, dtype=float)
+        a = np.asarray(action, dtype=float)
+
+        # Gate por contacto (menos castigo cuando hay impacto)
+        relax = 1.0
+        if contact_gate:
+            # Si alguno de los pies acaba de entrar en apoyo, relajamos (mitigación impactos)
+            L = self.env.foot_contact_state(self.env.left_foot_link_id)[0]
+            R = self.env.foot_contact_state(self.env.right_foot_link_id)[0]
+            TOUCH, PLANTED = 1, 2
+            recent_touch = (L == TOUCH) or (R == TOUCH)
+            relax = 0.5 if recent_touch else 1.0
+
+        cc = []
+        for key, (i_flex, i_ext) in antagonists.items():
+            prod = float(a[i_flex]) * float(a[i_ext])
+            # si apenas se mueve la articulación, pagar más por co-contracción
+            jidx = self.env.joint_indices.index(key) if key in self.env.joint_indices else None
+            scale = 1.0
+            if jidx is not None and abs(qd[jidx]) < v_thresh:
+                scale = 1.0
+            else:
+                scale = 0.5  # si está moviendo rápido, menos penalización
+            cc.append(scale * prod)
+
+        return float(k * relax * np.mean(cc) if cc else 0.0)
+
+    # 4) Penalización de potencia mecánica (|τ·qdot|) normalizada
+    def penalty_mech_power(self, torque_mapping, p_norm=None):
+        """
+        Suma |tau*qdot| y la normaliza por un 'p_norm' razonable (por-junta o global).
+        En PAMs equivale a “gasto neumático correlacionado” (proxy de energía).
+        """
+        import numpy as np
+        qd = [s[1] for s in getattr(self.env, "joint_states_properties", p.getJointStates(self.env.robot_id, self.env.joint_indices))]
+        qd = np.asarray(qd, dtype=float)
+        taus = np.zeros_like(qd)
+        for i, jid in enumerate(self.env.joint_indices):
+            taus[i] = float(torque_mapping.get(jid, 0.0))
+        power = np.sum(np.abs(taus * qd))
+        if p_norm is None:
+            # Normalización simple: (tau_lim_rms * qd_lim_rms) * N
+            # Si tienes 'joint_tau_scale' y 'maxVelocity', úsalos:
+            tau_lim = []
+            qd_lim = []
+            for jid in self.env.joint_indices:
+                tl = getattr(self.env, "joint_tau_scale", {}).get(jid, getattr(self.env, "MAX_REASONABLE_TORQUE", 240.0))
+                qi = p.getJointInfo(self.env.robot_id, jid)
+                vmax = float(qi[11]) if qi[11] else 5.0
+                tau_lim.append(abs(float(tl)))
+                qd_lim.append(abs(vmax))
+            p_norm = np.sqrt(np.mean(np.square(tau_lim))) * np.sqrt(np.mean(np.square(qd_lim))) * len(self.env.joint_indices)
+        return float(np.clip(power / max(p_norm,1e-6), 0.0, 1.0))
+    
+    # 5) Penalización de “golpe vertical” (derivada de Fz) para amortiguar impactos
+    def penalty_fz_jerk(self, beta=0.001):
+        """
+        Penaliza cambios bruscos de cargas verticales en pies: |ΔFz_L|+|ΔFz_R|.
+        Útil con PAMs: favorece usos que “tomen contacto” de forma amortiguada.
+        Requiere estado previo: self._prev_Fz (inicialízala en reset()).
+        """
+        _, _, Fz_pair, _ = _grf_excess_cost_bw(self.foot_links, self.env.foot_contact_state, self.env.mass)
+        FzL, FzR = [float(F) for F in Fz_pair]
+        if not hasattr(self, "_prev_Fz"):
+            self._prev_Fz = (FzL, FzR)
+            return 0.0
+        d = abs(FzL - self._prev_Fz[0]) + abs(FzR - self._prev_Fz[1])
+        self._prev_Fz = (FzL, FzR)
+        # Mapear a [0,1] con una escala suave
+        return float(1.0 - np.exp(-beta * d))
+
+    def reward_swing_pressure_profile(self, action, swing_foot, muscle_map, prefer_mid=0.5, band=0.3):
+        """
+        Premia que los músculos agonistas del pie en swing operen en banda media (más control).
+        muscle_map: { 'left': [idx_musculos_implicados], 'right': [...] }
+        swing_foot: 'left' | 'right'
+        """
+        import numpy as np
+        idxs = muscle_map.get(swing_foot, [])
+        if not idxs: return 0.0
+        a = np.asarray(action)[np.asarray(idxs, dtype=int)]
+        low, high = prefer_mid - band, prefer_mid + band
+        e = np.maximum.reduce([low - a, a - high, np.zeros_like(a)])
+        e = np.maximum(e, 0.0)
+        return float(exp_term(np.linalg.norm(e)/max(np.sqrt(len(a)),1e-6), tol=0.1, r_at_tol=0.7))
     
     def calculate_reward_walk3d_old(self, action, torque_mapping:dict, step_count):
         env = self.env
