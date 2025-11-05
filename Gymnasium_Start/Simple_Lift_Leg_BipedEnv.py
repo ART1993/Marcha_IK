@@ -61,14 +61,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.control_joint_names=[]
         # de momento este dict es solo intuitivo
         self.limit_upper_lower_angles={}
+        self.joint_tau_scale = {}
+        self.joint_limit_angular_speed = {}
+        if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
+            foot_name="foot_top"
+        else:
+            foot_name="foot_link"
         for key, values in json_file_robot_joint_info.items():
             if values.get('type')!=4:
                 self.joint_indices.append(values.get("index"))
                 self.control_joint_names.append(values.get("name"))
-                self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
-            if values.get("link_name")=="left_foot_link":
+                #self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                self.joint_tau_scale[values.get("index")]=values.get("max_force")
+                self.joint_limit_angular_speed[values.get("index")]=values.get("index")
+            
+            if values.get("link_name")==f"left_{foot_name}":
                 self.left_foot_link_id=values.get("index")
-            elif values.get("link_name")=="right_foot_link":
+            elif values.get("link_name")==f"right_{foot_name}":
                 self.right_foot_link_id=values.get("index")
 
         self.footcontact_state=FootContactState
