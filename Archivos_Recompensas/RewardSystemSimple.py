@@ -71,6 +71,7 @@ class SimpleProgressiveReward:
         self.change_adaptation_rate = 1e-3
         self.decay_term=0.1
         self._vx_target=self.env.vx_target
+        self.prev_euler=None
         #self.com_z_star = self.env.init_com_z
 
         # --- Opciones de guardado (puedes cambiarlas desde fuera) ---
@@ -123,6 +124,7 @@ class SimpleProgressiveReward:
         self._task_accum = 0.0
         self._task_N = 0
         self.s_mean=0
+        self.prev_euler = None
         #self.alpha_t = 0.0
 
     def calculate_s_mean(self):
@@ -155,7 +157,7 @@ class SimpleProgressiveReward:
         if pos[2] <= self.env.init_com_z/2:
             self.last_done_reason = "fall"
             if self.env.logger:
-                self.env.logger.log("main","❌ Episode done: Robot fell")
+                self.env.logger.log("main",f"❌ Episode done: Robot fell {pos[2]}")
             return True
         
         if self.dx < -0.6 or abs(self.dy)>1.0:
@@ -164,12 +166,12 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
             return True
         
-        max_tilt = 0.8
+        max_tilt = 1.6
         #Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
             self.last_done_reason = "tilt"
             if self.env.logger:
-                self.env.logger.log("main","❌ Episode done: Robot tilted too much")
+                self.env.logger.log("main",f"❌ Episode done: Robot tilted too much {euler[0]}, {euler[1]}, {euler[2]}")
             return True
 
         # Tiempo máximo (crece con nivel)
@@ -239,10 +241,12 @@ class SimpleProgressiveReward:
 
     # ===================== NUEVO: Caminar 3D =====================
     def calculate_reward_walk3d(self, action, joint_state_properties, torque_mapping:dict, step_count):
-        #env = self.env
-        #pos, orn = p.getBasePositionAndOrientation(env.robot_id)
-        #euler = p.getEulerFromQuaternion(orn)
-        #roll, pitch, yaw = euler
+        env = self.env
+        _, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, _ = euler
+        _, ang_v = p.getBaseVelocity(self.robot_id)
+        #roll_prev, pitch_prev,_ = self.prev_euler if self.prev_euler is None else (0,0,0)
         #num_acciones=len(action)
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
@@ -251,6 +255,8 @@ class SimpleProgressiveReward:
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.6
         w_altura=0.3
+        w_rotacion=0.1
+        w_rotacion_v=0.1
         # Este para las acciones de y
         w_lateral=0.2
         w_smooth=0.05
@@ -259,7 +265,7 @@ class SimpleProgressiveReward:
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
         #Recompensas de ciclo del pie
-        # w_phase, w_air, w_slip = 0.3, 0.2, 0.2
+
         # Recompensa velocidad
         if 0<=vx<vcmd:
             reward_speed= np.exp(-(vx-vcmd)**2)
@@ -276,11 +282,14 @@ class SimpleProgressiveReward:
 
         castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
         castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
-
+        def dead_zone(pos_ang):
+            return max(0,abs(pos_ang)-np.deg2rad(15))
+        castigo_rotacion=dead_zone(roll)**2 + dead_zone(pitch)**2
+        castigo_rotacion_v = (ang_v[0]/np.deg2rad(20))**2 + (ang_v[1]/np.deg2rad(20))**2
 
         reward= ((supervivencia*step_count/1000 + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
-                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ #castigo_deslizante +
-                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + w_velocidad_joint*castigo_velocidad_joint))
+                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ w_rotacion*castigo_rotacion +
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + w_velocidad_joint*castigo_velocidad_joint + w_rotacion_v*castigo_rotacion_v))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
@@ -297,6 +306,14 @@ class SimpleProgressiveReward:
         if timer.touchdown_event:
             return float(k * max(0.0, timer.air_time_last - t_thresh))
         return 0.0
+
+    def castigo_cocontraccion(self, action):
+        flexor_pressure=action[0:,2]
+        extensor_pressure=action[1:,2]
+        co_contraction=[]
+        for flexor,extensor in zip(flexor_pressure,extensor_pressure):
+            # Castiga que flexor y extensor sean bajos si flexor y extensor son mayores que 0.2
+            co_contraction.append(abs(flexor-extensor))
     
     def castigo_effort(self,action, w_smooth, w_activos):
         # Suavidad en presiones (acciones en [0,1])
@@ -306,7 +323,7 @@ class SimpleProgressiveReward:
         #actividad=np.asarray(action)
         #actividad_efectiva=float(np.mean(actividad**3))
         smooth_efectivo=float(np.mean(delta_p**2))
-        n_activos=float(np.mean(np.asarray(action) > 0.50))
+        n_activos=float(np.mean(np.asarray(action) > 0.30))
         return w_smooth*smooth_efectivo + n_activos*w_activos
     
     def reward_for_knees(self, torque_mapping,contact_feets):
