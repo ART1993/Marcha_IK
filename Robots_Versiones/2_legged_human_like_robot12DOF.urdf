@@ -52,7 +52,7 @@
     <origin xyz="0 0.15 0.0" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
     <limit lower=" -1.2" upper="1.2" effort="200" velocity="6.0"/>
-    <dynamics damping="0.2" friction="0.0"/>
+    <!-- <dynamics damping="0.2" friction="0.0"/> -->
   </joint>
 
   <link name="left_hip_pitch_link">
@@ -68,7 +68,7 @@
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
     <limit lower="-0.25" upper="0.25" effort="200" velocity="6.0"/>
-    <dynamics damping="0.15" friction="0.0"/>
+    <!-- <dynamics damping="0.15" friction="0.0"/> -->
   </joint>
 
   <!-- <link name="left_hip_roll_link">
@@ -123,7 +123,7 @@
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <!-- <dynamics damping="0.1" friction="0.0"/> -->
   </joint>
 
   <!-- Link: Left Shin -->
@@ -160,7 +160,7 @@
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.5" upper="0.5" effort="60" velocity="6.0"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <!-- <dynamics damping="0.1" friction="0.0"/> -->
   </joint>
   <link name="left_ankle_pitch_link">
     <inertial>
@@ -177,7 +177,7 @@
     <origin xyz="0 0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
     <limit lower="-0.35" upper="0.35" effort="35" velocity="6.0"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <!-- <dynamics damping="0.1" friction="0.0"/> -->
   </joint>
 
   <!-- Link: Left Foot -->
@@ -235,7 +235,7 @@
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
     <limit lower="-1.2" upper="1.2" effort="200" velocity="6.0"/>
-    <dynamics damping="0.2" friction="0.0"/>
+    <!-- <dynamics damping="0.2" friction="0.0"/> -->
   </joint>
 
   <!-- Agregado para dar +1 DOF en el robot -->
@@ -253,7 +253,7 @@
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
     <limit lower="-0.25" upper="0.25" effort="200" velocity="6.0"/>
-    <dynamics damping="0.15" friction="0.0"/>
+    <!-- <dynamics damping="0.15" friction="0.0"/> -->
   </joint>
 
 
@@ -289,7 +289,7 @@
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="0" upper="1.571" effort="200" velocity="6.0"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <!-- <dynamics damping="0.1" friction="0.0"/> -->
   </joint>
 
   <!-- Link: Right Shin -->
@@ -326,7 +326,7 @@
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-0.5" upper="0.5" effort="60" velocity="6.0"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <!-- <dynamics damping="0.1" friction="0.0"/> -->
   </joint>
   <link name="right_ankle_pitch_link">
     <inertial>
@@ -343,7 +343,7 @@
     <origin xyz="0 0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
     <limit lower="-0.35" upper="0.35" effort="35" velocity="6.0"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <!-- <dynamics damping="0.1" friction="0.0"/> -->
   </joint>
 
   <!-- Link: Right Foot -->

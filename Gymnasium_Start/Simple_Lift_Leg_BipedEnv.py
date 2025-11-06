@@ -723,7 +723,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.21],  # Altura inicial ligeramente mayor
+            [0, 0, 1.26],  # Altura inicial ligeramente mayor
             useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
@@ -923,17 +923,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
         
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
-        self.MAX_REASONABLE_TORQUE_FEET = 40.0
-        self.joint_tau_scale = {}
-        #control_joint_names
-        for i, jid in enumerate(self.joint_indices):
-            # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
-            print(i, self.control_joint_names[i])
-            if "ankle" in self.control_joint_names[i]:
-                self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
-            else:
-                self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
+        # self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
+        # self.MAX_REASONABLE_TORQUE_FEET = 40.0
+        # self.joint_tau_scale = {}
+        # #control_joint_names
+        # for i, jid in enumerate(self.joint_indices):
+        #     # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
+        #     #print(i, self.control_joint_names[i])
+        #     if "ankle" in self.control_joint_names[i]:
+        #         self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
+        #     else:
+        #         self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """

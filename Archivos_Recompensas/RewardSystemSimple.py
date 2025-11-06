@@ -244,7 +244,6 @@ class SimpleProgressiveReward:
         #euler = p.getEulerFromQuaternion(orn)
         #roll, pitch, yaw = euler
         #num_acciones=len(action)
-        joint_state_properties
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
         z_star = getattr(self, "init_com_z", 0.89)
@@ -256,6 +255,7 @@ class SimpleProgressiveReward:
         w_lateral=0.2
         w_smooth=0.05
         w_activos = 0.2
+        w_velocidad_joint = 0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
         #Recompensas de ciclo del pie
@@ -275,10 +275,12 @@ class SimpleProgressiveReward:
         castigo_velocidad_lateral=(vy)**2
 
         castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
-        castigo_velocidad = self.limit_speed_joint
+        castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
+
+
         reward= ((supervivencia*step_count/1000 + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
                   -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ #castigo_deslizante +
-                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo))
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + w_velocidad_joint*castigo_velocidad_joint))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
