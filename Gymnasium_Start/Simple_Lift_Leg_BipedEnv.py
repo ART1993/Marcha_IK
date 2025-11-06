@@ -372,7 +372,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     self.logger.log("main", f"📈 Episode {info['curriculum']['episodes']} | Nivel {info['curriculum']['level']} | Reward: {info['episode_reward']:.1f}")
         
         # === CSVLogger: volcado per-step (~10 Hz) ===
-        if (self.step_count % (self.frequency_simulation//self.frame_skip) == 0 or done) and self.simple_reward_system:
+        if (self.step_count % (self.frame_skip) == 0 or done) and self.simple_reward_system:
             if self.logger:
                 self.logger.log("main",f"🔍 Step {self.step_count} - Control Analysis:")
                 self.logger.log("main",f"   Height: {self.pos[2]:.2f}m")
@@ -412,39 +412,39 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
-        for link_id in self.joint_indices:
-            p.changeDynamics(
-                self.robot_id,
-                link_id,
-                lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
-                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
-                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
-                restitution=0.05
-            )
+        # for link_id in self.joint_indices:
+        #     p.changeDynamics(
+        #         self.robot_id,
+        #         link_id,
+        #         lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
+        #         spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+        #         rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+        #         restitution=0.05
+        #     )
 
-        # Pie izquierdo - alta fricción para agarre
-        for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
-            p.changeDynamics(
-                self.robot_id, 
-                foot_id,
-                lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
-                spinningFriction=0.12,                   #0.15,       
-                rollingFriction=0.01,       
-                restitution=0.01,           
-                contactDamping=100,         
-                contactStiffness=12000,      
-                frictionAnchor=1
-            )
+        # # Pie izquierdo - alta fricción para agarre
+        # for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
+        #     p.changeDynamics(
+        #         self.robot_id, 
+        #         foot_id,
+        #         lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+        #         spinningFriction=0.12,                   #0.15,       
+        #         rollingFriction=0.01,       
+        #         restitution=0.01,           
+        #         contactDamping=100,         
+        #         contactStiffness=12000,      
+        #         frictionAnchor=1
+        #     )
         
         # ===== FRICCIÓN DEL SUELO =====
-        
+        # Ejemplo blackbird
         # Configurar fricción del plano del suelo
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=0.9,        # Fricción estándar del suelo 0.6
-            spinningFriction=0.05,
-            rollingFriction=0.005
+            lateralFriction=25,        # Fricción estándar del suelo 0.6
+            # spinningFriction=0.05,
+            # rollingFriction=0.005
         )
         
 
@@ -456,7 +456,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         fuerzas_puntos=[cp[9] for cp in cps]
         num_contactos=len(fuerzas_puntos)
         F_total=sum(fuerzas_puntos)
-        if self.step_count % (self.frequency_simulation//self.frame_skip) == 0:  # Cada segundos aprox
+        if self.step_count % (self.frame_skip) == 0:  # Cada segundos aprox
             if self.logger:
                 self.logger.log("main",f"Contact force on link {link_id}: {F_total:.2f} N")
         if stable_foot:
@@ -541,7 +541,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Activar control automatico de rodilla
 
         balance_info = self.current_balance_status
-        if self.step_count%(self.frequency_simulation//self.frame_skip)==0:
+        if self.step_count%(self.frame_skip)==0:
             if self.logger:
                 self.logger.log("main",f"Pierna de apoyo: {balance_info['support_leg']}")
                 self.logger.log("main",f"Tiempo en equilibrio: {balance_info['balance_time']} steps")
@@ -1060,7 +1060,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
             Llama esto ocasionalmente durante el step() para verificar que la lógica funciona
         """
-        if self.step_count % (self.frequency_simulation//self.frame_skip) == 0 or done:  # Cada segundo aprox
+        if self.step_count % (self.frame_skip) == 0 or done:  # Cada segundo aprox
             try:
                 if self.csvlog:
                     row_com={"step": int(self.step_count),
