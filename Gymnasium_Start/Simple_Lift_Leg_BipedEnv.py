@@ -603,8 +603,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.left_foot_link_id, min_F=5.0)
-        right_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.right_foot_link_id, min_F=5.0)
+        left_contact=self.pie_tocando_suelo(self.robot_id, link_id=self.left_foot_link_id, min_F=5.0)
+        right_contact=self.pie_tocando_suelo(self.robot_id, link_id=self.right_foot_link_id, min_F=5.0)
         obs.extend([float(left_contact), float(right_contact)])
 
         m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
@@ -668,8 +668,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.pie_tocando_suelo(link_id=self.left_foot_link_id, min_F=5.0)
-        right_contact=self.pie_tocando_suelo(link_id=self.right_foot_link_id, min_F=5.0)
+        left_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.left_foot_link_id, min_F=5.0)
+        right_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.right_foot_link_id, min_F=5.0)
         obs.extend([float(left_contact), float(right_contact)])
 
         m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
@@ -728,10 +728,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             deterministicOverlappingPairs=1
         )
         if self.logger:
-            self.logger.log("main",f"🔧 Contact friction CORRECTED for single leg balance:")
-            self.logger.log("main",f"   Feet: μ=0.8 (moderate grip, less spinning)")
-            self.logger.log("main",f"   Legs: μ=0.1 (very low resistance)")
-            self.logger.log("main",f"   Ground: μ=0.6 (controlled)")
+            self.logger.log("main",f"🔧 Contact friction CORRECTED for walking:")
             self.logger.log("main",f"   Solver: Enhanced stability parameters")
         
         # Cargar entorno
