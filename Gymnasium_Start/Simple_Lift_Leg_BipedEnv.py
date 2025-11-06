@@ -460,7 +460,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             if self.logger:
                 self.logger.log("main",f"Contact force on link {link_id}: {F_total:.2f} N")
         if stable_foot:
-            return (F_total > min_F) and (num_contactos>2)
+            return (F_total > min_F) and (num_contactos>1)
         else:
             return (F_total > min_F) or (num_contactos>0)
     
@@ -599,8 +599,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id, stable_foot=True, min_F=20.0)
-        right_contact=self.contact_with_force(link_id=self.right_foot_link_id, stable_foot=True, min_F=20.0)
+        left_contact=self.pie_tocando_suelo(link_id=self.left_foot_link_id, min_F=5.0)
+        right_contact=self.pie_tocando_suelo(link_id=self.right_foot_link_id, min_F=5.0)
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de pies
@@ -658,8 +658,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.contact_with_force(link_id=self.left_foot_link_id, stable_foot=True, min_F=20.0)
-        right_contact=self.contact_with_force(link_id=self.right_foot_link_id, stable_foot=True, min_F=20.0)
+        left_contact=self.pie_tocando_suelo(link_id=self.left_foot_link_id, min_F=5.0)
+        right_contact=self.pie_tocando_suelo(link_id=self.right_foot_link_id, min_F=5.0)
         obs.extend([float(left_contact), float(right_contact)])
         
         # Alturas de pies
@@ -832,6 +832,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             try:
                 com_world, _ = self.robot_data.get_center_of_mass()
                 self.init_com_x, self.init_com_y, self.init_com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
+                self.vel_COM=self.robot_data.get_center_of_mass_velocity()
             except Exception:
                 self.init_com_x = self.init_com_y = self.init_com_z = 0.0
         
