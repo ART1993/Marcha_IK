@@ -255,13 +255,13 @@ class SimpleProgressiveReward:
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.6
         w_altura=0.3
-        w_rotacion=0.1
-        w_rotacion_v=0.1
+        w_rotacion=0.01
+        w_rotacion_v=0.01
         # Este para las acciones de y
-        w_lateral=0.2
+        w_lateral=0.1
         w_smooth=0.05
-        w_activos = 0.2
-        w_velocidad_joint = 0.1
+        w_activos = 0.1
+        w_velocidad_joint = 0.01
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
         #Recompensas de ciclo del pie
@@ -284,20 +284,24 @@ class SimpleProgressiveReward:
         castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
         def dead_zone(pos_ang):
             return max(0,abs(pos_ang)-np.deg2rad(15))
-        castigo_rotacion=dead_zone(roll)**2 + dead_zone(pitch)**2
-        castigo_rotacion_v = (ang_v[0]/np.deg2rad(20))**2 + (ang_v[1]/np.deg2rad(20))**2
+        tilt_abs =dead_zone(roll)**2 + dead_zone(pitch)**2
+        castigo_rotacion= w_rotacion * np.tanh(tilt_abs / 0.5)
+        castigo_rotacion_v =  w_rotacion_v*np.tanh(((ang_v[0])**2 + (ang_v[1])**2)/0.5)
 
-        reward= ((supervivencia*step_count/1000 + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
-                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ w_rotacion*castigo_rotacion +
-                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + w_velocidad_joint*castigo_velocidad_joint + w_rotacion_v*castigo_rotacion_v))
+        reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
+                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ castigo_rotacion +
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
         self.reawrd_step['castigo_velocidad_y'] =  w_lateral*castigo_velocidad_lateral
         self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
+        self.reawrd_step['castigo_velocidad_joint']  = w_velocidad_joint*castigo_velocidad_joint
+        self.reawrd_step['castigo_rotacion']  = castigo_rotacion
+        self.reawrd_step['castigo_rotacion_v']  = castigo_rotacion_v
+
         # self.reawrd_step['recompensa_fase'] = recompensa_fase
         # self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
-        self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
         #tau y grf_excess_only son castigo de pain
         self.action_previous=action
         return float(reward)
@@ -364,68 +368,32 @@ class SimpleProgressiveReward:
     
 
     def limit_speed_joint(self, joint_state_properties):
-        # Velocidades de articulaciones
-        qdot=np.asarray([s[1] for s in joint_state_properties])
-        limite_velocidad=np.asarray(self.env.joint_max_angular_speed.values())
-        velocidad_castigo=np.mean(((np.abs(qdot)-limite_velocidad)/0.5)**2)
-        # peso= 10 ¿por que? Para que respete mejor los limites de velocidad
-        return velocidad_castigo
+        # |qdot| en rad/s
+        qdot = np.abs(np.array([s[1] for s in joint_state_properties], dtype=np.float32))
+
+        # límites por articulación, alineados al orden de joint_indices
+        vmax = np.array([self.env.joint_max_angular_speed[jid]
+                        for jid in self.env.joint_indices], dtype=np.float32)
+
+        # Exceso sobre el límite (0 si está por debajo)
+        excess = np.maximum(0.0, qdot - vmax)
+
+        # Ancho de transición (10% del límite): controla “lo rápido” que sube el castigo
+        beta = 0.1 * np.maximum(1e-6, vmax)
+
+        # Castigo por articulación: cuadrático, 0 en el límite, ↑ con el exceso
+        penalty_per_joint = (excess / beta) ** 2
+
+        # Puedes devolver media o suma; con media suele ser más estable
+        return float(penalty_per_joint.mean())
 
     
 
 
-def exp_term(error, tol, r_at_tol=0.5):
-    error = float(error)
-    tol = max(float(tol), 1e-9)
-    alpha = -np.log(r_at_tol)
-    return np.exp(-alpha * (error / tol)**2)
-
-def band_error(x, x_star, deadband):
-    return max(0.0, abs(float(x) - float(x_star)) - float(deadband))
 
 
-def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,bw_max=1.2):
-    """
-    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
-    Devuelve N (no negativo).
-    """
-    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
-    Fz_total = 0.0
-    feet_state=[]
-    n_contact_feet=[]
-    Fz=[]
-    for link in foot_links:
-        foot_state, n_foot, F_foot= metodo_fuerzas_pies(link_id=link)
-        Fz_total += float(F_foot)
-        Fz.append(max(0.0, float(F_foot)))
-        feet_state.append(foot_state)
-        n_contact_feet.append(n_foot)
-    BW = masa_robot*9.81  # N
 
-    #BW = masa_robot*9.81  # N
-    bw_sum = Fz_total / BW
-    deficit = max(0.0, bw_min - bw_sum)
-    exceso  = max(0.0, bw_sum - bw_max)
-    return BW,n_contact_feet,Fz,feet_state, deficit, exceso
 
-def _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
-    """
-    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
-    Devuelve N (no negativo).
-    """
-    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
-    Fz_total = 0.0
-    states=[]
-    n_contacts_feet=[]
-    for link in foot_links:
-        state, n_feet, F_foot= metodo_fuerzas_pies(link_id=link)
-        Fz_total += float(F_foot)
-        n_contacts_feet.append(n_feet)
-        states.append(state)
-
-    BW = masa_robot*9.81  # N
-    bw_sum = Fz_total / BW
-    return float(max(0.0, bw_sum - float(bw_mult))), n_contacts_feet, states
 
 
     

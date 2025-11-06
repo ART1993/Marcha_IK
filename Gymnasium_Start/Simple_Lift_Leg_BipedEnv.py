@@ -290,7 +290,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         self._debug_joint_angles_and_pressures(info, u_final, done)
         
-        self.debug_rewards()
+        
         
         return observation, reward, done, False, info
     
@@ -412,29 +412,29 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== FRICCIÓN PARA OTROS LINKS =====
         
         # Links de piernas - fricción moderada
-        # for link_id in self.joint_indices:
-        #     p.changeDynamics(
-        #         self.robot_id,
-        #         link_id,
-        #         lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
-        #         spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
-        #         rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
-        #         restitution=0.05
-        #     )
+        for link_id in self.joint_indices:
+            p.changeDynamics(
+                self.robot_id,
+                link_id,
+                lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
+                spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
+                rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
+                restitution=0.05
+            )
 
-        # # Pie izquierdo - alta fricción para agarre
-        # for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
-        #     p.changeDynamics(
-        #         self.robot_id, 
-        #         foot_id,
-        #         lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
-        #         spinningFriction=0.12,                   #0.15,       
-        #         rollingFriction=0.01,       
-        #         restitution=0.01,           
-        #         contactDamping=100,         
-        #         contactStiffness=12000,      
-        #         frictionAnchor=1
-        #     )
+        # Pie izquierdo - alta fricción para agarre
+        for foot_id in (self.left_foot_link_id, self.right_foot_link_id):
+            p.changeDynamics(
+                self.robot_id, 
+                foot_id,
+                lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
+                spinningFriction=0.12,                   #0.15,       
+                rollingFriction=0.01,       
+                restitution=0.01,           
+                contactDamping=100,         
+                contactStiffness=12000,      
+                frictionAnchor=1
+            )
         
         # ===== FRICCIÓN DEL SUELO =====
         # Ejemplo blackbird
@@ -442,7 +442,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=25,        # Fricción estándar del suelo 0.6
+            lateralFriction=1.2,        # Fricción estándar del suelo 0.6
             # spinningFriction=0.05,
             # rollingFriction=0.005
         )
@@ -603,8 +603,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.pie_tocando_suelo(self.robot_id, link_id=self.left_foot_link_id, min_F=5.0)
-        right_contact=self.pie_tocando_suelo(self.robot_id, link_id=self.right_foot_link_id, min_F=5.0)
+        left_contact=self.pie_tocando_suelo(self.robot_id, foot_link=self.left_foot_link_id, fz_min=5.0)
+        right_contact=self.pie_tocando_suelo(self.robot_id, foot_link=self.right_foot_link_id, fz_min=5.0)
         obs.extend([float(left_contact), float(right_contact)])
 
         m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
@@ -668,8 +668,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.left_foot_link_id, min_F=5.0)
-        right_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.right_foot_link_id, min_F=5.0)
+        left_contact=self.pie_tocando_suelo(self.robot_id,foot_link=self.left_foot_link_id, fz_min=5.0)
+        right_contact=self.pie_tocando_suelo(self.robot_id,foot_link=self.right_foot_link_id, fz_min=5.0)
         obs.extend([float(left_contact), float(right_contact)])
 
         m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
@@ -735,7 +735,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 1.26],  # Altura inicial ligeramente mayor
+            [0, 0, 0.86],  # Altura inicial ligeramente mayor
             useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
@@ -1086,39 +1086,47 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com={"step": int(self.step_count),
                                 "episode": int(self.n_episodes),
                                 "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_q_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_v_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_torque_angle={"step": int(self.step_count),
-                                 "episode": int(self.n_episodes),
-                                 "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_force_angle={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    row_pressure_PAM={"step": int(self.step_count),
-                                "episode": int(self.n_episodes),
-                                "t": round(self.step_count / self.frequency_simulation, 5),}
-                    for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
-                        pos, vel, reaction, applied = state
-                        Fx,Fy,Fz,Mx,My,Mz = reaction
-                        row_q_angle[f"q_{name}"]=round(pos,3)
-                        row_v_angle[f"vel_{name}"]=round(vel,3)
-                        row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
-                        row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
-                        row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
-                        row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
-                        row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
-                        row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
-                        row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
-                        row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
+                    if self.print_env == "TEST":
+                        self.debug_rewards()
+                        row_q_angle={"step": int(self.step_count),
+                                    "episode": int(self.n_episodes),
+                                    "t": round(self.step_count / self.frequency_simulation, 5),}
+                        row_v_angle={"step": int(self.step_count),
+                                    "episode": int(self.n_episodes),
+                                    "t": round(self.step_count / self.frequency_simulation, 5),}
+                        row_torque_angle={"step": int(self.step_count),
+                                    "episode": int(self.n_episodes),
+                                    "t": round(self.step_count / self.frequency_simulation, 5),}
+                        row_force_angle={"step": int(self.step_count),
+                                    "episode": int(self.n_episodes),
+                                    "t": round(self.step_count / self.frequency_simulation, 5),}
+                        row_pressure_PAM={"step": int(self.step_count),
+                                    "episode": int(self.n_episodes),
+                                    "t": round(self.step_count / self.frequency_simulation, 5),}
+                        for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
+                            pos, vel, reaction, applied = state
+                            Fx,Fy,Fz,Mx,My,Mz = reaction
+                            row_q_angle[f"q_{name}"]=round(pos,3)
+                            row_v_angle[f"vel_{name}"]=round(vel,3)
+                            row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
+                            row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
+                            row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
+                            row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
+                            row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
+                            row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
+                            row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
+                            row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
+                        self.csvlog.write("angle_values", row_q_angle)
+                        self.csvlog.write("speed_values", row_v_angle)
+                        self.csvlog.write("torque_values", row_torque_angle)
+                        self.csvlog.write("force_values", row_force_angle)
+                        self.csvlog.write("pressure", row_pressure_PAM)
+                    
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
                     row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)
-                    row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
-                    row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
+                    #row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
+                    #row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     row_com[f"F_L"]=round(info["kpi"]['F_L'],3)
                     row_com[f"F_R"]=round(info["kpi"]['F_R'],3)
                     row_com[f"n_l"]=int(info["kpi"]['nL'])
@@ -1130,11 +1138,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("COM_values", row_com)
-                    self.csvlog.write("angle_values", row_q_angle)
-                    self.csvlog.write("speed_values", row_v_angle)
-                    self.csvlog.write("torque_values", row_torque_angle)
-                    self.csvlog.write("force_values", row_force_angle)
-                    self.csvlog.write("pressure", row_pressure_PAM)
+                    
+                    
 
 
             except Exception as e:
@@ -1142,16 +1147,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
     def debug_rewards(self):
         if self.step_count % self.frame_skip==0 and len(self.reawrd_step)>0:
-            if self.csvlog:
-                row_rewards={
-                    "step":self.step_count,
-                    "episode":self.n_episodes,
-                    "t": round(self.step_count / self.frequency_simulation, 5),
-                }
-                for reward_name, reward_value in self.reawrd_step.items():
-                    row_rewards[reward_name]=reward_value
-                
-                self.csvlog.write("rewards", row_rewards)
+            #if self.csvlog:
+            row_rewards={
+                "step":self.step_count,
+                "episode":self.n_episodes,
+                "t": round(self.step_count / self.frequency_simulation, 5),
+            }
+            for reward_name, reward_value in self.reawrd_step.items():
+                row_rewards[reward_name]=reward_value
+            
+            self.csvlog.write("rewards", row_rewards)
 
     
     def _moment_arm_funcs_for_joint(self, joint_name: str):

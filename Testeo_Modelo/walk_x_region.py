@@ -50,14 +50,15 @@ def _update_camera_follow(base_env, dist=2.0, pitch=-30.0, yaw_offset=0.0):
         cameraTargetPosition=_CAM_TARGET.tolist(),
     )
 
-def make_env(render=True, robot_name="2_legged_human_like_robot20DOF", simple_reward_mode='march_in_place'):
+def make_env(render=True, robot_name="2_legged_human_like_robot20DOF", 
+             simple_reward_mode='march_in_place', vx=1.2):
     csvlog = CSVLogger(only_workers=False)  # escribe desde el main
     env = Simple_Lift_Leg_BipedEnv(
         render_mode='human' if render else 'direct',
         print_env="TEST",
         simple_reward_mode=simple_reward_mode,  # 👈 modo de marcha en el sitio
         allow_hops=True,                      # 👈 vuelos permitidos
-        vx_target=0.0,                        # 👈 sin avance longitudinal
+        vx_target=vx,                        # 👈 sin avance longitudinal
         csvlog=csvlog,
         robot_name=robot_name
     )

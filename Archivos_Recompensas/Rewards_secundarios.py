@@ -444,3 +444,55 @@ def calculate_reward_walk3d_old(self, action, torque_mapping:dict, step_count):
     self.action_previous=np.array(action)
     # actualizar flags de contacto para siguiente paso
     return float(reward)
+
+def _grf_excess_cost_bw(foot_links, metodo_fuerzas_pies, masa_robot, bw_min=0.7,bw_max=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    feet_state=[]
+    n_contact_feet=[]
+    Fz=[]
+    for link in foot_links:
+        foot_state, n_foot, F_foot= metodo_fuerzas_pies(link_id=link)
+        Fz_total += float(F_foot)
+        Fz.append(max(0.0, float(F_foot)))
+        feet_state.append(foot_state)
+        n_contact_feet.append(n_foot)
+    BW = masa_robot*9.81  # N
+
+    #BW = masa_robot*9.81  # N
+    bw_sum = Fz_total / BW
+    deficit = max(0.0, bw_min - bw_sum)
+    exceso  = max(0.0, bw_sum - bw_max)
+    return BW,n_contact_feet,Fz,feet_state, deficit, exceso
+
+def _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    states=[]
+    n_contacts_feet=[]
+    for link in foot_links:
+        state, n_feet, F_foot= metodo_fuerzas_pies(link_id=link)
+        Fz_total += float(F_foot)
+        n_contacts_feet.append(n_feet)
+        states.append(state)
+
+    BW = masa_robot*9.81  # N
+    bw_sum = Fz_total / BW
+    return float(max(0.0, bw_sum - float(bw_mult))), n_contacts_feet, states
+
+def exp_term(error, tol, r_at_tol=0.5):
+    error = float(error)
+    tol = max(float(tol), 1e-9)
+    alpha = -np.log(r_at_tol)
+    return np.exp(-alpha * (error / tol)**2)
+
+def band_error(x, x_star, deadband):
+    return max(0.0, abs(float(x) - float(x_star)) - float(deadband))
