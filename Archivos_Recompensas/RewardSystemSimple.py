@@ -166,7 +166,7 @@ class SimpleProgressiveReward:
                 self.env.logger.log("main","❌ Episode done: Excessive longitudinal drift")
             return True
         
-        max_tilt = 1.6
+        max_tilt = 0.8
         #Inclinación extrema
         if abs(euler[0]) > max_tilt or abs(euler[1]) > max_tilt:
             self.last_done_reason = "tilt"
@@ -253,7 +253,7 @@ class SimpleProgressiveReward:
         z_star = getattr(self, "init_com_z", 0.89)
         vcmd = float(getattr(self, "_vx_target",0.6))
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
-        w_velocidad=0.6
+        w_velocidad=0.8
         w_altura=0.3
         w_rotacion=0.01
         w_rotacion_v=0.01
