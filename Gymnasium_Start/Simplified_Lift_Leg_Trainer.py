@@ -311,9 +311,9 @@ class Simplified_Lift_Leg_Trainer:
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
             'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
-            'n_steps': 1024//self.n_envs,            # 256 es bajo, subir a 1024 para secuencias más largas
-            'batch_size': 512//self.n_envs,         # 128 subir a 512, multiplo de n_envs
-            'n_epochs': 4,             # con n_epoch=3 hay menos pasadas
+            'n_steps': 512,             #Mantener constante de momento por n_envs
+            'batch_size': 256,     
+            'n_epochs': 5,             # Probar a ver que tal con n_epochs de 5,4,3 creo que con 5 más memoria
             'gae_lambda': 0.95,        # Estándar
             'clip_range': 0.15,         # Estándar
             'vf_coef': 0.5,            # Estándar

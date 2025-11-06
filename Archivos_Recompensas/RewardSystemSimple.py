@@ -366,7 +366,7 @@ class SimpleProgressiveReward:
     def limit_speed_joint(self, joint_state_properties):
         # Velocidades de articulaciones
         qdot=np.asarray([s[1] for s in joint_state_properties])
-        limite_velocidad=np.asarray(self.env.joint_limit_angular_speed.values())
+        limite_velocidad=np.asarray(self.env.joint_max_angular_speed.values())
         velocidad_castigo=np.mean(((np.abs(qdot)-limite_velocidad)/0.5)**2)
         # peso= 10 ¿por que? Para que respete mejor los limites de velocidad
         return velocidad_castigo

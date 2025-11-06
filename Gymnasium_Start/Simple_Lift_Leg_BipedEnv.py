@@ -62,7 +62,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # de momento este dict es solo intuitivo
         self.limit_upper_lower_angles={}
         self.joint_tau_scale = {}
-        self.joint_limit_angular_speed = {}
+        self.joint_max_angular_speed = {}
         if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
             foot_name="foot_top"
         else:
@@ -73,7 +73,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.control_joint_names.append(values.get("name"))
                 #self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
                 self.joint_tau_scale[values.get("index")]=values.get("max_force")
-                self.joint_limit_angular_speed[values.get("index")]=values.get("index")
+                self.joint_max_angular_speed[values.get("index")]=values.get("max_velocity")
             
             if values.get("link_name")==f"left_{foot_name}":
                 self.left_foot_link_id=values.get("index")
@@ -120,7 +120,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
         # Observation space
-        obs_dim=16 + 2*len(self.joint_indices)
+        obs_dim=20 + 2*len(self.joint_indices)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -474,7 +474,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         fuerza_contacto_y_puntos=(num_contactos, F_total)
         return fuerza_contacto_y_puntos
     
-    def pie_tocando_suelo(self, robot_id, foot_link, fz_min=5.0):
+    @staticmethod
+    def pie_tocando_suelo(robot_id, foot_link, fz_min=5.0):
         return any(cp[9] > fz_min for cp in p.getContactPoints(bodyA=robot_id, linkIndexA=foot_link))
     
     def foot_contact_state(self, link_id:int, f_min:float=20.0, n_touch:int=2):
@@ -560,19 +561,22 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.init_pos, orn = p.getBasePositionAndOrientation(self.robot_id)
         lin_vel, init_ang_vel = p.getBaseVelocity(self.robot_id)
         euler = p.getEulerFromQuaternion(orn)
+        # Altura COM (si ya la calculas, úsala; si no, aprox con base z)
+        com_z = getattr(self, "com_z", self.init_pos[2])
         
         # Posición y orientación  
-        obs.extend([self.init_pos[0],self.init_pos[1], self.init_pos[2], euler[0], euler[1]])  # x, y, z, roll, pitch
+        obs.extend([self.init_pos[0],self.init_pos[1], com_z, euler[0], euler[1],euler[2]])  # x, y, z, roll, pitch
 
         # Velocidades
         #obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
 
-        yaw = p.getEulerFromQuaternion(orn)[2]
+        yaw = euler[2]
         cy, sy = np.cos(yaw), np.sin(yaw)
+        vel_COM_x,vel_COM_y,vel_COM_z=self.vel_COM
         # rotación mundo->cuerpo (2D yaw)
-        vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
-        vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
-        obs.extend([vx_b, vy_b, lin_vel[2], init_ang_vel[0], init_ang_vel[1]])
+        vx_b =  cy*vel_COM_x + sy*vel_COM_y
+        vy_b = -sy*vel_COM_x + cy*vel_COM_y
+        obs.extend([vx_b, vy_b, vel_COM_z, init_ang_vel[0], init_ang_vel[1], init_ang_vel[2]])
         
         
         # Observaciones ¿Por que no son posiciones del robot y V_com?
@@ -599,9 +603,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== INFORMACIÓN DE CONTACTO Y ALTURA DE RODILLAS (4 elementos) =====
         
         # Aquí sólo queremos saber si "hay algún contacto" → estable=False
-        left_contact=self.pie_tocando_suelo(link_id=self.left_foot_link_id, min_F=5.0)
-        right_contact=self.pie_tocando_suelo(link_id=self.right_foot_link_id, min_F=5.0)
+        left_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.left_foot_link_id, min_F=5.0)
+        right_contact=self.pie_tocando_suelo(self.robot_id,link_id=self.right_foot_link_id, min_F=5.0)
         obs.extend([float(left_contact), float(right_contact)])
+
+        m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
+        FzL = getattr(self, "Fz_left", 0.0)  / m_g
+        FzR = getattr(self, "Fz_right", 0.0) / m_g
+        obs.extend([FzL, FzR])
         
         # Alturas de pies
         l_foot = p.getLinkState(self.robot_id, self.left_foot_link_id)[0][2]
@@ -621,18 +630,19 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTADO DEL TORSO (8 elementos) =====
         
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
-        
+        com_z = getattr(self, "com_z", self.pos_post[2])
         # Posición y orientación
-        obs.extend([self.pos_post[0], self.pos_post[1], self.pos_post[2], self.euler_post[0], self.euler_post[1]])  # x, z, roll, pitch
-
+        obs.extend([self.pos_post[0], self.pos_post[1], com_z, self.euler_post[0], self.euler_post[1],self.euler_post[2]])  # x, z, roll, pitch
+        
         # Velocidades
         # obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
-        yaw = p.getEulerFromQuaternion(self.orn_post)[2]
+        yaw = self.euler_post[2]
         cy, sy = np.cos(yaw), np.sin(yaw)
         # rotación mundo->cuerpo (2D yaw)
-        vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
-        vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
-        obs.extend([vx_b, vy_b, lin_vel[2], ang_vel[0], ang_vel[1]])
+        vel_COM_x,vel_COM_y,vel_COM_z=self.vel_COM
+        vx_b =  cy*vel_COM_x + sy*vel_COM_y
+        vy_b = -sy*vel_COM_x + cy*vel_COM_y
+        obs.extend([vx_b, vy_b, vel_COM_z, ang_vel[0], ang_vel[1], ang_vel[2]])
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
         
@@ -661,6 +671,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         left_contact=self.pie_tocando_suelo(link_id=self.left_foot_link_id, min_F=5.0)
         right_contact=self.pie_tocando_suelo(link_id=self.right_foot_link_id, min_F=5.0)
         obs.extend([float(left_contact), float(right_contact)])
+
+        m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
+        FzL = getattr(self, "Fz_left", 0.0)  / m_g
+        FzR = getattr(self, "Fz_right", 0.0) / m_g
+        obs.extend([FzL, FzR])
         
         # Alturas de pies
         # eleva si prefieres pies en lugar de rodilla
@@ -830,11 +845,18 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.zmp_calculator:
             # COM (usa tu helper de Pybullet_Robot_Data)
             try:
-                com_world, _ = self.robot_data.get_center_of_mass()
+                com_world, self.mass = self.robot_data.get_center_of_mass()
                 self.init_com_x, self.init_com_y, self.init_com_z = float(com_world[0]), float(com_world[1]), float(com_world[2])
                 self.vel_COM=self.robot_data.get_center_of_mass_velocity()
             except Exception:
                 self.init_com_x = self.init_com_y = self.init_com_z = 0.0
+
+        self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
+        self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
+        self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
+        cmd_speed = float(np.hypot(self.vx_target, 0.0))
+        self.left_timer.update(self.L_in, cmd_speed)
+        self.right_timer.update(self.R_in, cmd_speed)
         
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()
