@@ -159,7 +159,7 @@ def main():
     plane_id=p.loadURDF("plane.urdf", [0,0,0])
     urdf_path = find_urdf()
     start_pos = [0, 0, 1.5]
-    start_orn = p.getQuaternionFromEuler([0, 0, 0])
+    start_orn = p.getQuaternionFromEuler([0, 0, np.pi/2])
     robot = p.loadURDF(urdf_path, start_pos, start_orn, useFixedBase=True,
                        flags=p.URDF_USE_SELF_COLLISION)
 

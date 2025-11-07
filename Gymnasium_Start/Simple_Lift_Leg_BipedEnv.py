@@ -50,10 +50,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Llamar al constructor padre pero sobrescribir configuración PAM
         super(Simple_Lift_Leg_BipedEnv, self).__init__()
-        self.robots_existentes=Rutas_Archivos.rutas_robots.value
-        self.rutas_json=Rutas_Archivos.rutas_jsons.value
         self.robot_name=robot_name
+        self.robots_existentes=Rutas_Archivos.rutas_robots.value if "blackbird" not in self.robot_name else Rutas_Archivos.rutas_blackbird.value
+        self.rutas_json=Rutas_Archivos.rutas_jsons.value
+        print(self.robots_existentes, self.rutas_json)
+        
         self.urdf_path = self.robots_existentes.get(f"{self.robot_name}")
+        print(self.robot_name, self.urdf_path)
         with open(self.rutas_json.get(f"{self.robot_name}"), 'r') as f:
             json_file_robot_joint_info=load(f)
             
@@ -65,8 +68,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.joint_max_angular_speed = {}
         if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
             foot_name="foot_top"
+            left_foot=f"left_{foot_name}"
+            right_foot=f"right_{foot_name}"
+        elif "blackbird" in self.robot_name:
+            foot_name="foot"
+            left_foot=f"l_{foot_name}"
+            right_foot=f"r_{foot_name}"
         else:
             foot_name="foot_link"
+            left_foot=f"left_{foot_name}"
+            right_foot=f"right_{foot_name}"
         for key, values in json_file_robot_joint_info.items():
             if values.get('type')!=4:
                 self.joint_indices.append(values.get("index"))
@@ -75,14 +86,14 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.joint_tau_max_force[values.get("index")]=values.get("max_force")
                 self.joint_max_angular_speed[values.get("index")]=values.get("max_velocity")
             
-            if values.get("link_name")==f"left_{foot_name}":
+            if values.get("link_name")==left_foot:
                 self.left_foot_link_id=values.get("index")
-            elif values.get("link_name")==f"right_{foot_name}":
+            elif values.get("link_name")==right_foot:
                 self.right_foot_link_id=values.get("index")
 
         self.footcontact_state=FootContactState
         # ===== CONFIGURACIÓN BÁSICA =====
-        self.max_pressure=4
+        self.max_pressure=6
         self.pam_muscles = PAM_McKibben(self.robot_name, self.control_joint_names, max_pressure=self.max_pressure)
         self.render_mode = render_mode
         self.logger=logger
@@ -732,12 +743,19 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if self.logger:
             self.logger.log("main",f"🔧 Contact friction CORRECTED for walking:")
             self.logger.log("main",f"   Solver: Enhanced stability parameters")
-        
+
+        if "blackbird" in self.robot_name:
+            pos=[0, 0, 1.10]
+            orientation=p.getQuaternionFromEuler([0, 0, np.pi/2])
+        else:
+            pos=[0, 0, 0.86]
+            orientation=p.getQuaternionFromEuler([0, 0, 0])
         # Cargar entorno
         self.plane_id = p.loadURDF("plane.urdf")
         self.robot_id = p.loadURDF(
             self.urdf_path,
-            [0, 0, 0.86],  # Altura inicial ligeramente mayor
+            pos,  # Altura inicial ligeramente mayor
+            orientation,
             useFixedBase=False,
             #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
         )
@@ -756,7 +774,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
         # Posiciones iniciales para equilibrio en una pierna (ligeramente asimétricas)
-        if "20" in self.robot_name:
+        if len(self.muscle_names)==20:
             initial_positions = {
                 # Pierna izquierda
                 self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
@@ -771,7 +789,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
                 self.joint_indices[9]: 0.0    # right_ankle_roll_joint 0.1
             }
-        elif "12" in self.robot_name:
+        elif len(self.muscle_names)==12:
             initial_positions = {
                 # Pierna izquierda
                 self.joint_indices[0]: np.deg2rad(0),   # debe ser menor 0
@@ -782,7 +800,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.joint_indices[4]: np.deg2rad(0),   # debe ser mayor 0
                 self.joint_indices[5]: np.deg2rad(0),   # debe ser menor 0
             }
-        elif "16" in self.robot_name:
+        elif len(self.muscle_names)==16:
             initial_positions = {
                 # Pierna izquierda
                 self.joint_indices[0]: 0.0,   
