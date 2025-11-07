@@ -181,7 +181,7 @@ def main():
             full[j] = vec_dof[i]
         return full
 
-    
+    Fmag_prev=0
 
     # Desactiva motores
     for j in range(p.getNumJoints(robot)):
@@ -199,10 +199,10 @@ def main():
 
     # Selector de músculo y magnitud de fuerza
     musc_idx_slider = p.addUserDebugParameter("actuator_index", 0, max(0, len(ACTUATORS)-1), 0)
-    force_slider    = p.addUserDebugParameter("force_mag(N)", 0.0, 1000.0, 100.0)
+    force_slider    = p.addUserDebugParameter("force_mag(N)", -1000.0, 1000.0, 100.0)
 
     joint_list = joint_names(robot)
-
+    
     print("Mueve ángulos, elige 'actuator_index' y 'force_mag'. Mira consola para τ.")
     while p.isConnected():
         # Lee pose
@@ -223,13 +223,13 @@ def main():
 
         # Imprime resumen con signo para “pitch” (asumimos eje Y)
         os.system('cls' if os.name == 'nt' else 'clear')
-        if Fmag!=0:
+        if abs(abs(Fmag_prev)-abs(Fmag))<=200:
             print(f"Actuador: {actuator['name']} | Fuerza = {Fmag:.1f} N (A->B)")
             print("Joint\t\t tau [N·m]\t sentido_pitch(flex/-ext)")
             for j, name in enumerate(joint_list):
                 sign_pitch = np.sign(tau[j])  # si eje es Y y convención  = flexión
                 print(f"{name:24s} {tau[j]: .3f}\t\t {'' if sign_pitch>0 else '-' if sign_pitch<0 else '0'}")
-
+            Fmag_prev=Fmag
         p.stepSimulation()
         time.sleep(1.0/240.0)
 
