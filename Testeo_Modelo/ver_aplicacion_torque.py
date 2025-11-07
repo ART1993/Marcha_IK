@@ -153,7 +153,7 @@ def main():
     cid = p.connect(p.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.resetSimulation()
-    p.setGravity(0, 0, 0)
+    p.setGravity(0, 0, -9.81)
     p.setTimeStep(1.0 / 240.0)
     p.setRealTimeSimulation(0)
     plane_id=p.loadURDF("plane.urdf", [0,0,0])
@@ -193,13 +193,13 @@ def main():
         info = p.getJointInfo(robot, j)
         name = info[1].decode("utf-8")
         lo, hi = float(info[8]), float(info[9])
-        if lo < -3.0 or lo == -1e10: lo = -1.5
-        if hi >  3.0 or hi ==  1e10: hi =  1.5
-        sliders_q.append((j, name, p.addUserDebugParameter(name, lo, hi, 0.0)))
+        if lo < -3.0 or lo == -1e10: lo = -200
+        if hi >  3.0 or hi ==  1e10: hi =  200
+        sliders_q.append((j, name, p.addUserDebugParameter(name, -50, 50, 0.0)))
 
     # Selector de músculo y magnitud de fuerza
-    musc_idx_slider = p.addUserDebugParameter("actuator_index", 0, max(0, len(ACTUATORS)-1), 0)
-    force_slider    = p.addUserDebugParameter("force_mag(N)", -1000.0, 1000.0, 100.0)
+    # musc_idx_slider = p.addUserDebugParameter("actuator_index", 0, max(0, len(ACTUATORS)-1), 0)
+    # force_slider    = p.addUserDebugParameter("force_mag(N)", -1000.0, 1000.0, 100.0)
 
     joint_list = joint_names(robot)
     
@@ -210,26 +210,26 @@ def main():
         for j, _, sid in sliders_q:
             qj = p.readUserDebugParameter(sid)
             q.append(qj)
-            p.resetJointState(robot, j, qj)
+            p.setJointMotorControl2(robot, j, p.TORQUE_CONTROL, force=qj)
 
         # Lee selección
-        i_act = int(round(p.readUserDebugParameter(musc_idx_slider)))
-        i_act = np.clip(i_act, 0, len(ACTUATORS)-1)
-        Fmag = float(p.readUserDebugParameter(force_slider))
-        actuator = ACTUATORS[i_act]
-        # calc_tau_from_actuator(robot, actuator, q_all, Fmag, active_joints, dof2j)
-        # Calcula τ
-        tau = calc_tau_from_actuator(robot, actuator, q, active_joints, dof2j, joints_to_dof, dof_to_joints, force_mag=Fmag)
+        # i_act = int(round(p.readUserDebugParameter(musc_idx_slider)))
+        # i_act = np.clip(i_act, 0, len(ACTUATORS)-1)
+        # Fmag = float(p.readUserDebugParameter(force_slider))
+        # actuator = ACTUATORS[i_act]
+        # # calc_tau_from_actuator(robot, actuator, q_all, Fmag, active_joints, dof2j)
+        # # Calcula τ
+        # tau = calc_tau_from_actuator(robot, actuator, q, active_joints, dof2j, joints_to_dof, dof_to_joints, force_mag=Fmag)
 
-        # Imprime resumen con signo para “pitch” (asumimos eje Y)
-        os.system('cls' if os.name == 'nt' else 'clear')
-        if abs(abs(Fmag_prev)-abs(Fmag))<=200:
-            print(f"Actuador: {actuator['name']} | Fuerza = {Fmag:.1f} N (A->B)")
-            print("Joint\t\t tau [N·m]\t sentido_pitch(flex/-ext)")
-            for j, name in enumerate(joint_list):
-                sign_pitch = np.sign(tau[j])  # si eje es Y y convención  = flexión
-                print(f"{name:24s} {tau[j]: .3f}\t\t {'' if sign_pitch>0 else '-' if sign_pitch<0 else '0'}")
-            Fmag_prev=Fmag
+        # # Imprime resumen con signo para “pitch” (asumimos eje Y)
+        # os.system('cls' if os.name == 'nt' else 'clear')
+        # if abs(abs(Fmag_prev)-abs(Fmag))<=200:
+        #     print(f"Actuador: {actuator['name']} | Fuerza = {Fmag:.1f} N (A->B)")
+        #     print("Joint\t\t tau [N·m]\t sentido_pitch(flex/-ext)")
+        #     for j, name in enumerate(joint_list):
+        #         sign_pitch = np.sign(tau[j])  # si eje es Y y convención  = flexión
+        #         print(f"{name:24s} {tau[j]: .3f}\t\t {'' if sign_pitch>0 else '-' if sign_pitch<0 else '0'}")
+        #     Fmag_prev=Fmag
         p.stepSimulation()
         time.sleep(1.0/240.0)
 
