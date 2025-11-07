@@ -240,21 +240,24 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     # tobillo derecho pitch
     joint_torques[5] = (pam_forces[10] * R_ankle_pitch_flex_R) + (-pam_forces[11] * R_ankle_pitch_ext_R)
 
+    # joint_tau_max_force
     # ======= REEMPLAZO DE CLIP GLOBAL POR CLIP ANGULAR =======
-    if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
-        # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
-        for i, jid in enumerate(env.joint_indices):
-            th_i = float(joint_positions[i])
-            lims = env.tau_limit_interp.get(jid, None)
-            if lims is not None:
-                tau_flex_max = max(0.0, lims["flex"](th_i))
-                tau_ext_max  = max(0.0, lims["ext"](th_i))
-                joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
-            else:
-                joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
-    else:
-        # en caso de que tau_limit_interp
-        joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
+    # if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
+    #     # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
+    #     for i, jid in enumerate(env.joint_indices):
+    #         th_i = float(joint_positions[i])
+    #         lims = env.tau_limit_interp.get(jid, None)
+    #         if lims is not None:
+    #             tau_flex_max = max(0.0, lims["flex"](th_i))
+    #             tau_ext_max  = max(0.0, lims["ext"](th_i))
+    #             joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
+    #         else:
+    #             joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
+    # else:
+    #     # en caso de que tau_limit_interp
+    for i, max_torque in enumerate(env.joint_tau_max_force.values()):
+        #torque_i=env.joint_tau_max_force[env.joint_indices[i]]
+        joint_torques[i] = np.clip(joint_torques, -max_torque, max_torque)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     env.pam_states = {
@@ -298,7 +301,7 @@ def calculate_robot_specific_joint_torques_16_pam(env, pam_pressures):
     # Obtener estados articulares (solo joints activos: caderas y rodillas)
     joint_states = p.getJointStates(env.robot_id, env.joint_indices)  
     joint_positions = [state[0] for state in joint_states]
-    joint_velocities = [s[1] for s in joint_states]
+    # joint_velocities = [s[1] for s in joint_states]
     
     # Calcular fuerzas PAM reales
     pam_forces = np.zeros(env.num_active_pams, dtype=float)
@@ -367,20 +370,22 @@ def calculate_robot_specific_joint_torques_16_pam(env, pam_pressures):
     joint_torques[7] = (pam_forces[14] * R_ankle_flex_R) + (-pam_forces[15] * R_ankle_ext_R) 
 
     # ======= REEMPLAZO DE CLIP GLOBAL POR CLIP ANGULAR =======
-    if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
-        # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
-        for i, jid in enumerate(env.joint_indices):
-            th_i = float(joint_positions[i])
-            lims = env.tau_limit_interp.get(jid, None)
-            if lims is not None:
-                tau_flex_max = max(0.0, lims["flex"](th_i))
-                tau_ext_max  = max(0.0, lims["ext"](th_i))
-                joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
-            else:
-                joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
-    else:
-        # en caso de que tau_limit_interp
-        joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
+    # if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
+    #     # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
+    #     for i, jid in enumerate(env.joint_indices):
+    #         th_i = float(joint_positions[i])
+    #         lims = env.tau_limit_interp.get(jid, None)
+    #         if lims is not None:
+    #             tau_flex_max = max(0.0, lims["flex"](th_i))
+    #             tau_ext_max  = max(0.0, lims["ext"](th_i))
+    #             joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
+    #         else:
+    #             joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
+    # else:
+    for i, max_torque in enumerate(env.joint_tau_max_force.values()):
+        joint_torques[i] = np.clip(joint_torques, -max_torque, max_torque)
+
+    
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     

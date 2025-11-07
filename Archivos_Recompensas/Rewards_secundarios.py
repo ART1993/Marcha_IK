@@ -282,17 +282,53 @@ def penalty_mech_power(self, torque_mapping, p_norm=None):
     power = np.sum(np.abs(taus * qd))
     if p_norm is None:
         # Normalización simple: (tau_lim_rms * qd_lim_rms) * N
-        # Si tienes 'joint_tau_scale' y 'maxVelocity', úsalos:
+        # Si tienes 'joint_tau_max_force' y 'maxVelocity', úsalos:
         tau_lim = []
         qd_lim = []
         for jid in self.env.joint_indices:
-            tl = getattr(self.env, "joint_tau_scale", {}).get(jid, getattr(self.env, "MAX_REASONABLE_TORQUE", 240.0))
+            tl = getattr(self.env, "joint_tau_max_force", {}).get(jid, getattr(self.env, "MAX_REASONABLE_TORQUE", 240.0))
             qi = p.getJointInfo(self.env.robot_id, jid)
             vmax = float(qi[11]) if qi[11] else 5.0
             tau_lim.append(abs(float(tl)))
             qd_lim.append(abs(vmax))
         p_norm = np.sqrt(np.mean(np.square(tau_lim))) * np.sqrt(np.mean(np.square(qd_lim))) * len(self.env.joint_indices)
     return float(np.clip(power / max(p_norm,1e-6), 0.0, 1.0))
+
+def reward_for_knees(self, torque_mapping,contact_feets):
+    # --- Bonus pro-rodilla (solo si hay margen de estabilidad) ---
+    # Contacto de pies
+    left_state = contact_feets[0]
+    right_state = contact_feets[1]
+    NONE, PLANTED = 0, 2
+    is_swing_L = (left_state == NONE)
+    is_swing_R = (right_state == NONE)
+    # Gate por margen ZMP (usa tu ZMP calculator)
+    zmp_margin = self.env.zmp_calculator.stability_margin_distance() if self.env.zmp_calculator else 0.0
+    gate = 1.0 if zmp_margin > 0.02 else 0.0  # ~2 cm de margen
+    # Velocidades articulares
+    qd = [s[1] for s in self.env.joint_states_properties]
+    knee_L = self.env.dict_joints["left_knee_joint"]
+    knee_R = self.env.dict_joints["right_knee_joint"]
+    i_kL = self.env.joint_indices.index(knee_L)
+    i_kR = self.env.joint_indices.index(knee_R)
+    knee_bonus = 0.02 * gate * (
+        (abs(qd[i_kL]) if is_swing_L else 0.0) + (abs(qd[i_kR]) if is_swing_R else 0.0)
+    )
+    reward = knee_bonus
+
+    # --- Tobillo “caro” durante STANCE (evita sostenerse a base de tobillo) ---
+    ankle_L = self.env.dict_joints["left_ankle_pitch_joint"]
+    ankle_R = self.env.dict_joints["right_ankle_pitch_joint"]
+    tau_map = torque_mapping  # ya lo calculas antes
+    tau_aL = abs(float(tau_map.get(ankle_L, 0.0)))
+    tau_aR = abs(float(tau_map.get(ankle_R, 0.0)))
+    ankle_pen = 0.002 * (
+        (tau_aL if left_state  == PLANTED else 0.0) +
+        (tau_aR if right_state == PLANTED else 0.0)
+    )
+    reward -= ankle_pen
+
+    return reward
 
 # 5) Penalización de “golpe vertical” (derivada de Fz) para amortiguar impactos
 def penalty_fz_jerk(self, beta=0.001):

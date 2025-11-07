@@ -71,24 +71,17 @@ class SimpleProgressiveReward:
         self.change_adaptation_rate = 1e-3
         self.decay_term=0.1
         self._vx_target=self.env.vx_target
+        self.joint_indices=self.env.joint_indices
+        self.limit_upper_lower_angles=self.env.limit_upper_lower_angles
+        self.joint_tau_max_force=self.env.joint_tau_max_force
+        self.joint_max_angular_speed=self.env.joint_max_angular_speed
         self.prev_euler=None
         #self.com_z_star = self.env.init_com_z
 
         # --- Opciones de guardado (puedes cambiarlas desde fuera) ---
-        self.checkpoint_dir = "checkpoints"
-        self.autosave_every = 100000//8   # ej.: 5000 para guardar cada 5k pasos; None = desactivado
-        self.autoload_scheduler = True # intentar cargar el último estado al iniciar
-        # Auto-carga del estado del scheduler si existe alguno
-        # if self.autoload_scheduler:
-        #     try:
-        #         latest = self._find_latest_scheduler_state(self.checkpoint_dir)
-        #         if latest is not None:
-        #             self.cargar_params_checkpoint(latest)
-        #             if self.env.logger:
-        #                 self.env.logger.log("main", f"🔁 Scheduler state loaded from: {latest}")
-        #     except Exception as _e:
-        #         if self.env.logger:
-        #             self.env.logger.log("main", f"⚠️ Could not autoload scheduler state: {_e}")
+        # self.checkpoint_dir = "checkpoints"
+        #self.autosave_every = 100000//8   # ej.: 5000 para guardar cada 5k pasos; None = desactivado
+        
 
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
@@ -247,6 +240,8 @@ class SimpleProgressiveReward:
         roll, pitch, _ = euler
         _, ang_v = p.getBaseVelocity(self.robot_id)
         #roll_prev, pitch_prev,_ = self.prev_euler if self.prev_euler is None else (0,0,0)
+        
+        #normalized_torque=np.array([torque_mapping[i]/self.joint_tau_max_force[i] for i in self.joint_indices])
         #num_acciones=len(action)
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
@@ -312,8 +307,8 @@ class SimpleProgressiveReward:
         return 0.0
 
     def castigo_cocontraccion(self, action):
-        flexor_pressure=action[0:,2]
-        extensor_pressure=action[1:,2]
+        flexor_pressure=np.array(action)[0:,2]
+        extensor_pressure=np.array(action)[1:,2]
         co_contraction=[]
         for flexor,extensor in zip(flexor_pressure,extensor_pressure):
             # Castiga que flexor y extensor sean bajos si flexor y extensor son mayores que 0.2
@@ -329,42 +324,10 @@ class SimpleProgressiveReward:
         smooth_efectivo=float(np.mean(delta_p**2))
         n_activos=float(np.mean(np.asarray(action) > 0.30))
         return w_smooth*smooth_efectivo + n_activos*w_activos
+
     
-    def reward_for_knees(self, torque_mapping,contact_feets):
-        # --- Bonus pro-rodilla (solo si hay margen de estabilidad) ---
-        # Contacto de pies
-        left_state = contact_feets[0]
-        right_state = contact_feets[1]
-        NONE, PLANTED = 0, 2
-        is_swing_L = (left_state == NONE)
-        is_swing_R = (right_state == NONE)
-        # Gate por margen ZMP (usa tu ZMP calculator)
-        zmp_margin = self.env.zmp_calculator.stability_margin_distance() if self.env.zmp_calculator else 0.0
-        gate = 1.0 if zmp_margin > 0.02 else 0.0  # ~2 cm de margen
-        # Velocidades articulares
-        qd = [s[1] for s in self.env.joint_states_properties]
-        knee_L = self.env.dict_joints["left_knee_joint"]
-        knee_R = self.env.dict_joints["right_knee_joint"]
-        i_kL = self.env.joint_indices.index(knee_L)
-        i_kR = self.env.joint_indices.index(knee_R)
-        knee_bonus = 0.02 * gate * (
-            (abs(qd[i_kL]) if is_swing_L else 0.0) + (abs(qd[i_kR]) if is_swing_R else 0.0)
-        )
-        reward = knee_bonus
-
-        # --- Tobillo “caro” durante STANCE (evita sostenerse a base de tobillo) ---
-        ankle_L = self.env.dict_joints["left_ankle_pitch_joint"]
-        ankle_R = self.env.dict_joints["right_ankle_pitch_joint"]
-        tau_map = torque_mapping  # ya lo calculas antes
-        tau_aL = abs(float(tau_map.get(ankle_L, 0.0)))
-        tau_aR = abs(float(tau_map.get(ankle_R, 0.0)))
-        ankle_pen = 0.002 * (
-            (tau_aL if left_state  == PLANTED else 0.0) +
-            (tau_aR if right_state == PLANTED else 0.0)
-        )
-        reward -= ankle_pen
-
-        return reward
+    
+    
     
 
     def limit_speed_joint(self, joint_state_properties):
@@ -372,8 +335,8 @@ class SimpleProgressiveReward:
         qdot = np.abs(np.array([s[1] for s in joint_state_properties], dtype=np.float32))
 
         # límites por articulación, alineados al orden de joint_indices
-        vmax = np.array([self.env.joint_max_angular_speed[jid]
-                        for jid in self.env.joint_indices], dtype=np.float32)
+        vmax = np.array([self.joint_max_angular_speed[jid]
+                        for jid in self.joint_indices], dtype=np.float32)
 
         # Exceso sobre el límite (0 si está por debajo)
         excess = np.maximum(0.0, qdot - vmax)

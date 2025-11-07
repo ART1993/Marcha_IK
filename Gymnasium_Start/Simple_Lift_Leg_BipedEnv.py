@@ -41,7 +41,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     def __init__(self, logger=None, render_mode='human', 
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
-                 vx_target: float = 1.2, # Bajar a 0.4 si da problemas
+                 vx_target: float = 1.2, # Bajar a 0.6 si da problemas
                  robot_name="2_legged_human_like_robot16DOF"):
         
         """
@@ -61,7 +61,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.control_joint_names=[]
         # de momento este dict es solo intuitivo
         self.limit_upper_lower_angles={}
-        self.joint_tau_scale = {}
+        self.joint_tau_max_force = {}
         self.joint_max_angular_speed = {}
         if "2_legged_minihuman_legs_robot12DOF" in self.robot_name:
             foot_name="foot_top"
@@ -71,8 +71,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             if values.get('type')!=4:
                 self.joint_indices.append(values.get("index"))
                 self.control_joint_names.append(values.get("name"))
-                #self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
-                self.joint_tau_scale[values.get("index")]=values.get("max_force")
+                self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                self.joint_tau_max_force[values.get("index")]=values.get("max_force")
                 self.joint_max_angular_speed[values.get("index")]=values.get("max_velocity")
             
             if values.get("link_name")==f"left_{foot_name}":
@@ -945,15 +945,15 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Límites de seguridad (basados en fuerzas PAM reales calculadas)
         # self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
         # self.MAX_REASONABLE_TORQUE_FEET = 40.0
-        # self.joint_tau_scale = {}
+        # self.joint_tau_max_force = {}
         # #control_joint_names
         # for i, jid in enumerate(self.joint_indices):
         #     # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
         #     #print(i, self.control_joint_names[i])
         #     if "ankle" in self.control_joint_names[i]:
-        #         self.joint_tau_scale[jid]=self.MAX_REASONABLE_TORQUE_FEET
+        #         self.joint_tau_max_force[jid]=self.MAX_REASONABLE_TORQUE_FEET
         #     else:
-        #         self.joint_tau_scale[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
+        #         self.joint_tau_max_force[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """
@@ -1293,12 +1293,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 tau_max_values.append(denom)
         else:
             # === Fallback: escalado global previo
-            joint_tau_scale = self.joint_tau_scale
+            joint_tau_max_force = self.joint_tau_max_force
             max_reasonable = float(getattr(self, "MAX_REASONABLE_TORQUE", 240.0))
             for jid, tau_cmd in torque_mapping.items():
                 scale = max_reasonable
-                if isinstance(joint_tau_scale, dict):
-                    scale = float(joint_tau_scale.get(jid, max_reasonable))
+                if isinstance(joint_tau_max_force, dict):
+                    scale = float(joint_tau_max_force.get(jid, max_reasonable))
                 tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
         return tau_utils
     
