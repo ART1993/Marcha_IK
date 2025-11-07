@@ -1,0 +1,292 @@
+{
+    "0": {
+        "index": 0,
+        "name": "l_ab_ad",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.0,
+        "upper_limit": 2.0,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "l_ab_ad",
+        "joint_axis": [
+            0.0,
+            -1.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.15,
+            0.09385,
+            -0.03683
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": -1
+    },
+    "1": {
+        "index": 1,
+        "name": "l_yaw",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.0,
+        "upper_limit": 2.0,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "l_yaw",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            -8e-05,
+            -0.02446,
+            -0.12804000000000001
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 0
+    },
+    "2": {
+        "index": 2,
+        "name": "l_upper",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -1.91986,
+        "upper_limit": 1.22173,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "l_upper",
+        "joint_axis": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.0,
+            0.0,
+            -0.03518
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 1
+    },
+    "3": {
+        "index": 3,
+        "name": "l_lower",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.0944,
+        "upper_limit": 0.34907,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "l_lower",
+        "joint_axis": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            -0.00043,
+            0.10468000000000001,
+            -0.31529
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 2
+    },
+    "4": {
+        "index": 4,
+        "name": "l_foot",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -1.5708,
+        "upper_limit": 0.69813,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "l_foot",
+        "joint_axis": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.0001,
+            -0.15415,
+            -0.2782
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 3
+    },
+    "5": {
+        "index": 5,
+        "name": "r_ab_ad",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.0,
+        "upper_limit": 2.0,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "r_ab_ad",
+        "joint_axis": [
+            0.0,
+            -1.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            -0.15,
+            0.09385,
+            -0.03683
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": -1
+    },
+    "6": {
+        "index": 6,
+        "name": "r_yaw",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.0,
+        "upper_limit": 2.0,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "r_yaw",
+        "joint_axis": [
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_frame_pos": [
+            8e-05,
+            -0.02445,
+            -0.12807000000000002
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 5
+    },
+    "7": {
+        "index": 7,
+        "name": "r_upper",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -1.91986,
+        "upper_limit": 1.22173,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "r_upper",
+        "joint_axis": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.0,
+            0.0,
+            -0.03517
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 6
+    },
+    "8": {
+        "index": 8,
+        "name": "r_lower",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -2.0944,
+        "upper_limit": 0.34907,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "r_lower",
+        "joint_axis": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.00228,
+            0.10170000000000001,
+            -0.30965
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 7
+    },
+    "9": {
+        "index": 9,
+        "name": "r_foot",
+        "type": 0,
+        "damping": 0.0,
+        "friction": 0.0,
+        "lower_limit": -1.5708,
+        "upper_limit": 0.69813,
+        "max_force": 0.0,
+        "max_velocity": 0.0,
+        "link_name": "r_foot",
+        "joint_axis": [
+            1.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.00018,
+            -0.15339,
+            -0.27627999999999997
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 8
+    }
+}

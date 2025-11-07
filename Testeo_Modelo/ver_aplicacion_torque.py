@@ -6,7 +6,7 @@ import numpy as np
 import pybullet as p
 import pybullet_data
 
-ROBOT_NAME = "2_legged_human_like_robot12DOF"
+ROBOT_NAME = "Black_bird/urdf/blackbird"
 
 CANDIDATE_PATHS = [
     f"Robots_Versiones/{ROBOT_NAME}.urdf",
@@ -170,18 +170,18 @@ def main():
     dof2j = dict(enumerate(active_joints))
     j2dof = {j: i for i, j in dof2j.items()}
 
-    def joints_to_dof(q_all, active_joints):
-        """Convierte lista q por 'joint index' -> vector q_dof (solo activos)."""
-        return [q_all[j] for j in active_joints]
+    # def joints_to_dof(q_all, active_joints):
+    #     """Convierte lista q por 'joint index' -> vector q_dof (solo activos)."""
+    #     return [q_all[j] for j in active_joints]
 
-    def dof_to_joints(vec_dof, size_all, dof2j):
-        """Coloca vec_dof en un vector tamaño 'size_all', ceros en FIXED."""
-        full = np.zeros(size_all, dtype=float)
-        for i, j in dof2j.items():
-            full[j] = vec_dof[i]
-        return full
+    # def dof_to_joints(vec_dof, size_all, dof2j):
+    #     """Coloca vec_dof en un vector tamaño 'size_all', ceros en FIXED."""
+    #     full = np.zeros(size_all, dtype=float)
+    #     for i, j in dof2j.items():
+    #         full[j] = vec_dof[i]
+    #     return full
 
-    Fmag_prev=0
+    # Fmag_prev=0
 
     # Desactiva motores
     for j in range(p.getNumJoints(robot)):

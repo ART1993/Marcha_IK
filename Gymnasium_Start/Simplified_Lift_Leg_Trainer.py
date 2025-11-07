@@ -114,7 +114,7 @@ class Simplified_Lift_Leg_Trainer:
                  robot_name="2_legged_human_like_robot16DOF",
                  _simple_reward_mode="progressive",  # Modo de recompensa por defecto
                  _allow_hops=False,
-                 _vx_target=1.2
+                 _vx_target=0.6
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====

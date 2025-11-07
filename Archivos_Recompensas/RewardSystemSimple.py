@@ -257,8 +257,10 @@ class SimpleProgressiveReward:
         w_smooth=0.05
         w_activos = 0.1
         w_velocidad_joint = 0.01
+        w_angulo_limite=0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
-        supervivencia=0.8
+        supervivencia=0.2
+
         #Recompensas de ciclo del pie
 
         # Recompensa velocidad
@@ -283,10 +285,12 @@ class SimpleProgressiveReward:
         castigo_rotacion= w_rotacion * np.tanh(tilt_abs / 0.5)
         castigo_rotacion_v =  w_rotacion_v*np.tanh(((ang_v[0])**2 + (ang_v[1])**2)/0.5)
 
+        castigo_angulo_limite= self.castigo_angulo_limite(joint_state_properties)
+
         reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
                   -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ castigo_rotacion +
                     w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + 
-                    w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v))
+                    w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v + castigo_angulo_limite*w_angulo_limite))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
@@ -295,6 +299,7 @@ class SimpleProgressiveReward:
         self.reawrd_step['castigo_velocidad_joint']  = w_velocidad_joint*castigo_velocidad_joint
         self.reawrd_step['castigo_rotacion']  = castigo_rotacion
         self.reawrd_step['castigo_rotacion_v']  = castigo_rotacion_v
+        self.reawrd_step['castigo_angulo_limite']  = castigo_angulo_limite*w_angulo_limite
 
         # self.reawrd_step['recompensa_fase'] = recompensa_fase
         # self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
@@ -306,6 +311,20 @@ class SimpleProgressiveReward:
         if timer.touchdown_event:
             return float(k * max(0.0, timer.air_time_last - t_thresh))
         return 0.0
+    
+    def castigo_angulo_limite(self, joint_state_properties):
+        angles=np.array([s[0] for s in joint_state_properties], dtype=np.float32)
+        limites_superiores=np.array([lim["upper"] for lim in self.limit_upper_lower_angles.values()], dtype=np.float32)
+        limites_inferiores=np.array([lim["lower"] for lim in self.limit_upper_lower_angles.values()], dtype=np.float32)
+        castigo=0.0
+        for i, angle in enumerate(angles):
+            lim_sup=limites_superiores[i]
+            lim_inf=limites_inferiores[i]
+            if angle>=(lim_sup-0.1):
+                castigo+= (angle-lim_sup)**2
+            elif angle<=(lim_inf+0.1):
+                castigo += (lim_inf - angle)**2
+        return float(castigo/len(angles))
 
     def castigo_cocontraccion(self, action):
         # extensores (torque positivo):   mueve cadera hacia delante (angulo negativo), rodilla, la flexiona, tobillos, hacia arriba
@@ -331,9 +350,6 @@ class SimpleProgressiveReward:
         accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(torque_normalizado)
         # Evita que el torque pase de +1 a -1 instantaneamente
         delta_p = np.asarray(torque_normalizado) - np.asarray(accion_previa)
-        # a = actividad ≈ acción en [0,1]; términos: (1/M)∑a^3, (1/M)∑(Δu)^2, fracción activa
-        #actividad=np.asarray(action)
-        #actividad_efectiva=float(np.mean(actividad**3))
         smooth_efectivo=float(np.mean(delta_p**2))
         # Cuenta cuantos actuadores están activos
         n_activos=float(np.mean(np.asarray(action) > 0.30))

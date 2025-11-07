@@ -10,3 +10,5 @@ Creacion_CSV_Blender/CSV_creator.py
 parametros_Robot.txt
 *Zone*
 Entrenamientos_previos*
+*.stl
+Robots_Versiones/Black_bird/urdf/top_level.txt

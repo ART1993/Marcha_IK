@@ -343,6 +343,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             "reward": float(reward),
                             "roll": float(self.euler[0]),
                             "pitch": float(self.euler[1]),
+                            "yaw": float(self.euler[2]),
                             "left_down": int(bool(left_down)),
                             "right_down": int(bool(right_down)),
                             "F_L": float(F_L),
@@ -351,8 +352,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             "state_L": left_state, "state_R": right_state,
                             "zmp_x": float(self.zmp_x),
                             "zmp_y": float(self.zmp_y),
-                            "com_x": self.com_x,
-                            "com_y": self.com_y,
+                            "com_x": (self.com_x),
+                            "com_y": (self.com_y),
                             "com_z": self.com_z,
                         }
             # Debug simple
@@ -434,7 +435,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 restitution=0.01,           
                 contactDamping=100,         
                 contactStiffness=12000,      
-                frictionAnchor=1
+                # frictionAnchor=1
             )
         
         # ===== FRICCIÓN DEL SUELO =====
@@ -443,7 +444,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         p.changeDynamics(
             self.plane_id,
             -1,                         # -1 for base link
-            lateralFriction=1.2,        # Fricción estándar del suelo 0.6
+            lateralFriction=0.9,        # Fricción estándar del suelo 0.6
             # spinningFriction=0.05,
             # rollingFriction=0.005
         )
@@ -1090,7 +1091,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                             
                         self.csvlog.write("angle_values", row_q_angle)
                         self.csvlog.write("speed_values", row_v_angle)
-                        self.csvlog.write("pressure", row_pressure_PAM)
+                        
                     
                     row_pressure_PAM={"step": int(self.step_count),
                                     "episode": int(self.n_episodes),
@@ -1116,6 +1117,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
                     #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("COM_values", row_com)
+                    self.csvlog.write("pressure", row_pressure_PAM)
                     
                     
 

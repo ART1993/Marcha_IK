@@ -188,8 +188,8 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     P = np.array([env.pam_muscles[muscle_names].real_pressure_PAM(u) for muscle_names,u 
                     in zip(env.muscle_names, pam_pressures)], dtype=float)
     
-    print(env.muscle_names)
-    print(env.joint_names)
+    # print(env.muscle_names)
+    # print(env.joint_names)
     # Cadera izquierda pitch
     pam_forces[0], pam_forces[1], R_flex_pitch_L, R_ext_pitch_L=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 0, 1,
                                                                                      env.hip_pitch_flexor_moment_arm,
