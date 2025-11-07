@@ -241,7 +241,7 @@ class SimpleProgressiveReward:
         _, ang_v = p.getBaseVelocity(self.robot_id)
         
         # Torque normalizado entre [-1,1] para cada articulación. Reducir la fuerza de 
-        #normalized_torque=np.array([torque_mapping[i]/self.joint_tau_max_force[i] for i in self.joint_indices])
+        torque_normalizado=np.array([torque_mapping[i]/self.joint_tau_max_force[i] for i in self.joint_indices])
         #num_acciones=len(action)
         vx = float(self.vel_COM[0])
         vy = float(self.vel_COM[1])
@@ -275,7 +275,7 @@ class SimpleProgressiveReward:
         castigo_posicion = (self.com_y/0.1)**2
         castigo_velocidad_lateral=(vy)**2
 
-        castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
+        castigo_esfuerzo = self.castigo_effort(torque_normalizado, action, w_smooth, w_activos)
         castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
         def dead_zone(pos_ang):
             return max(0,abs(pos_ang)-np.deg2rad(15))
@@ -285,7 +285,8 @@ class SimpleProgressiveReward:
 
         reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
                   -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ castigo_rotacion +
-                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v))
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + 
+                    w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
@@ -298,7 +299,7 @@ class SimpleProgressiveReward:
         # self.reawrd_step['recompensa_fase'] = recompensa_fase
         # self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
         #tau y grf_excess_only son castigo de pain
-        self.action_previous=action
+        self.action_previous=torque_normalizado
         return float(reward)
 
     def feet_airtime_reward(self, timer, t_thresh=0.25, k=1.0):
@@ -312,6 +313,11 @@ class SimpleProgressiveReward:
         flexor_pressure=np.array(action)[0:,2]
         extensor_pressure=np.array(action)[1:,2]
         co_contraction=[]
+        
+        # action[:len(action)//2]=>lado izquierdo
+        action_izquierdo =np.array(action)[:len(action)//2]
+        action_derecho =np.array(action)[len(action)//2:]
+        # action[:len(action)//2]=>lado derecho
         angulos=self.env.joint_states_properties[0]
         #self.limit_upper_lower_angles
         for i, (flexor,extensor) in enumerate(zip(flexor_pressure,extensor_pressure)):
@@ -320,16 +326,19 @@ class SimpleProgressiveReward:
             #if 
             co_contraction.append((flexor-extensor)**2)
     
-    def castigo_effort(self,action, w_smooth, w_activos):
+    def castigo_effort(self,torque_normalizado, action, w_smooth, w_activos):
         # Suavidad en presiones (acciones en [0,1])
-        accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
-        delta_p = np.asarray(action) - np.asarray(accion_previa)
+        accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(torque_normalizado)
+        # Evita que el torque pase de +1 a -1 instantaneamente
+        delta_p = np.asarray(torque_normalizado) - np.asarray(accion_previa)
         # a = actividad ≈ acción en [0,1]; términos: (1/M)∑a^3, (1/M)∑(Δu)^2, fracción activa
         #actividad=np.asarray(action)
         #actividad_efectiva=float(np.mean(actividad**3))
         smooth_efectivo=float(np.mean(delta_p**2))
+        # Cuenta cuantos actuadores están activos
         n_activos=float(np.mean(np.asarray(action) > 0.30))
-        return w_smooth*smooth_efectivo + n_activos*w_activos
+        l2mag  = float(np.mean(np.clip(np.abs(torque_normalizado), 0, 1.0)**2))
+        return w_smooth*smooth_efectivo + n_activos*w_activos + 0.01*l2mag
 
     
     
