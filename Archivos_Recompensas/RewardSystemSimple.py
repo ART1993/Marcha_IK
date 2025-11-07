@@ -307,12 +307,18 @@ class SimpleProgressiveReward:
         return 0.0
 
     def castigo_cocontraccion(self, action):
+        # extensores (torque positivo):   mueve cadera hacia delante (angulo negativo), rodilla, la flexiona, tobillos, hacia arriba
+        # flexores (torque negativo):     mueve pierna hacia atrás (angulo positivo), rodilla, la extiende, hacia abajo
         flexor_pressure=np.array(action)[0:,2]
         extensor_pressure=np.array(action)[1:,2]
         co_contraction=[]
-        for flexor,extensor in zip(flexor_pressure,extensor_pressure):
-            # Castiga que flexor y extensor sean bajos si flexor y extensor son mayores que 0.2
-            co_contraction.append(abs(flexor-extensor))
+        angulos=self.env.joint_states_properties[0]
+        #self.limit_upper_lower_angles
+        for i, (flexor,extensor) in enumerate(zip(flexor_pressure,extensor_pressure)):
+            indice_articulacion=self.joint_indices[i]
+            # Castiga que flexor y extensor sean bajos si flexor y extensor son mayores que 0.2 o si flexor>0 y angulo =lim
+            #if 
+            co_contraction.append((flexor-extensor)**2)
     
     def castigo_effort(self,action, w_smooth, w_activos):
         # Suavidad en presiones (acciones en [0,1])

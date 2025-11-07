@@ -71,7 +71,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             if values.get('type')!=4:
                 self.joint_indices.append(values.get("index"))
                 self.control_joint_names.append(values.get("name"))
-                self.limit_upper_lower_angles[values.get("name")]={'lower':values.get("lower"),'upper':values.get("upper")}
+                self.limit_upper_lower_angles[values.get("index")]={'lower':values.get("lower"),'upper':values.get("upper")}
                 self.joint_tau_max_force[values.get("index")]=values.get("max_force")
                 self.joint_max_angular_speed[values.get("index")]=values.get("max_velocity")
             
@@ -93,7 +93,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         
         self.muscle_names = list(self.pam_muscles.keys())
-        
+        print(self.muscle_names)
         self.num_active_pams = len(self.muscle_names)
         
         self.frequency_simulation=240.0
@@ -1094,25 +1094,29 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         row_v_angle={"step": int(self.step_count),
                                     "episode": int(self.n_episodes),
                                     "t": round(self.step_count / self.frequency_simulation, 5),}
-                        row_pressure_PAM={"step": int(self.step_count),
-                                    "episode": int(self.n_episodes),
-                                    "t": round(self.step_count / self.frequency_simulation, 5),}
-                        for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
+                        
+                        for name, state in zip(self.dict_joints.keys(), self.joint_states_properties):
                             pos, vel, _, _ = state
                             row_q_angle[f"q_{name}"]=round(pos,3)
                             row_v_angle[f"vel_{name}"]=round(vel,3)
-                            row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
-                            row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
+                            
                         self.csvlog.write("angle_values", row_q_angle)
                         self.csvlog.write("speed_values", row_v_angle)
                         self.csvlog.write("pressure", row_pressure_PAM)
                     
+                    row_pressure_PAM={"step": int(self.step_count),
+                                    "episode": int(self.n_episodes),
+                                    "t": round(self.step_count / self.frequency_simulation, 5),}
+                    for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
+                        row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
+                        row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
+                        row_pressure_PAM[f"τ_aplicado_{name}"]=round(self.joint_tau_max_force[self.joint_indices[idx]] ,2)
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
                     row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)
                     #row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     #row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
-                    row_com[f"τ_aplicado_{name}"]=round(self.joint_tau_max_force[idx] ,2)
+                    
                     row_com[f"F_L"]=round(info["kpi"]['F_L'],3)
                     row_com[f"F_R"]=round(info["kpi"]['F_R'],3)
                     row_com[f"n_l"]=int(info["kpi"]['nL'])

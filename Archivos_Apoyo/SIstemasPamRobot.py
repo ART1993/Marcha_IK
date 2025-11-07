@@ -96,6 +96,23 @@ def Sistema_Musculos_PAM_12(control_joint_names=None):
     pam_dict = {}
     for joint in control_joint_names:
         if "hip_pitch" in joint:
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.4, r0=0.04, alpha0=np.pi/4, max_factor_pressure=4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.4, r0=0.04, alpha0=np.pi/4, max_factor_pressure=4)
+        elif "knee" in joint:
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.4, r0=0.04, alpha0=np.pi/4, max_factor_pressure=4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.4, r0=0.04, alpha0=np.pi/4, max_factor_pressure=4)
+        elif "ankle_pitch" in joint:
+            # Ver si 35, 40, 45 para
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.2, r0=0.030, alpha0=np.pi/4, max_factor_pressure=4)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.2, r0=0.030, alpha0=np.pi/4, max_factor_pressure=4)
+    return pam_dict
+
+# ultima vez usado: 7/11/25 
+def Sistema_Musculos_PAM_12_alto_valor(control_joint_names=None):
+
+    pam_dict = {}
+    for joint in control_joint_names:
+        if "hip_pitch" in joint:
             pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.4, r0=0.055, alpha0=np.pi/4)
             pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.4, r0=0.055, alpha0=np.pi/4)
         elif "knee" in joint:
