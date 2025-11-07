@@ -82,7 +82,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         self.footcontact_state=FootContactState
         # ===== CONFIGURACIÓN BÁSICA =====
-        self.pam_muscles = PAM_McKibben(self.robot_name, self.control_joint_names)
+        self.max_pressure=4
+        self.pam_muscles = PAM_McKibben(self.robot_name, self.control_joint_names, max_pressure=self.max_pressure)
         self.render_mode = render_mode
         self.logger=logger
         self.csvlog = csvlog
@@ -941,19 +942,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Control antagónico
         self.INHIBITION_FACTOR = 0.3           # 30% inhibición recíproca
         self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
-        
-        # Límites de seguridad (basados en fuerzas PAM reales calculadas)
-        # self.MAX_REASONABLE_TORQUE_HIP_KNEE = 200.0     # N⋅m (factor de seguridad incluido)
-        # self.MAX_REASONABLE_TORQUE_FEET = 40.0
-        # self.joint_tau_max_force = {}
-        # #control_joint_names
-        # for i, jid in enumerate(self.joint_indices):
-        #     # TODO: si tienes un dict propio o lees 'effort' del URDF, reemplázalo aquí.
-        #     #print(i, self.control_joint_names[i])
-        #     if "ankle" in self.control_joint_names[i]:
-        #         self.joint_tau_max_force[jid]=self.MAX_REASONABLE_TORQUE_FEET
-        #     else:
-        #         self.joint_tau_max_force[jid] = self.MAX_REASONABLE_TORQUE_HIP_KNEE
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """

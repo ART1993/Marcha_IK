@@ -121,13 +121,13 @@ class Rutas_Archivos(Enum):
 # ===================================================================================================================================================================================================== #
 
 
-def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_names=None):
+def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_names=None, max_pressure=5):
     if "2_legged_human_like_robot16DOF" in robot_name:
-        return Sistema_Musculos_PAM_16(control_joint_names)
+        return Sistema_Musculos_PAM_16(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot20DOF" in robot_name:
-        return Sistema_Musculos_PAM_20(control_joint_names)
+        return Sistema_Musculos_PAM_20(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot12DOF" in robot_name:
-        return Sistema_Musculos_PAM_12(control_joint_names)
+        return Sistema_Musculos_PAM_12(control_joint_names,max_pressure)
     #elif "2_legged_human_like_robot12DOF_done" in robot_name:
     #    return Sistema_Musculos_PAM_12_done(control_joint_names)
     else:
