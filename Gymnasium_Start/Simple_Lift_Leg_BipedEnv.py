@@ -110,7 +110,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         }
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
-        self.recent_rewards=deque(maxlen=50)
+        # self.recent_rewards=deque(maxlen=50)
         # Action space: self.num_active_pams presiones PAM normalizadas [0, 1]
         self.action_space = spaces.Box(
             low=0.0, 
@@ -1094,32 +1094,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                         row_v_angle={"step": int(self.step_count),
                                     "episode": int(self.n_episodes),
                                     "t": round(self.step_count / self.frequency_simulation, 5),}
-                        row_torque_angle={"step": int(self.step_count),
-                                    "episode": int(self.n_episodes),
-                                    "t": round(self.step_count / self.frequency_simulation, 5),}
-                        row_force_angle={"step": int(self.step_count),
-                                    "episode": int(self.n_episodes),
-                                    "t": round(self.step_count / self.frequency_simulation, 5),}
                         row_pressure_PAM={"step": int(self.step_count),
                                     "episode": int(self.n_episodes),
                                     "t": round(self.step_count / self.frequency_simulation, 5),}
                         for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
-                            pos, vel, reaction, applied = state
-                            Fx,Fy,Fz,Mx,My,Mz = reaction
+                            pos, vel, _, _ = state
                             row_q_angle[f"q_{name}"]=round(pos,3)
                             row_v_angle[f"vel_{name}"]=round(vel,3)
-                            row_torque_angle[f"τ_reaction_{name}_x"]=round(Mx,2)
-                            row_torque_angle[f"τ_reaction_{name}_y"]=round(My,2)
-                            row_torque_angle[f"τ_reaction_{name}_z"]=round(Mz,2)
-                            row_force_angle[f"Forces_{name}_x"]=round(Fx,3)
-                            row_force_angle[f"Forces_{name}_y"]=round(Fy,3)
-                            row_force_angle[f"Forces_{name}_z"]=round(Fz,3)
                             row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
                             row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
                         self.csvlog.write("angle_values", row_q_angle)
                         self.csvlog.write("speed_values", row_v_angle)
-                        self.csvlog.write("torque_values", row_torque_angle)
-                        self.csvlog.write("force_values", row_force_angle)
                         self.csvlog.write("pressure", row_pressure_PAM)
                     
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
@@ -1127,6 +1112,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)
                     #row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
                     #row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
+                    row_com[f"τ_aplicado_{name}"]=round(self.joint_tau_max_force[idx] ,2)
                     row_com[f"F_L"]=round(info["kpi"]['F_L'],3)
                     row_com[f"F_R"]=round(info["kpi"]['F_R'],3)
                     row_com[f"n_l"]=int(info["kpi"]['nL'])

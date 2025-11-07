@@ -239,8 +239,8 @@ class SimpleProgressiveReward:
         euler = p.getEulerFromQuaternion(orn)
         roll, pitch, _ = euler
         _, ang_v = p.getBaseVelocity(self.robot_id)
-        #roll_prev, pitch_prev,_ = self.prev_euler if self.prev_euler is None else (0,0,0)
         
+        # Torque normalizado entre [-1,1] para cada articulación. Reducir la fuerza de 
         #normalized_torque=np.array([torque_mapping[i]/self.joint_tau_max_force[i] for i in self.joint_indices])
         #num_acciones=len(action)
         vx = float(self.vel_COM[0])
