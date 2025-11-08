@@ -118,7 +118,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Estados PAM básicos
         self.pam_states = {
             'pressures': np.zeros(self.num_active_pams),
-            'forces': np.zeros(self.num_active_pams)
+            'forces': self.joint_torques
         }
         
         # ===== CONFIGURACIÓN DE ESPACIOS =====
@@ -1122,7 +1122,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
                         row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
                         row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
-                        row_pressure_PAM[f"τ_aplicado_{name}"]=round(self.joint_tau_max_force[self.joint_indices[idx]] ,2)
+                        row_pressure_PAM[f"τ_aplicado_{name}"]=round(self.joint_torques[idx] ,2)
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
                     row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)

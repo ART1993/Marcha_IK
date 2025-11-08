@@ -254,8 +254,8 @@ class SimpleProgressiveReward:
         w_rotacion_v=0.01
         # Este para las acciones de y
         w_lateral=0.1
-        w_smooth=0.05
-        w_activos = 0.1
+        w_smooth=0.1
+        w_activos = 0.05
         w_velocidad_joint = 0.01
         w_angulo_limite=0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
