@@ -197,8 +197,7 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     P = np.array([env.pam_muscles[muscle_names].real_pressure_PAM(u) for muscle_names,u 
                     in zip(env.muscle_names, pam_pressures)], dtype=float)
     
-    # print(env.muscle_names)
-    # print(env.joint_names)
+    
     joint_torques = np.zeros(len(joint_states))
     # Cadera izquierda pitch
     joint_torques[0]=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 0, 1,
@@ -248,9 +247,11 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     #             joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
     # else:
     #     # en caso de que tau_limit_interp
-    for i, index in enumerate(env.joint_indices):
-        #torque_i=env.joint_tau_max_force[env.joint_indices[i]]
-        joint_torques[i] = np.clip(joint_torques[i], -env.joint_tau_max_force[index], env.joint_tau_max_force[index])
+    # for i, index in enumerate(env.joint_indices):
+    #     #torque_i=env.joint_tau_max_force[env.joint_indices[i]]
+    #     joint_torques[i] = np.clip(joint_torques[i], -env.joint_tau_max_force[index], env.joint_tau_max_force[index])
+    print(joint_torques)
+    # print(env.joint_names)
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     env.pam_states = {

@@ -90,7 +90,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.left_foot_link_id=values.get("index")
             elif values.get("link_name")==right_foot:
                 self.right_foot_link_id=values.get("index")
-
+        self.joint_torques=np.zeros(len(self.joint_indices))
         self.footcontact_state=FootContactState
         # ===== CONFIGURACIÓN BÁSICA =====
         self.max_pressure=6
@@ -132,7 +132,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
         # Observation space
-        obs_dim=20 + 2*len(self.joint_indices)
+        obs_dim=20 + 3*len(self.joint_indices)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -233,7 +233,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         joint_torques = self._apply_pam_forces(normalized_pressures)
         
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
-
+        
         # Aplicar torques
         #torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
         # En el caso que quiera reducir los torques a usar y por tanto los joints no fijos #[:len(joint_torques)]
@@ -249,6 +249,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             )
         p.stepSimulation()
         self.sim_time += self.dt
+        self.joint_torques=joint_torques
         #parametros tras ejecutar step de simulación 
         self.pos_post, self.orn_post = p.getBasePositionAndOrientation(self.robot_id)
         self.euler_post = p.getEulerFromQuaternion(self.orn_post)
@@ -432,7 +433,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 lateralFriction=0.05,    # Muy reducida de 0.6 a 0.1
                 spinningFriction=0.05,  # Muy reducida de 0.4 a 0.05
                 rollingFriction=0.01,   # Muy reducida de 0.05 a 0.01
-                restitution=0.05
+                restitution=0.9 #antes es 0.05
             )
 
         # Pie izquierdo - alta fricción para agarre
@@ -442,8 +443,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 foot_id,
                 lateralFriction=0.85,                #0.9 bajar a 0.7 si hay problemas, se volvio a bajar a 0.55       
                 spinningFriction=0.12,                   #0.15,       
-                rollingFriction=0.01,       
-                restitution=0.01,           
+                rollingFriction=0.001,       
+                restitution=0.9,           
                 contactDamping=100,         
                 contactStiffness=12000,      
                 # frictionAnchor=1
@@ -456,8 +457,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.plane_id,
             -1,                         # -1 for base link
             lateralFriction=0.9,        # Fricción estándar del suelo 0.6
-            # spinningFriction=0.05,
-            # rollingFriction=0.005
+            spinningFriction=0.01,
+            rollingFriction=0.001
         )
         
 
@@ -601,6 +602,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # NUEVO: velocidades
         joint_vels = [s[1] for s in joint_states]
         obs.extend(joint_vels)
+        # Los torques aplicados en el entrenamiento
+        obs.extend(self.joint_torques)
 
         # ===== ZMP BÁSICO (2 elementos) =====
         
@@ -666,6 +669,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # NUEVO: velocidades
         joint_vels = [s[1] for s in joint_states]
         obs.extend(joint_vels)
+        # NUEVO: torques
+        obs.extend(self.joint_torques)
         
         # ===== ZMP BÁSICO (2 elementos) =====
         
@@ -855,9 +860,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        for _ in range(int(self.frame_skip)):
-
-            p.stepSimulation()
+        # Podría ser que esto casusara a´gun problema inicial
+        #for _ in range(int(self.frame_skip)):
+        p.stepSimulation()
 
         if self.zmp_calculator:
             # COM (usa tu helper de Pybullet_Robot_Data)
@@ -874,7 +879,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         cmd_speed = float(np.hypot(self.vx_target, 0.0))
         self.left_timer.update(self.L_in, cmd_speed)
         self.right_timer.update(self.R_in, cmd_speed)
-        
+        self.joint_torques=np.zeros(len(self.joint_indices))
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()
         
