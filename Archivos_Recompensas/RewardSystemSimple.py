@@ -131,7 +131,8 @@ class SimpleProgressiveReward:
         """
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
         if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
-            return self.calculate_reward_walk3d(action, joint_state_properties, torque_mapping, step_count)
+            # return self.calculate_reward_walk3d(action, joint_state_properties, torque_mapping, step_count)
+            return self.calculate_reward_walk3d_old(action, torque_mapping, step_count)
         else:
             raise Exception ("Solo se acepta caminar ahora")
 
@@ -190,44 +191,6 @@ class SimpleProgressiveReward:
             'level_progression_disabled': getattr(self, 'level_progression_disabled', False)
         }
     
-    def guardar_params_checkpoint(self, path, step_count):
-        if self.env.step_total % self.autosave_every ==0 and self.env.step_total>0:
-            sched_state = {
-                            "alpha_t": self.alpha_t,
-                            "r_mean": self.r_mean,
-                            "s_mean": self.s_mean,
-                            "change_adaptation_rate": self.change_adaptation_rate,
-                            "smoothing": self.smoothing,
-                            "threshold": self.threshold,
-                            "decay_term": self.decay_term,
-                            "step_total": int(self.env.step_total if hasattr(self.env, "step_total") else self.env.step_total),
-                            "action_previous": (self.action_previous.tolist() if self.action_previous is not None else None),
-                            "_task_accum": float(self._task_accum),
-                            "_task_N": int(self._task_N),
-                            
-                        }
-
-            os.makedirs("checkpoints", exist_ok=True)
-            with open(path, "w") as f:
-                json.dump(sched_state, f)
-
-    def cargar_params_checkpoint(self, path):
-        # "checkpoints/scheduler_state.json"
-        with open(path, "r") as f:
-            s = json.load(f)
-            self.alpha_t = float(s.get("alpha_t", 0.0))
-            self.r_mean = float(s.get("r_mean", 0.0))
-            self.s_mean = float(s.get("s_mean", 0.0))
-            self.change_adaptation_rate = float(s.get("change_adaptation_rate", 1e-3))
-            self.smoothing = float(s.get("smoothing", 0.99))
-            self.threshold = float(s.get("threshold", 0.4))
-            self.decay_term = float(s.get("decay_term", 0.1))
-            self.env.step_total = int(s.get("step_total", 0))
-            ap = s.get("action_previous", None)
-            self.action_previous = (np.array(ap, dtype=float) if ap is not None else None)
-            self._task_accum = float(s.get("_task_accum", 0.0))
-            self._task_N = int(s.get("_task_N", 0))
-    
     # ============================================================================================================================================= #
     # ================================================= Nuevos metodos de recompensa para nuevas acciones ========================================= #
     # ============================================================================================================================================= #
@@ -235,10 +198,10 @@ class SimpleProgressiveReward:
     # ===================== NUEVO: Caminar 3D =====================
     def calculate_reward_walk3d(self, action, joint_state_properties, torque_mapping:dict, step_count):
         env = self.env
-        _, orn = p.getBasePositionAndOrientation(env.robot_id)
-        euler = p.getEulerFromQuaternion(orn)
-        roll, pitch, _ = euler
-        _, ang_v = p.getBaseVelocity(self.robot_id)
+        #_, orn = p.getBasePositionAndOrientation(env.robot_id)
+        #euler = p.getEulerFromQuaternion(orn)
+        #roll, pitch, _ = euler
+        #_, ang_v = p.getBaseVelocity(self.robot_id)
         
         # Torque normalizado entre [-1,1] para cada articulación. Reducir la fuerza de 
         torque_normalizado=np.array([torque_mapping[i]/self.joint_tau_max_force[i] for i in self.joint_indices])
@@ -250,16 +213,12 @@ class SimpleProgressiveReward:
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.8
         w_altura=0.3
-        w_rotacion=0.01
-        w_rotacion_v=0.01
         # Este para las acciones de y
         w_lateral=0.1
         w_smooth=0.05
         w_activos = 0.1
-        w_velocidad_joint = 0.01
-        w_angulo_limite=0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
-        supervivencia=0.2
+        supervivencia=0.8
 
         #Recompensas de ciclo del pie
 
@@ -278,118 +237,252 @@ class SimpleProgressiveReward:
         castigo_velocidad_lateral=(vy)**2
 
         castigo_esfuerzo = self.castigo_effort(torque_normalizado, action, w_smooth, w_activos)
-        castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
-        def dead_zone(pos_ang):
-            return max(0,abs(pos_ang)-np.deg2rad(15))
-        tilt_abs =dead_zone(roll)**2 + dead_zone(pitch)**2
-        castigo_rotacion= w_rotacion * np.tanh(tilt_abs / 0.5)
-        castigo_rotacion_v =  w_rotacion_v*np.tanh(((ang_v[0])**2 + (ang_v[1])**2)/0.5)
+        #castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
+        #def dead_zone(pos_ang):
+        #    return max(0,abs(pos_ang)-np.deg2rad(15))
+        #tilt_abs =dead_zone(roll)**2 + dead_zone(pitch)**2
+        #castigo_rotacion= w_rotacion * np.tanh(tilt_abs / 0.5)
+        #castigo_rotacion_v =  w_rotacion_v*np.tanh(((ang_v[0])**2 + (ang_v[1])**2)/0.5)
 
-        castigo_angulo_limite= self.castigo_angulo_limite(joint_state_properties)
+        #castigo_angulo_limite= self.castigo_angulo_limite(joint_state_properties)
 
         reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
-                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ castigo_rotacion +
-                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo + 
-                    w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v + castigo_angulo_limite*w_angulo_limite))
+                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ #castigo_rotacion +
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo)) #+ 
+                    #w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v + castigo_angulo_limite*w_angulo_limite))
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
         self.reawrd_step['castigo_velocidad_y'] =  w_lateral*castigo_velocidad_lateral
         self.reawrd_step['castigo_esfuerzo']  = castigo_esfuerzo
-        self.reawrd_step['castigo_velocidad_joint']  = w_velocidad_joint*castigo_velocidad_joint
-        self.reawrd_step['castigo_rotacion']  = castigo_rotacion
-        self.reawrd_step['castigo_rotacion_v']  = castigo_rotacion_v
-        self.reawrd_step['castigo_angulo_limite']  = castigo_angulo_limite*w_angulo_limite
+        # self.reawrd_step['castigo_velocidad_joint']  = w_velocidad_joint*castigo_velocidad_joint
+        # self.reawrd_step['castigo_rotacion']  = castigo_rotacion
+        # self.reawrd_step['castigo_rotacion_v']  = castigo_rotacion_v
+        # self.reawrd_step['castigo_angulo_limite']  = castigo_angulo_limite*w_angulo_limite
 
         # self.reawrd_step['recompensa_fase'] = recompensa_fase
         # self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
         #tau y grf_excess_only son castigo de pain
         self.action_previous=torque_normalizado
         return float(reward)
-
-    def feet_airtime_reward(self, timer, t_thresh=0.25, k=1.0):
-        if timer.touchdown_event:
-            return float(k * max(0.0, timer.air_time_last - t_thresh))
-        return 0.0
     
-    def castigo_angulo_limite(self, joint_state_properties):
-        angles=np.array([s[0] for s in joint_state_properties], dtype=np.float32)
-        limites_superiores=np.array([lim["upper"] for lim in self.limit_upper_lower_angles.values()], dtype=np.float32)
-        limites_inferiores=np.array([lim["lower"] for lim in self.limit_upper_lower_angles.values()], dtype=np.float32)
-        castigo=0.0
-        for i, angle in enumerate(angles):
-            lim_sup=limites_superiores[i]
-            lim_inf=limites_inferiores[i]
-            if angle>=(lim_sup-0.1):
-                castigo+= (angle-lim_sup)**2
-            elif angle<=(lim_inf+0.1):
-                castigo += (lim_inf - angle)**2
-        return float(castigo/len(angles))
-
-    def castigo_cocontraccion(self, action):
-        # extensores (torque positivo):   mueve cadera hacia delante (angulo negativo), rodilla, la flexiona, tobillos, hacia arriba
-        # flexores (torque negativo):     mueve pierna hacia atrás (angulo positivo), rodilla, la extiende, hacia abajo
-        flexor_pressure=np.array(action)[0:,2]
-        extensor_pressure=np.array(action)[1:,2]
-        co_contraction=[]
-        
-        # action[:len(action)//2]=>lado izquierdo
-        action_izquierdo =np.array(action)[:len(action)//2]
-        action_derecho =np.array(action)[len(action)//2:]
-        # action[:len(action)//2]=>lado derecho
-        angulos=self.env.joint_states_properties[0]
-        #self.limit_upper_lower_angles
-        for i, (flexor,extensor) in enumerate(zip(flexor_pressure,extensor_pressure)):
-            indice_articulacion=self.joint_indices[i]
-            # Castiga que flexor y extensor sean bajos si flexor y extensor son mayores que 0.2 o si flexor>0 y angulo =lim
-            #if 
-            co_contraction.append((flexor-extensor)**2)
+    def parametro_pesado_acciones(self):
+        r_inst = (self._task_accum / max(self._task_N, 1)) if self._task_N > 0 else 0.0
+        self.r_mean=self.smoothing*self.r_mean +(1-self.smoothing)*r_inst
+        self._task_N=0
+        self._task_accum=0
+        if self.r_mean >self.threshold and self.s_mean < 0.5:
+            self.change_adaptation_rate=self.decay_term*self.change_adaptation_rate
+        elif self.r_mean > self.threshold and self.s_mean > 0.5:
+            # se genera alpha_t para el next step
+            self.alpha_t=self.alpha_t+self.change_adaptation_rate
+        else:
+            self.alpha_t=self.alpha_t-self.change_adaptation_rate
+        self.alpha_t=np.clip(self.alpha_t,0,0.5)
+        self.calculate_s_mean()
     
-    def castigo_effort(self,torque_normalizado, action, w_smooth, w_activos):
+    def castigo_effort(self,action, w_smooth, w_activos):
         # Suavidad en presiones (acciones en [0,1])
-        accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(torque_normalizado)
+        accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
         # Evita que el torque pase de +1 a -1 instantaneamente
-        delta_p = np.asarray(torque_normalizado) - np.asarray(accion_previa)
+        delta_p = np.asarray(action) - np.asarray(accion_previa)
         smooth_efectivo=float(np.mean(delta_p**2))
         # Cuenta cuantos actuadores están activos
         n_activos=float(np.mean(np.asarray(action) > 0.30))
-        l2mag  = float(np.mean(np.clip(np.abs(torque_normalizado), 0, 1.0)**2))
-        return w_smooth*smooth_efectivo + n_activos*w_activos + 0.01*l2mag
-
+        return w_smooth*smooth_efectivo + n_activos*w_activos
     
+    def calculate_reward_walk3d_old(self, action, torque_mapping:dict, step_count):
+        env = self.env
+        pos, orn = p.getBasePositionAndOrientation(env.robot_id)
+        euler = p.getEulerFromQuaternion(orn)
+        roll, pitch, yaw = euler
+        num_acciones=len(action)
+        # --- NORMALIZATION: tolerances and half-life mapping ---
+        d_theta = np.deg2rad(5.0)   # 5 degrees tolerance for roll/pitch
+        dz_band = 0.02              # 2 cm deadband for CoM height
+        #d_s     = 0.04              # 4 cm CoM->support (si lo usas)
+        dv_foot = 0.05              # 5 cm/s no-slip
+        dv_cmd  = 0.10              # 0.20 m/s vel tracking (x)
+        dy_pos  = 0.08              # 8 cm tolerancia lateral (y)
+        dvy     = 0.10              # 0.10 m/s vel lateral
+        #d_back  = 0.05              # 0.05 m/s tolerancia hacia atrás (más severo)
+        # Da la velocidad lineal y angular de la pelvis
+        #lin_vel, ang_vel = p.getBaseVelocity(env.robot_id)
+        vx = float(self.vel_COM[0])
+        vy = float(self.vel_COM[1])
+        # Velocidad del CoM: |vx - vcmd|
+        vcmd = float(getattr(self, "_vx_target",0.6))
+        # Lateral: posición y velocidad (objetivo y*=0, vy*=0)
+        y =self.dy
+        r_lat_pos = exp_term(abs(y),  dy_pos, r_at_tol=0.5)
+        r_lat_vel = exp_term(abs(vy), dvy,    r_at_tol=0.5)
+        # coste suave lateral
+        r_lat = r_lat_pos * r_lat_vel
+        
+        
+
+        # Pesos de recompensa (que debería de recompensar)
+        alive = 0.5
+        # Pesos de términos normalizados (ajústalos con tus logs)
+        w_v, w_post, w_z = 0.40, 0.05, 0.10
+        w_tau, w_GRF = 0.10, 0.06
+        w_csp, w_marg = 0.0, 0.12
+        #w_knees=0.05
+        w_activos=0.05
+        w_smooth =0.05
+        w_lat = 0.02   # <= pon 0.0 si quieres desactivar el término lateral clásico
+
+        r_post = exp_term(abs(roll), d_theta) * exp_term(abs(pitch), d_theta)
+
+        # Altura del CoM (absoluta) alrededor de z*
+        z_star = getattr(self, "init_com_z", 0.89)
+        e_z = band_error(self.env.com_z, z_star, dz_band)
+        r_z  = exp_term(e_z, dz_band, r_at_tol=0.6)
+
+        
+        v_err = abs(vx - vcmd)
+        if vx>vcmd:
+            r_vel=1.0
+        elif vx<=0:
+            r_vel=0
+        else:
+            r_vel = exp_term(v_err, dv_cmd, r_at_tol=0.5)
+
+        
+
+        
+        #r_dp = exp_term(np.linalg.norm(delta_p), 0.05*np.sqrt(len(action)), r_at_tol=0.6)
+        r_tau=self.torque_pain_reduction(torque_mapping=torque_mapping)
+
+        
+        # 1) GRF band (exceso de cargas en pies) – en [0,1]
+        r_GRF, n_contacts_feet, states = self._grf_reward_old(self.foot_links, env.foot_contact_state, masa_robot=env.mass)
+        # 1) Cargas verticales por pie (para ponderar centro de soporte)
+        # Si el modelo esta mal al final lo quito
+        #r_marg = self._r_zmp_margin(tol=0.02, r_at_tol=0.6)
+        #reward_knees=self.reward_for_knees(torque_mapping=torque_mapping, contact_feets=feet_state)
+        # Trato de maximizar número de pies en contacto
+        #reward_contact_feet=max(n_contacts_feet)/4
+        #recompensa_pisada=0.05*reward_contact_feet
+        c_tau = 1-r_tau
+        c_grf = (1 - r_GRF)
+        castigo_effort= self.castigo_effort(action=action, w_activos=w_activos, w_smooth=w_smooth)
+
+        #self._accumulate_task_term(r_vel)
+        self.reawrd_step['reward_speed']   = w_v   * r_vel
+        self.reawrd_step['reward_posture'] = w_post* r_post
+        self.reawrd_step['reward_height']  = w_z   * r_z
+        self.reawrd_step['castigo_tau'] = w_tau*c_tau
+        #self.reawrd_step['reward_pressure']= w_dp  * r_dp
+        #self.reawrd_step['reward_lateral'] = w_lat * r_lat
+        self.reawrd_step['castigo_grf']     = w_GRF * c_grf
+        #self.reawrd_step['reward_csp']     = w_csp * r_csp
+        #self.reawrd_step['reward_margin']  = w_marg* r_marg
+        self.reawrd_step['castigo']  = castigo_effort
+        # self.reawrd_step['reward_knees'] = w_knees *reward_knees
+        #tau y grf_excess_only son castigo de pain
+        castigo_pain=w_GRF * c_grf+w_tau*c_tau
+        reward = (
+            alive
+            + w_v   * r_vel
+            + w_lat * r_lat
+            + w_post* r_post
+            + w_z   * r_z
+            #+ w_marg* r_marg
+            - castigo_pain
+            -castigo_effort 
+        )
+        self._accumulate_task_term(r_vel)
+        
+        # Se guarda la acción previa
+        self.parametro_acciones_pasadas()
+        self.action_previous=np.array(action)
+        # actualizar flags de contacto para siguiente paso
+        return float(reward)
     
+    def torque_pain_reduction(self, torque_mapping):
+        """
+            Recompensa de “bajo dolor” basada en utilización de par por-junta
+            usando límites dependientes del ángulo:
+                tau ∈ [-tau_max_ext(theta), +tau_max_flex(theta)]
+            - Devuelve un valor en [0,1] (1 = nada de dolor).
+            - Fallback a clip global si no hay mapas.
+        """
+        
+        # 1) ¿Tenemos mapas de límite por ángulo?
+        tau_utils = self.env.torque_max_generation(torque_mapping=torque_mapping)
+
+        if len(tau_utils)==0:
+            return 1.0  # sin info → sin dolor
+
+        # 3) Agregación tipo RMS de utilización
+        u_rms = float(np.sqrt(np.mean(np.square(tau_utils))))
+
+        # 4) Sólo “duele” por encima de la tolerancia
+        #    (p.ej., hasta el 60% de utilización promedio no penaliza)
+        u_tol = 0.80
+        e_tau = max(0.0, u_rms - u_tol)
+
+        # 5) Mapear exceso a recompensa [0,1] (alto => poco dolor)
+        #    tol exceso 0.20: a u_rms≈0.80 => r_tau≈0.6
+        return exp_term(e_tau, tol=0.20, r_at_tol=0.6)
     
+
+    def _grf_reward_old(self, foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2,
+                mode="gauss", sigma_bw=0.15):
+        """
+        Devuelve recompensa en [0,1] a partir del exceso en BW.
+        - mode="gauss": r = exp(-0.5 * (exceso_bw / sigma_bw)^2)
+        - mode="linear": r = 1 - clip(exceso_bw, 0, 1)
+        """
+        exceso_bw, n_contacts_feet, states = _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies,masa_robot, bw_mult)
+        if mode == "linear":
+            return float(1.0 - np.clip(exceso_bw, 0.0, 1.0)), n_contacts_feet, states
+        return float(np.exp(-0.5 * (exceso_bw / max(sigma_bw, 1e-6))**2)), n_contacts_feet, states
     
 
-    def limit_speed_joint(self, joint_state_properties):
-        # |qdot| en rad/s
-        qdot = np.abs(np.array([s[1] for s in joint_state_properties], dtype=np.float32))
-
-        # límites por articulación, alineados al orden de joint_indices
-        vmax = np.array([self.joint_max_angular_speed[jid]
-                        for jid in self.joint_indices], dtype=np.float32)
-
-        # Exceso sobre el límite (0 si está por debajo)
-        excess = np.maximum(0.0, qdot - vmax)
-
-        # Ancho de transición (10% del límite): controla “lo rápido” que sube el castigo
-        beta = 0.1 * np.maximum(1e-6, vmax)
-
-        # Castigo por articulación: cuadrático, 0 en el límite, ↑ con el exceso
-        penalty_per_joint = (excess / beta) ** 2
-
-        # Puedes devolver media o suma; con media suele ser más estable
-        return float(penalty_per_joint.mean())
-
-    
+    def parametro_acciones_pasadas(self):
+        r_inst = (self._task_accum / max(self._task_N, 1)) if self._task_N > 0 else 0.0
+        self.r_mean=self.smoothing*self.r_mean +(1-self.smoothing)*r_inst
+        self._task_N=0
+        self._task_accum=0
+        if self.r_mean >self.threshold and self.s_mean < 0.5:
+            self.change_adaptation_rate=self.decay_term*self.change_adaptation_rate
+        elif self.r_mean > self.threshold and self.s_mean > 0.5:
+            # se genera alpha_t para el next step
+            self.alpha_t=self.alpha_t+self.change_adaptation_rate
+        else:
+            self.alpha_t=self.alpha_t-self.change_adaptation_rate
+        self.alpha_t=np.clip(self.alpha_t,0,0.5)
+        self.calculate_s_mean()
 
 
+def exp_term(error, tol, r_at_tol=0.5):
+    error = float(error)
+    tol = max(float(tol), 1e-9)
+    alpha = -np.log(r_at_tol)
+    return np.exp(-alpha * (error / tol)**2)
 
+def band_error(x, x_star, deadband):
+    return max(0.0, abs(float(x) - float(x_star)) - float(deadband))
 
+def _grf_excess_cost_bw_old(foot_links, metodo_fuerzas_pies, masa_robot, bw_mult=1.2):
+    """
+    Suma fuerzas normales en los 'pies' y penaliza solo el exceso sobre 1.2x BW.
+    Devuelve N (no negativo).
+    """
+    # Suma normalForce solo para contactos de cada pie con cualquier objeto (suelo)
+    Fz_total = 0.0
+    states=[]
+    n_contacts_feet=[]
+    for link in foot_links:
+        state, n_feet, F_foot= metodo_fuerzas_pies(link_id=link)
+        Fz_total += float(F_foot)
+        n_contacts_feet.append(n_feet)
+        states.append(state)
 
-
-
-
-    
-    
-    
+    BW = masa_robot*9.81  # N
+    bw_sum = Fz_total / BW
+    return float(max(0.0, bw_sum - float(bw_mult))), n_contacts_feet, states
+        
+        

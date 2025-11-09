@@ -7,7 +7,8 @@ from pathlib import Path
 from enum import Enum
 from os import listdir
 
-from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, Sistema_Musculos_blackbird
+from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, \
+                                            Sistema_Musculos_blackbird, Sistema_Musculos_PAM_12_done
 
 
 
@@ -132,6 +133,8 @@ def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_name
         return Sistema_Musculos_PAM_20(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot12DOF" in robot_name:
         return Sistema_Musculos_PAM_12(control_joint_names,max_pressure)
+    elif "2_legged_human_like_robot12DOF_done" in robot_name:
+        return Sistema_Musculos_PAM_12_done(control_joint_names,max_pressure)
     elif "blackbird" in robot_name:
         return Sistema_Musculos_blackbird(control_joint_names,max_pressure)
     #elif "2_legged_human_like_robot12DOF_done" in robot_name:
@@ -248,9 +251,9 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     #             joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
     # else:
     #     # en caso de que tau_limit_interp
-    for i, index in enumerate(env.joint_indices):
-        #torque_i=env.joint_tau_max_force[env.joint_indices[i]]
-        joint_torques[i] = np.clip(joint_torques[i], -env.joint_tau_max_force[index], env.joint_tau_max_force[index])
+    # for i, index in enumerate(env.joint_indices):
+    #     #torque_i=env.joint_tau_max_force[env.joint_indices[i]]
+    #     joint_torques[i] = np.clip(joint_torques[i], -env.joint_tau_max_force[index], env.joint_tau_max_force[index])
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     env.pam_states = {

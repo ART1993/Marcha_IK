@@ -275,11 +275,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         #if self.simple_reward_system:
         # Joint indices 
         self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
-        self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
-        self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
-        cmd_speed = float(np.hypot(self.vx_target, 0.0))
-        self.left_timer.update(self.L_in, cmd_speed)
-        self.right_timer.update(self.R_in, cmd_speed)
+        # self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
+        # self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
+        # cmd_speed = float(np.hypot(self.vx_target, 0.0))
+        # self.left_timer.update(self.L_in, cmd_speed)
+        # self.right_timer.update(self.R_in, cmd_speed)
         
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
@@ -446,7 +446,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 restitution=0.01,           
                 contactDamping=100,         
                 contactStiffness=12000,      
-                # frictionAnchor=1
+                frictionAnchor=1
             )
         
         # ===== FRICCIÓN DEL SUELO =====
@@ -456,8 +456,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.plane_id,
             -1,                         # -1 for base link
             lateralFriction=0.9,        # Fricción estándar del suelo 0.6
-            # spinningFriction=0.05,
-            # rollingFriction=0.005
+            spinningFriction=0.2,
+            rollingFriction=0.005
         )
         
 
@@ -585,10 +585,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         yaw = euler[2]
         cy, sy = np.cos(yaw), np.sin(yaw)
-        vel_COM_x,vel_COM_y,vel_COM_z=self.vel_COM
-        # rotación mundo->cuerpo (2D yaw)
-        vx_b =  cy*vel_COM_x + sy*vel_COM_y
-        vy_b = -sy*vel_COM_x + cy*vel_COM_y
+        
+        _,_,vel_COM_z=self.vel_COM
+        vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
+        vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
         obs.extend([vx_b, vy_b, vel_COM_z, init_ang_vel[0], init_ang_vel[1], init_ang_vel[2]])
         
         
@@ -650,11 +650,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Velocidades
         # obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
         yaw = self.euler_post[2]
-        cy, sy = np.cos(yaw), np.sin(yaw)
         # rotación mundo->cuerpo (2D yaw)
-        vel_COM_x,vel_COM_y,vel_COM_z=self.vel_COM
-        vx_b =  cy*vel_COM_x + sy*vel_COM_y
-        vy_b = -sy*vel_COM_x + cy*vel_COM_y
+        cy, sy = np.cos(yaw), np.sin(yaw)
+        
+        _,_,vel_COM_z=self.vel_COM
+        vx_b =  cy*lin_vel[0] + sy*lin_vel[1]
+        vy_b = -sy*lin_vel[0] + cy*lin_vel[1]
         obs.extend([vx_b, vy_b, vel_COM_z, ang_vel[0], ang_vel[1], ang_vel[2]])
         
         # ===== ESTADOS ARTICULARES (4 elementos) =====
@@ -747,6 +748,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if "blackbird" in self.robot_name:
             pos=[0, 0, 1.10]
             orientation=p.getQuaternionFromEuler([0, 0, np.pi/2])
+        elif "done" in self.robot_name:
+            pos=[0, 0, 1.21]
+            orientation=p.getQuaternionFromEuler([0, 0, 0])
         else:
             pos=[0, 0, 0.86]
             orientation=p.getQuaternionFromEuler([0, 0, 0])
@@ -855,9 +859,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        for _ in range(int(self.frame_skip)):
+        # for _ in range(int(self.frame_skip)):
 
-            p.stepSimulation()
+        p.stepSimulation()
 
         if self.zmp_calculator:
             # COM (usa tu helper de Pybullet_Robot_Data)
@@ -869,11 +873,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.init_com_x = self.init_com_y = self.init_com_z = 0.0
 
         self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
-        self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
-        self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
-        cmd_speed = float(np.hypot(self.vx_target, 0.0))
-        self.left_timer.update(self.L_in, cmd_speed)
-        self.right_timer.update(self.R_in, cmd_speed)
+        # self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
+        # self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
+        # cmd_speed = float(np.hypot(self.vx_target, 0.0))
+        # self.left_timer.update(self.L_in, cmd_speed)
+        # self.right_timer.update(self.R_in, cmd_speed)
         
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()

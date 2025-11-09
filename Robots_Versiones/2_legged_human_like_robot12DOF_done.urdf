@@ -51,7 +51,7 @@
     <child link="left_hip_pitch_link"/>
     <origin xyz="0 0.25 -0.05" rpy="0 0 0"/>  <!-- Adjusted offset for wider waist -->
     <axis xyz="0 1 0"/>
-    <limit lower=" -1.2" upper="1.2" effort="120" velocity="6.0"/>
+    <limit lower=" -1.2" upper="1.2" effort="240" velocity="12.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
@@ -67,7 +67,7 @@
     <child  link="left_thigh_link"/>
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="240" velocity="12.0"/>
     <dynamics damping="0.15" friction="0.0"/>
   </joint>
 
@@ -122,7 +122,7 @@
     <child link="left_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <limit lower="0" upper="1.571" effort="240" velocity="12.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
@@ -159,7 +159,7 @@
     <child  link="left_ankle_pitch_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-0.5" upper="0.5" effort="60" velocity="6.0"/>
+    <limit lower="-0.5" upper="0.5" effort="240" velocity="12.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
   <link name="left_ankle_pitch_link">
@@ -176,7 +176,7 @@
     <child link="left_foot_link"/>
     <origin xyz="0 0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.35" upper="0.35" effort="35" velocity="6.0"/>
+    <limit lower="-0.35" upper="0.35" effort="240" velocity="12.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
@@ -234,7 +234,7 @@
     <origin xyz="0 -0.25 -0.05" rpy="0 0 0"/>  
     <!-- Invierto eje para evitar transmisión de fuerzas a lo largo de cadera -->
     <axis xyz="0 1 0"/>
-    <limit lower="-1.2" upper="1.2" effort="120" velocity="6.0"/>
+    <limit lower="-1.2" upper="1.2" effort="240" velocity="12.0"/>
     <dynamics damping="0.2" friction="0.0"/>
   </joint>
 
@@ -252,7 +252,7 @@
     <child  link="right_thigh_link"/>
     <origin xyz="0 0.0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/> <!-- roll -->
-    <limit lower="-0.25" upper="0.25" effort="120" velocity="6.0"/>
+    <limit lower="-0.25" upper="0.25" effort="240" velocity="12.0"/>
     <dynamics damping="0.15" friction="0.0"/>
   </joint>
 
@@ -288,7 +288,7 @@
     <child link="right_shin_link"/>
     <origin xyz="0 0 -0.6" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0" upper="1.571" effort="60" velocity="6.0"/>
+    <limit lower="0" upper="1.571" effort="240" velocity="12.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
@@ -325,7 +325,7 @@
     <child  link="right_ankle_pitch_link"/>
     <origin xyz="0 0 -0.5" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-0.5" upper="0.5" effort="60" velocity="6.0"/>
+    <limit lower="-0.5" upper="0.5" effort="240" velocity="12.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
   <link name="right_ankle_pitch_link">
@@ -342,7 +342,7 @@
     <child link="right_foot_link"/>
     <origin xyz="0 0 0.0" rpy="0 0 0"/>
     <axis xyz="1 0 0"/>
-    <limit lower="-0.35" upper="0.35" effort="35" velocity="6.0"/>
+    <limit lower="-0.35" upper="0.35" effort="240" velocity="12.0"/>
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
