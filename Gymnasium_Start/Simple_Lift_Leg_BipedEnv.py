@@ -39,7 +39,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     """
     
     def __init__(self, logger=None, render_mode='human', 
-                 print_env="ENV", fixed_target_leg="left",csvlog=None,
+                 print_env="ENV", csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
                  vx_target: float = 1.2, # Bajar a 0.6 si da problemas
                  robot_name="2_legged_human_like_robot12DOF"):
@@ -110,7 +110,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.frequency_simulation=400.0 # Pasar a 400 quizas ese sea el problema
         #Probar para ver si evita tembleques
-        #self.frequency_control=40.0
         self.time_step = 1.0 / self.frequency_simulation
         # Action-repeat/frame-skip: aplicar una acción a 400 Hz simulación pero 50 Hz control
         self.frame_skip = 40
@@ -153,21 +152,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.zmp_calculator = None
         self.robot_data = None
-        self.controller = None
-
-        # Variables para tracking
-        
-        #self.episode_start_step = 0
         
         self.reward_system = None
-        self.action_selector = None
-        self.angle_expert_controller= None
         self.step_count = 0
         self.step_total=0
-        self.total_reward = 0
         self.robot_id = None
         self.plane_id = None
-        #self.joint_indices = [0, 1, 2, 3, 4, 5, 6, 7]  # [L_hip_roll, L_hip_pitch, L_knee, R_hip_roll, R_hip_pitch, R_knee]
         
         
 
@@ -175,10 +165,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         self.dict_joints= {joint_name:joint_index for joint_name, joint_index in zip(self.joint_names, self.joint_indices)}
         #ID Links de los pies (igual al de los tobillos)
-
-        # Añadir tracking de pierna levantada
-        self.fixed_target_leg = fixed_target_leg
-        self.raised_leg = self.fixed_target_leg  # 'left' o 'right' - cuál pierna está levantada
         
         self.episode_reward = 0
         #Parámetros constantes que se usan en el calculo de torques
@@ -216,12 +202,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.step_total += 1
         u_final = np.clip(action, 0.0, 1.0)
         # Probar los dos y ver cual da mejor resultados
-        #max_step = 0.20 #SI sale mal probar 0.3 o 0.4
-        #delta = np.clip(u_final - self.prev_action, -max_step, max_step)
-        #delta = max_step * np.tanh(raw_delta / (max_step + 1e-6))
-        
-        #u_final = self.prev_action + delta
-        #u_final = np.clip(u_final, 0.0, 1.0)
         
         self.ep_total_actions += 1
 
@@ -235,7 +215,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
-        #torque_mapping = [(joint, joint_torques[i]) for i, joint in enumerate(self.joint_indices)]
         # En el caso que quiera reducir los torques a usar y por tanto los joints no fijos #[:len(joint_torques)]
         torque_mapping = {jid: joint_torques[i] for i, jid in enumerate(self.joint_indices)}
 
@@ -271,19 +250,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         else:
             self.zmp_x, self.zmp_y = 0.0, 0.0
 
-        
-        #if self.simple_reward_system:
-        # Joint indices 
         self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
-        # self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
-        # self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
-        # cmd_speed = float(np.hypot(self.vx_target, 0.0))
-        # self.left_timer.update(self.L_in, cmd_speed)
-        # self.right_timer.update(self.R_in, cmd_speed)
         
         # ===== CÁLCULO DE RECOMPENSAS CONSCIENTE DEL CONTEXTO =====
         done = self.simple_reward_system.is_episode_done(self.step_count)
-        reward = self.simple_reward_system.calculate_reward(u_final, self.joint_states_properties, torque_mapping, self.step_count)
+        reward = self.simple_reward_system.calculate_reward(u_final)
         
         # ===== PASO 4: OBSERVACIÓN Y TERMINACIÓN =====
         self.episode_reward += reward
@@ -314,18 +285,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Ejemplos: mapea índices a nombres (ver mapeo más abajo)
         if jt is not None:
             for i, joint_name in enumerate(self.control_joint_names):
-                #print(i, joint_name)
                 info["kpi"][f"tau_{joint_name}"]   = float(jt[i])  
-            # info["kpi"]["tau_LHP"]   = float(jt[0])  # Left Hip pitch
-            # info["kpi"]["tau_LHR"]   = float(jt[1])  # Left Hip roll
-            # info["kpi"]["tau_LK"]    = float(jt[2])  # Left Knee
-            # info["kpi"]["tau_LAP"]   = float(jt[3])  # Right ankle pitch
-            # info["kpi"]["tau_LAR"]   = float(jt[4])  # Right ankle roll
-            # info["kpi"]["tau_RHP"]   = float(jt[5])  # Right Hip pitch
-            # info["kpi"]["tau_RHR"]    = float(jt[6])  # Right HIP roll
-            # info["kpi"]["tau_RK"]    = float(jt[7])  # Right Knee
-            # info["kpi"]["tau_RAP"]    = float(jt[8])  # Right ankle pitch
-            # info["kpi"]["tau_RAR"]    = float(jt[9])  # Right ankle roll
 
         if ps is not None:
             for i, mucle_name in enumerate(self.muscle_names):
@@ -338,10 +298,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     def function_logger_kpi(self, info, reward, done):
         if self.simple_reward_system:
-            curriculum_info = self.simple_reward_system.get_info()  # Solo una llamada
-            info['curriculum'] = curriculum_info  # Añadir sin reemplazar
             info['system_type'] = 'progressive'
-            info['current_level'] = curriculum_info.get('level', 1)
             (left_state, n_l, F_L) = self.foot_contact_state(self.left_foot_link_id, f_min=20)
             (right_state, n_r, F_R) = self.foot_contact_state(self.right_foot_link_id, f_min=20)
             # flags "down" derivadas de estado:
@@ -370,10 +327,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             # Debug simple
             info = self.info_pam_torque(info)
             # opcional: incluir en info
-            info["kpi"]["air_time_L"] = float(self.left_timer.air_time_last)
-            info["kpi"]["air_time_R"] = float(self.right_timer.air_time_last)
-            info["kpi"]["phase_L"]    = float(self.left_timer.phase)
-            info["kpi"]["phase_R"]    = float(self.right_timer.phase)
             if done:
                 info["ep_kpi"] = {
                                     "ep_return": float(self.episode_reward),
@@ -381,8 +334,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                     "done_reason": getattr(self.simple_reward_system, "last_done_reason", None)
                                 }
                 self.n_episodes+=1
-                if self.logger:
-                    self.logger.log("main", f"📈 Episode {info['curriculum']['episodes']} | Nivel {info['curriculum']['level']} | Reward: {info['episode_reward']:.1f}")
         
         # === CSVLogger: volcado per-step (~10 Hz) ===
         if (self.step_count % (self.frame_skip) == 0 or done) and self.simple_reward_system:
@@ -390,29 +341,16 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.logger.log("main",f"🔍 Step {self.step_count} - Control Analysis:")
                 self.logger.log("main",f"   Height: {self.pos[2]:.2f}m")
                 self.logger.log("main",f"   Tilt: Roll {math.degrees(self.euler[0]):.1f}°, Pitch {math.degrees(self.euler[1]):.1f}°")
-                #logger.log(f"   Action source: {action_source}")
                 kpi_dbg = info.get("kpi", {})
                 self.logger.log("main",f"   COM: ({kpi_dbg.get('com_x', 0.0):.3f}, {kpi_dbg.get('com_y', 0.0):.3f}, {kpi_dbg.get('com_z', 0.0):.3f}) m  ")
                 self.logger.log("main",f"   ZMP: ({kpi_dbg.get('zmp_x', 0.0):.3f}, {kpi_dbg.get('zmp_y', 0.0):.3f}) m")
-                #curriculum_info = self.simple_reward_system.get_info()
-                self.logger.log("main",f"   Level: {info['curriculum'].get('level')}")
-                self.logger.log("main",f"   COM→support: {kpi_dbg.get('com_dist_to_support', 0):.3f} m | ZMP margin: {kpi_dbg.get('zmp_margin_m', 0):+.3f} m | stable={kpi_dbg.get('com_stable_flag', 0)}")
-    
-            # Verificar si está cerca de límites
-            max_allowed_tilt = 0.4 if self.simple_reward_system and self.simple_reward_system.level == 1 else 0.3
-            if abs(self.euler[0]) > max_allowed_tilt * 0.8 or abs(self.euler[1]) > max_allowed_tilt * 0.8:
-                if self.logger:
-                    self.logger.log("main",f"   ⚠️ Approaching tilt limit! Max allowed: ±{math.degrees(max_allowed_tilt):.1f}°")
             
 
         # DEBUG TEMPORAL: Verificar timing cada cierto número de steps
-            #status = self.simple_reward_system.get_info()
             elapsed_time = self.step_count / self.frequency_simulation
             #logger.log(f" {action_source} action, reward={reward:.2f}")
             if self.logger:
                 self.logger.log("main",f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
-                self.logger.log("main",f"   Current level: {curriculum_info['level']}")
-                self.logger.log("main",f"   Target leg: {curriculum_info.get('target_leg', 'N/A')}")
         return info, reward, done
     
 
@@ -450,7 +388,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             )
         
         # ===== FRICCIÓN DEL SUELO =====
-        # Ejemplo blackbird
         # Configurar fricción del plano del suelo
         p.changeDynamics(
             self.plane_id,
@@ -523,31 +460,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
     def _apply_pam_forces(self, pam_pressures):
         """
-            Convertir presiones PAM a torques articulares usando FÍSICA REAL de PAM_McKibben
-            
-            ESTO ES FUNDAMENTAL - El corazón del control de actuadores PAM:
-            1. Usa PAM_McKibben para calcular fuerza real según presión
-            2. Considera contracción basada en ángulo articular  
-            3. Aplica física biomecánica real
-            
-            Mapeo: 16 PAMs -> 8 articulaciones
-            - PAM 0,1: cadera izquierda roll (flexor, extensor)
-            - PAM 2,3: cadera derecha roll(flexor, extensor)  
-            - PAM 4,5: cadera izquierda pitch(flexor, extensor)
-            - PAM 6,7: cadera derecha pitch(flexor, extensor)
-            - PAM 8,9: rodilla izquierda (flexor, extensor)
-            - PAM 10,11: rodilla derecha (flexor, extensor)
-            - PAM 12,13: tobillo izquierdo (flexor, extensor)
-            - PAM 14,15: tobillo derecha (flexor, extensor)
-            # MAPEO CLARO: PAM → Joint
-            # joint_states[0] = left_hip_roll (joint 0)
-            # joint_states[1] = left_hip_pitch (joint 1)
-            # joint_states[2] = left_knee (joint 2)
-            # joint_states[3] = left_ankle (joint 3) 
-            # joint_states[4] = right_hip_roll (joint 4)
-            # joint_states[5] = right_hip_pitch (joint 5)
-            # joint_states[6] = right_knee (joint 6)
-            # joint_states[7] = right_ankle (joint 7)
+            Convertir presiones PAM a torques articulares
         """
        
         # NUEVA LÓGICA: Control automático de rodilla levantada
@@ -579,9 +492,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
         # Posición y orientación  
         obs.extend([self.init_pos[0],self.init_pos[1], com_z, euler[0], euler[1],euler[2]])  # x, y, z, roll, pitch
-
-        # Velocidades
-        #obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], init_ang_vel[0], init_ang_vel[1]])  # vx, vz, wx, wy
 
         yaw = euler[2]
         cy, sy = np.cos(yaw), np.sin(yaw)
@@ -645,10 +555,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         lin_vel, ang_vel = p.getBaseVelocity(self.robot_id)
         com_z = getattr(self, "com_z", self.pos_post[2])
         # Posición y orientación
-        obs.extend([self.pos_post[0], self.pos_post[1], com_z, self.euler_post[0], self.euler_post[1],self.euler_post[2]])  # x, z, roll, pitch
+        obs.extend([self.pos_post[0], self.pos_post[1], com_z, self.euler_post[0], self.euler_post[1],self.euler_post[2]])
         
         # Velocidades
-        # obs.extend([lin_vel[0], lin_vel[1], lin_vel[2], ang_vel[0], ang_vel[1]])  # vx, vz, wx, wy
         yaw = self.euler_post[2]
         # rotación mundo->cuerpo (2D yaw)
         cy, sy = np.cos(yaw), np.sin(yaw)
@@ -669,7 +578,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         obs.extend(joint_vels)
         
         # ===== ZMP BÁSICO (2 elementos) =====
-        
         if self.zmp_calculator:
             try:
                 zmp_point = self.zmp_calculator.calculate_zmp()
@@ -727,8 +635,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         except Exception:
             self.dt = self.time_step
         self.sim_time = 0.0
-        self.left_timer  = FootPhaseTimer(self.dt)
-        self.right_timer = FootPhaseTimer(self.dt)
         
         # Configurar solver para estabilidad
         p.setPhysicsEngineParameter(
@@ -760,8 +666,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             self.urdf_path,
             pos,  # Altura inicial ligeramente mayor
             orientation,
-            useFixedBase=False,
-            #flags=(p.URDF_USE_SELF_COLLISION| p.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT)
+            useFixedBase=False
         )
         self.robot_data = PyBullet_Robot_Data(self.robot_id)
 
@@ -773,7 +678,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             # solo re-vincula IDs si cambiaron, sin perder contadores/racha
             self.simple_reward_system.env = self
             self.simple_reward_system.robot_id = self.robot_id
-            self.simple_reward_system.fixed_target_leg = self.fixed_target_leg
             self.simple_reward_system.reset()
         # ===== CONFIGURACIÓN ARTICULAR INICIAL =====
         
@@ -781,17 +685,17 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if len(self.muscle_names)==20:
             initial_positions = {
                 # Pierna izquierda
-                self.joint_indices[0]: 0.0,   # left_hip_pitch_joint 0.1
-                self.joint_indices[1]: 0.0,   # left_hip_roll_joint
-                self.joint_indices[2]: 0.0,   # left_knee_joint      0.1
-                self.joint_indices[3]: 0.0,   # left_ankle_pitch_joint
-                self.joint_indices[4]: 0.0,   # left_ankle_roll_joint 0.1
+                self.joint_indices[0]: 0.0,
+                self.joint_indices[1]: 0.0,   
+                self.joint_indices[2]: 0.0,   
+                self.joint_indices[3]: 0.0,   
+                self.joint_indices[4]: 0.0,   
                 # pierna derecha
-                self.joint_indices[5]: 0.0,   # right_hip_roll_joint 0.1
-                self.joint_indices[6]: 0.0,   # right_hip_pitch_joint
-                self.joint_indices[7]: 0.0,   # right_knee_joint    0.1
-                self.joint_indices[8]: 0.0,   # right_ankle_pitch_joint
-                self.joint_indices[9]: 0.0    # right_ankle_roll_joint 0.1
+                self.joint_indices[5]: 0.0,   
+                self.joint_indices[6]: 0.0,   
+                self.joint_indices[7]: 0.0,   
+                self.joint_indices[8]: 0.0,   
+                self.joint_indices[9]: 0.0    
             }
         elif len(self.muscle_names)==12:
             initial_positions = {
@@ -850,17 +754,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             'pressures': np.zeros(self.num_active_pams),
             'forces': np.zeros(self.num_active_pams)
         }
-        #Limite de torque de las articulaciones 
-        self._build_tau_limit_maps(theta_samples_per_joint=181,   # malla de 1º aprox.
-                                    cocontraction_norm=0.05,       # 5% de pretensión antagonista (ajustable)
-                                    safety_eta=0.85                # 85% para no sobreestimar el ideal
-                                )
+        
         
         # ===== ESTABILIZACIÓN INICIAL =====
         
         # Más pasos para estabilización inicial (equilibrio en una pierna es más difícil)
-        # for _ in range(int(self.frame_skip)):
-
         p.stepSimulation()
 
         if self.zmp_calculator:
@@ -873,11 +771,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.init_com_x = self.init_com_y = self.init_com_z = 0.0
 
         self.joint_states_properties = p.getJointStates(self.robot_id, self.joint_indices)
-        # self.L_in = self.pie_tocando_suelo(self.robot_id, self.left_foot_link_id, fz_min=5.0)
-        # self.R_in = self.pie_tocando_suelo(self.robot_id, self.right_foot_link_id, fz_min=5.0)
-        # cmd_speed = float(np.hypot(self.vx_target, 0.0))
-        # self.left_timer.update(self.L_in, cmd_speed)
-        # self.right_timer.update(self.R_in, cmd_speed)
         
         # Obtener observación inicial
         observation = self._get_simple_observation_reset()
@@ -905,10 +798,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         """Información actual del equilibrio en una pierna"""
         left_contact, right_contact=self.contacto_pies
         support_leg = {'left':left_contact, 'right':right_contact}
-        raised_leg = {'left':not left_contact, 'right':not right_contact}
         return {
             'support_leg': support_leg,
-            'raised_leg': raised_leg,
             'balance_time': 0,
             #'target_knee_height': self.target_knee_height,
             'episode_step': self.step_count
@@ -916,55 +807,42 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         
     def parametros_torque_pam(self):
         # Momentos de brazo calculados desde dimensiones reales
-        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.055      # 5.03cm - basado en circunferencia del muslo
-        self.HIP_ROLL_FLEXOR_VARIATION = 0.008     # ±1.01cm variación por ángulo
+        self.HIP_ROLL_FLEXOR_BASE_ARM = 0.055      
+        self.HIP_ROLL_FLEXOR_VARIATION = 0.008     
         
         self.HIP_ROLL_EXTENSOR_BASE_ARM = 0.052    
         self.HIP_ROLL_EXTENSOR_VARIATION = 0.006 
 
         self.HIP_PITCH_FLEXOR_BASE_ARM = 0.050
-        self.HIP_PITCH_FLEXOR_VARIATION = 0.0085#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        self.HIP_PITCH_FLEXOR_VARIATION = 0.0085
         
-        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.054#0.0628    
-        self.HIP_PITCH_EXTENSOR_VARIATION = 0.007#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+        self.HIP_PITCH_EXTENSOR_BASE_ARM = 0.054
+        self.HIP_PITCH_EXTENSOR_VARIATION = 0.007
 
         self.HIP_YAW_FLEXOR_BASE_ARM = 0.048
-        self.HIP_YAW_FLEXOR_VARIATION = 0.0080#round(self.HIP_PITCH_FLEXOR_BASE_ARM/4.98, 4) 
+        self.HIP_YAW_FLEXOR_VARIATION = 0.0080
         
-        self.HIP_YAW_EXTENSOR_BASE_ARM = 0.05#0.0628    
-        self.HIP_YAW_EXTENSOR_VARIATION = 0.0065#round(self.HIP_PITCH_EXTENSOR_BASE_ARM/4.98, 4) 
+        self.HIP_YAW_EXTENSOR_BASE_ARM = 0.050
+        self.HIP_YAW_EXTENSOR_VARIATION = 0.0065
 
         self.KNEE_FLEXOR_BASE_ARM = 0.0566     
-        self.KNEE_FLEXOR_VARIATION = 0.010#round(self.KNEE_FLEXOR_BASE_ARM/5, 4)  
+        self.KNEE_FLEXOR_VARIATION = 0.010
 
-        self.KNEE_EXTENSOR_BASE_ARM = 0.0620#0.0640     
-        self.KNEE_EXTENSOR_VARIATION = 0.008#round(self.KNEE_EXTENSOR_BASE_ARM/ 5, 4)
+        self.KNEE_EXTENSOR_BASE_ARM = 0.0620 
+        self.KNEE_EXTENSOR_VARIATION = 0.008
         # Cambiar a un valor más bajo si ese es el origen del problema
         # Si está versión no sirve, reducir la variación del brazo.
         self.ankle_pitch_FLEXOR_BASE_ARM = 0.04     
-        self.ankle_pitch_FLEXOR_VARIATION = 0.0102#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+        self.ankle_pitch_FLEXOR_VARIATION = 0.0102  
 
-        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044#0.055     
-        self.ankle_pitch_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
+        self.ankle_pitch_EXTENSOR_BASE_ARM = 0.044 
+        self.ankle_pitch_EXTENSOR_VARIATION = 0.0085
 
         self.ankle_roll_FLEXOR_BASE_ARM = 0.04     
-        self.ankle_roll_FLEXOR_VARIATION = 0.0105#round(self.ankle_FLEXOR_BASE_ARM/4.2, 4)    
+        self.ankle_roll_FLEXOR_VARIATION = 0.0105
 
-        self.ankle_roll_EXTENSOR_BASE_ARM = 0.044#0.055     
-        self.ankle_roll_EXTENSOR_VARIATION = 0.0085#round(self.ankle_EXTENSOR_BASE_ARM/ 4.2, 4)
-
-        
-
-        self.KP = 80.0   # Ganancia proporcional
-        self.KD = 12.0   # Ganancia derivativa    
-        
-        # Parámetros de resortes pasivos (calculados desde momento gravitacional)
-        self.PASSIVE_SPRING_STRENGTH = 180.5   # N⋅m 
-        self.DAMPING_COEFFICIENT = 12.0        # N⋅m⋅s/rad (optimizado para masa real)
-        
-        # Control antagónico
-        self.INHIBITION_FACTOR = 0.3           # 30% inhibición recíproca
-        self.VELOCITY_DAMPING_FACTOR = 0.08    # 8% reducción por velocidad
+        self.ankle_roll_EXTENSOR_BASE_ARM = 0.044
+        self.ankle_roll_EXTENSOR_VARIATION = 0.0085
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """
@@ -983,9 +861,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Extensor más efectivo en flexión ligera-moderada
         angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
         R_raw = self.HIP_ROLL_EXTENSOR_BASE_ARM + self.HIP_ROLL_EXTENSOR_VARIATION * angle_factor
-        # theta_cut, slope = -0.15, 0.08
-        # sig = 1.0 / (1.0 + np.exp((angle - theta_cut)/slope))   # ~1 si angle << theta_cut
-        # atten = 0.60 + 0.40 * (1.0 - sig)  # → 0.60 en negativos, → 1.0 en positivos
+
         return R_raw
 
     def hip_roll_flexor_moment_arm(self, angle):
@@ -1005,9 +881,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         # Extensor más efectivo en flexión ligera-moderada
         angle_factor = np.cos(angle - np.pi/6)  # Peak en flexión ligera
         R_raw = self.HIP_ROLL_EXTENSOR_BASE_ARM + self.HIP_ROLL_EXTENSOR_VARIATION * angle_factor
-        # theta_cut, slope = -0.15, 0.08
-        # sig = 1.0 / (1.0 + np.exp((angle - theta_cut)/slope))   # ~1 si angle << theta_cut
-        # atten = 0.60 + 0.40 * (1.0 - sig)  # → 0.60 en negativos, → 1.0 en positivos
+
         return R_raw
     
     def hip_pitch_flexor_moment_arm(self, angle):
@@ -1125,8 +999,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
                     row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)
-                    #row_com[f"ZMP_x"]=round(info["kpi"]['zmp_x'],3)
-                    #row_com[f"ZMP_y"]=round(info["kpi"]['zmp_y'],3)
                     
                     row_com[f"F_L"]=round(info["kpi"]['F_L'],3)
                     row_com[f"F_R"]=round(info["kpi"]['F_R'],3)
@@ -1136,8 +1008,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     row_com[f"COM_z_inicial"]=round(self.init_com_z,3)
                     row_com['posicion_x']=round(self.pos[0],3)
                     row_com['posicion_y']=round(self.pos[1],3)
-                    #row_general['zmp_margain']=round(info["kpi"]["zmp_margin_m"], 3)
-                    #row_general[f"ZMP_dist_to_COM"]=round(info["kpi"]['zmp_dist_to_com'],3)
                     self.csvlog.write("COM_values", row_com)
                     self.csvlog.write("pressure", row_pressure_PAM)
                     
@@ -1176,134 +1046,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         else:
             # Fallback prudente
             return (lambda th: 0.05), (lambda th: 0.05)
-        
-    def _build_tau_limit_maps(self,
-                          theta_samples_per_joint: int = 181,
-                          cocontraction_norm: float = 0.00,   # 0.0 = sin pretensión
-                          safety_eta: float = 0.85):          # margen por realismo
-        """
-        Construye tablas τ_max_flex(θ) y τ_max_ext(θ) por articulación, suponiendo
-        PAM ideal (volumen vejiga const.), con límites por P_max y epsilon_max del PAM.
-
-        - cocontraction_norm: presión normalizada basal del antagonista (0..1)
-        - safety_eta: factor <1 para ajustar sobreestimación del modelo ideal.
-        """
-        import numpy as _np
-
-        self.tau_limit_maps = {}         # por joint_index: dict con 'theta', 'flex', 'ext'
-        self.tau_limit_interp = {}       # por joint_index: dict con funciones interp
-
-        # Recorremos tus articulaciones controladas
-        for joint_name, joint_id in self.dict_joints.items():
-            # 1) límites de ángulo reales desde URDF (PyBullet)
-            ji = p.getJointInfo(self.robot_id, joint_id)
-            th_lo, th_hi = float(ji[8]), float(ji[9])
-            if th_lo >= th_hi:           # por si el URDF no define
-                th_lo, th_hi = -1.0, 1.0
-
-            thetas = _np.linspace(th_lo, th_hi, theta_samples_per_joint)
-
-            # 2) localizar los PAMs flexor/extensor por nombre
-            flex_name = f"{joint_name}_flexor"
-            ext_name  = f"{joint_name}_extensor"
-            if flex_name not in self.pam_muscles or ext_name not in self.pam_muscles:
-                # si este joint no tiene pareja PAM (p.ej. no controlado), saltamos
-                continue
-            pam_flex = self.pam_muscles[flex_name]
-            pam_ext  = self.pam_muscles[ext_name]
-
-            # 3) funciones de brazo geométrico r(θ)
-            r_flex_fn, r_ext_fn = self._moment_arm_funcs_for_joint(joint_name)
-
-            # 4) presión (real) de agonista/antagonista
-            Pmax_flex = pam_flex.max_pressure
-            Pmax_ext  = pam_ext.max_pressure
-            Pmin_flex = pam_flex.min_pressure + cocontraction_norm*(pam_flex.max_pressure - pam_flex.min_pressure)
-            Pmin_ext  = pam_ext.min_pressure  + cocontraction_norm*(pam_ext.max_pressure  - pam_ext.min_pressure)
-
-            # 5) conversión θ -> ε para cada músculo (misma convención que usas en runtime)
-            def eps_from(theta, R, pam):
-                return pam.epsilon_from_angle(theta, 0.0, max(abs(R), 1e-9))
-
-            # 6) barrido y cálculo τ_max(θ)
-            tau_max_flex = []
-            tau_max_ext  = []
-            for th in thetas:
-                Rf = float(r_flex_fn(th))
-                Re = float(r_ext_fn(th))
-                eps_f = eps_from(th, Rf, pam_flex)
-                eps_e = eps_from(th, Re, pam_ext)
-
-                # Fuerzas extremas del AGONISTA y pretensión mínima del ANTAGONISTA
-                Ff_max = pam_flex.force_model_new(Pmax_flex, eps_f)
-                Fe_min = pam_ext.force_model_new(Pmin_ext,  eps_e)
-                Fe_max = pam_ext.force_model_new(Pmax_ext, eps_e)
-                Ff_min = pam_flex.force_model_new(Pmin_flex, eps_f)
-
-                # Par límite hacia flexión y extensión (agonista - antagonista)
-                tau_flex_lim = Rf*Ff_max - Re*Fe_min
-                tau_ext_lim  = Re*Fe_max - Rf*Ff_min
-
-                # margen de seguridad
-                tau_max_flex.append(max(0.0, safety_eta * tau_flex_lim))
-                tau_max_ext.append(max(0.0, safety_eta * tau_ext_lim))
-
-            tau_max_flex = _np.asarray(tau_max_flex)
-            tau_max_ext  = _np.asarray(tau_max_ext)
-
-            # 7) guarda tablas + interpoladores lineales
-            self.tau_limit_maps[joint_id] = {
-                "theta": thetas,
-                "flex":  tau_max_flex,
-                "ext":   tau_max_ext
-            }
-            def _interp_vec(x, xgrid, ygrid):
-                # saturamos fuera de rango al borde más cercano
-                return float(_np.interp(x, xgrid, ygrid, left=ygrid[0], right=ygrid[-1]))
-
-            self.tau_limit_interp[joint_id] = {
-                "flex": lambda th, _g=thetas, _y=tau_max_flex: _interp_vec(th, _g, _y),
-                "ext":  lambda th, _g=thetas, _y=tau_max_ext:  _interp_vec(th, _g, _y),
-            }
-
-    def torque_max_generation(self, torque_mapping):
-        has_maps = self.tau_limit_interp and isinstance(self.tau_limit_interp, dict) and len(self.tau_limit_interp) > 0
-        # 2) Estados actuales de las articulaciones (para θ)
-        try:
-            joint_states = p.getJointStates(self.robot_id, self.joint_indices)
-            joint_positions = [float(s[0]) for s in joint_states]
-        except Exception:
-            joint_positions = None
-            has_maps = False
-
-        tau_utils = []
-        tau_max_values=[]
-        if has_maps and joint_positions is not None:
-            # === Utilización con límites asimétricos dependientes de θ
-            for i, jid in enumerate(self.joint_indices):
-                tau_cmd = float(torque_mapping.get(jid, 0.0))
-                th_i = joint_positions[i]
-                lims = self.tau_limit_interp.get(jid, None)
-                if lims is None:
-                    continue
-                # límites positivos/negativos en el ángulo actual
-                tau_flex_max = max(0.0, float(lims["flex"](th_i)))  # + (flex)
-                tau_ext_max  = max(0.0, float(lims["ext"](th_i)))   # - (ext)
-                denom = tau_flex_max if tau_cmd >= 0.0 else tau_ext_max
-                denom = max(denom, 1e-6)  # seguridad
-                tau_utils.append(abs(tau_cmd) / denom)
-                tau_max_values.append(denom)
-        else:
-            # === Fallback: escalado global previo
-            joint_tau_max_force = self.joint_tau_max_force
-            max_reasonable = float(getattr(self, "MAX_REASONABLE_TORQUE", 240.0))
-            for jid, tau_cmd in torque_mapping.items():
-                scale = max_reasonable
-                if isinstance(joint_tau_max_force, dict):
-                    scale = float(joint_tau_max_force.get(jid, max_reasonable))
-                tau_utils.append(abs(float(tau_cmd)) / max(scale, 1e-6))
-        return tau_utils
-    
 
 
 
