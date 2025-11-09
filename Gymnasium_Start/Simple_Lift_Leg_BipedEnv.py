@@ -42,7 +42,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                  print_env="ENV", fixed_target_leg="left",csvlog=None,
                  simple_reward_mode="progressive",allow_hops:bool=False,
                  vx_target: float = 1.2, # Bajar a 0.6 si da problemas
-                 robot_name="2_legged_human_like_robot16DOF"):
+                 robot_name="2_legged_human_like_robot12DOF"):
         
         """
             Inicio el entorno de entrenamiento PAM
@@ -108,7 +108,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         print(self.muscle_names)
         self.num_active_pams = len(self.muscle_names)
         
-        self.frequency_simulation=240.0
+        self.frequency_simulation=400.0 # Pasar a 400 quizas ese sea el problema
         #Probar para ver si evita tembleques
         #self.frequency_control=40.0
         self.time_step = 1.0 / self.frequency_simulation

@@ -132,7 +132,7 @@ class SimpleProgressiveReward:
         # Decido usar este método para crear varias opciones de creación de recompensas. Else, curriculo clásico
         if getattr(self, "mode", RewardMode.PROGRESSIVE).value == RewardMode.WALK3D.value:
             # return self.calculate_reward_walk3d(action, joint_state_properties, torque_mapping, step_count)
-            return self.calculate_reward_walk3d_old(action, torque_mapping, step_count)
+            return self.calculate_reward_walk3d(action, torque_mapping, step_count)
         else:
             raise Exception ("Solo se acepta caminar ahora")
 
@@ -196,7 +196,7 @@ class SimpleProgressiveReward:
     # ============================================================================================================================================= #
 
     # ===================== NUEVO: Caminar 3D =====================
-    def calculate_reward_walk3d(self, action, joint_state_properties, torque_mapping:dict, step_count):
+    def calculate_reward_walk3d(self, action, torque_mapping:dict, step_count):
         env = self.env
         #_, orn = p.getBasePositionAndOrientation(env.robot_id)
         #euler = p.getEulerFromQuaternion(orn)
@@ -214,8 +214,8 @@ class SimpleProgressiveReward:
         w_velocidad=0.8
         w_altura=0.3
         # Este para las acciones de y
-        w_lateral=0.1
-        w_smooth=0.05
+        w_lateral=0.2
+        w_smooth=0.3
         w_activos = 0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
@@ -232,11 +232,11 @@ class SimpleProgressiveReward:
         # Se debería de incluir en supervivencia para aumentar el valor conforme riempo transcurrido
         #recompensa_supervivencia=step_count/2000
         #SI com_z esta fuera de la altura objetivo
-        castigo_altura = ((self.com_z-z_star)/0.3)**2
+        castigo_altura = ((self.com_z-z_star)/0.1)**2
         castigo_posicion = (self.com_y/0.1)**2
         castigo_velocidad_lateral=(vy)**2
 
-        castigo_esfuerzo = self.castigo_effort(torque_normalizado, action, w_smooth, w_activos)
+        castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
         #castigo_velocidad_joint = self.limit_speed_joint(joint_state_properties)
         #def dead_zone(pos_ang):
         #    return max(0,abs(pos_ang)-np.deg2rad(15))
@@ -263,7 +263,7 @@ class SimpleProgressiveReward:
         # self.reawrd_step['recompensa_fase'] = recompensa_fase
         # self.reawrd_step['recompensa_t_aire']   = recompensa_t_aire
         #tau y grf_excess_only son castigo de pain
-        self.action_previous=torque_normalizado
+        self.action_previous=action
         return float(reward)
     
     def parametro_pesado_acciones(self):
@@ -289,7 +289,7 @@ class SimpleProgressiveReward:
         smooth_efectivo=float(np.mean(delta_p**2))
         # Cuenta cuantos actuadores están activos
         n_activos=float(np.mean(np.asarray(action) > 0.30))
-        return w_smooth*smooth_efectivo + n_activos*w_activos
+        return w_smooth*smooth_efectivo #+ n_activos*w_activos
     
     def calculate_reward_walk3d_old(self, action, torque_mapping:dict, step_count):
         env = self.env
@@ -322,9 +322,10 @@ class SimpleProgressiveReward:
         
 
         # Pesos de recompensa (que debería de recompensar)
-        alive = 0.5
+        alive = 0.8 #Subir a 0.8
         # Pesos de términos normalizados (ajústalos con tus logs)
-        w_v, w_post, w_z = 0.40, 0.05, 0.10
+        # TODO:subir w_v a 0.6
+        w_v, w_post, w_z = 0.60, 0.05, 0.10
         w_tau, w_GRF = 0.10, 0.06
         w_csp, w_marg = 0.0, 0.12
         #w_knees=0.05
@@ -389,7 +390,7 @@ class SimpleProgressiveReward:
             + w_post* r_post
             + w_z   * r_z
             #+ w_marg* r_marg
-            - castigo_pain
+            # - castigo_pain
             -castigo_effort 
         )
         self._accumulate_task_term(r_vel)

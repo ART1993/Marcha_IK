@@ -107,14 +107,14 @@ class Simplified_Lift_Leg_Trainer:
     def __init__(self, 
                  total_timesteps=2000000,
                  n_envs=8,
-                 learning_rate=1e-4,  # Ligeramente reducido para mayor estabilidad
+                 learning_rate=3e-4,  # Ligeramente reducido para mayor estabilidad
                  resume_from=None,
                  logger=None,
                  csvlog=None,
                  robot_name="2_legged_human_like_robot16DOF",
                  _simple_reward_mode="progressive",  # Modo de recompensa por defecto
                  _allow_hops=False,
-                 _vx_target=0.6
+                 _vx_target=1.2
                  ):
         
         # ===== CONFIGURACIÓN BÁSICA =====

@@ -131,10 +131,10 @@ def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_name
         return Sistema_Musculos_PAM_16(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot20DOF" in robot_name:
         return Sistema_Musculos_PAM_20(control_joint_names,max_pressure)
+    elif "2_legged_human_like_robot12DOF_done" in robot_name:
+        return Sistema_Musculos_PAM_12_done(control_joint_names)
     elif "2_legged_human_like_robot12DOF" in robot_name:
         return Sistema_Musculos_PAM_12(control_joint_names,max_pressure)
-    elif "2_legged_human_like_robot12DOF_done" in robot_name:
-        return Sistema_Musculos_PAM_12_done(control_joint_names,max_pressure)
     elif "blackbird" in robot_name:
         return Sistema_Musculos_blackbird(control_joint_names,max_pressure)
     #elif "2_legged_human_like_robot12DOF_done" in robot_name:
@@ -199,9 +199,7 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     # Ahora los nombres de los músculos siguen el orden del URDF
     P = np.array([env.pam_muscles[muscle_names].real_pressure_PAM(u) for muscle_names,u 
                     in zip(env.muscle_names, pam_pressures)], dtype=float)
-    
-    # print(env.muscle_names)
-    # print(env.joint_names)
+
     joint_torques = np.zeros(len(joint_states))
     # Cadera izquierda pitch
     joint_torques[0]=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 0, 1,
@@ -235,25 +233,6 @@ def calculate_robot_specific_joint_torques_12_pam(env, pam_pressures):
     
     assert env.num_active_pams == env.action_space.shape[0] == 12, \
     f"{env.num_active_pams=} {env.action_space.shape=}"
-
-    # joint_tau_max_force
-    # ======= REEMPLAZO DE CLIP GLOBAL POR CLIP ANGULAR =======
-    # if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
-    #     # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
-    #     for i, jid in enumerate(env.joint_indices):
-    #         th_i = float(joint_positions[i])
-    #         lims = env.tau_limit_interp.get(jid, None)
-    #         if lims is not None:
-    #             tau_flex_max = max(0.0, lims["flex"](th_i))
-    #             tau_ext_max  = max(0.0, lims["ext"](th_i))
-    #             joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
-    #         else:
-    #             joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
-    # else:
-    #     # en caso de que tau_limit_interp
-    # for i, index in enumerate(env.joint_indices):
-    #     #torque_i=env.joint_tau_max_force[env.joint_indices[i]]
-    #     joint_torques[i] = np.clip(joint_torques[i], -env.joint_tau_max_force[index], env.joint_tau_max_force[index])
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     env.pam_states = {
