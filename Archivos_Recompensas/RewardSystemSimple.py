@@ -3,8 +3,6 @@
 import pybullet as p
 import numpy as np
 from enum import Enum
-import json, os
-from collections import deque
 
 class RewardMode(Enum):
     PROGRESSIVE = "progressive"      # curriculum por niveles (modo actual por defecto)
@@ -40,16 +38,11 @@ class SimpleProgressiveReward:
         self.allow_hops = bool(getattr(env, "allow_hops", False))
         
         # Debug para confirmar configuración
-        self.min_F=20
         self.reawrd_step=self.env.reawrd_step
         # --- Effort weight scheduler ---
         self.action_previous = None  # para suavidad (du^2)
         # mean reward running, switching mean value and
         self._vx_target=self.env.vx_target
-        self.joint_indices=self.env.joint_indices
-        self.limit_upper_lower_angles=self.env.limit_upper_lower_angles
-        self.joint_tau_max_force=self.env.joint_tau_max_force
-        self.joint_max_angular_speed=self.env.joint_max_angular_speed
         
         if self.env.logger:
             self.env.logger.log("main",f"🎯 Progressive System initialized:")
@@ -126,10 +119,9 @@ class SimpleProgressiveReward:
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.8
         w_altura=0.3
-        # Este para las acciones de y
+
         w_lateral=0.2
         w_smooth=0.3
-        w_activos = 0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
         supervivencia=0.8
 
@@ -142,19 +134,18 @@ class SimpleProgressiveReward:
             reward_speed=0
         else:
             reward_speed = 1
-        # Se debería de incluir en supervivencia para aumentar el valor conforme riempo transcurrido
         
         #SI com_z esta fuera de la altura objetivo
         castigo_altura = ((self.com_z-z_star)/0.1)**2
         castigo_posicion = (self.com_y/0.1)**2
         castigo_velocidad_lateral=(vy)**2
 
-        castigo_esfuerzo = self.castigo_effort(action, w_smooth, w_activos)
+        castigo_esfuerzo = self.castigo_effort(action, w_smooth)
 
-        reward= ((supervivencia + w_velocidad*reward_speed)#+ recompensa_fase + recompensa_t_aire) 
-                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ #castigo_rotacion +
-                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo)) #+ 
-                    #w_velocidad_joint*castigo_velocidad_joint +castigo_rotacion_v + castigo_angulo_limite*w_angulo_limite))
+        reward= ((supervivencia + w_velocidad*reward_speed)
+                  -(w_altura*castigo_altura+ w_lateral*castigo_posicion+ 
+                    w_lateral*castigo_velocidad_lateral+ castigo_esfuerzo)) 
+                    
         self.reawrd_step['reward_speed']   = w_velocidad*reward_speed
         self.reawrd_step['castigo_altura']  = w_altura*castigo_altura
         self.reawrd_step['castigo_posicion_y'] = w_lateral*castigo_posicion
@@ -164,7 +155,7 @@ class SimpleProgressiveReward:
         self.action_previous=action
         return float(reward)
     
-    def castigo_effort(self,action, w_smooth, w_activos):
+    def castigo_effort(self,action, w_smooth):
         # Suavidad en presiones (acciones en [0,1])
         accion_previa = self.action_previous if self.action_previous is not None else np.zeros_like(action)
         # Evita que el torque pase de +1 a -1 instantaneamente

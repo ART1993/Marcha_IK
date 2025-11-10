@@ -18,80 +18,6 @@ from Archivos_Apoyo.Configuraciones_adicionales import cargar_posible_normalizac
 from Archivos_Apoyo.simple_log_redirect import both_print
 from Archivos_Apoyo.CSVLogger import CSVLogger
 
-class SaveVecNormAlongCheckpoints(BaseCallback):
-    def __init__(self, vecnorm_env, save_dir, prefix, save_freq, verbose=0):
-        super().__init__(verbose)
-        self.vecnorm_env = vecnorm_env
-        self.save_dir = save_dir
-        self.prefix = prefix
-        self.save_freq = int(save_freq)
-        self.next_save_at = self.save_freq
-        os.makedirs(save_dir, exist_ok=True)
-
-    def _on_step(self) -> bool:
-        # Detecta si el CheckpointCallback acaba de guardar (por frecuencia, etc.)
-        # Aquí lo hacemos por frecuencia fija; si usas el mismo save_freq, cuadra.
-        if self.n_calls % self.save_freq == 0:
-            steps = self.num_timesteps          # pasos globales (múltiplos de n_envs)
-            path = os.path.join(self.save_dir, f"{self.prefix}_normalize_{steps}_steps.pkl")
-            try:
-                self.vecnorm_env.save(path)
-            except Exception as e:
-                print(f"⚠️ Could not save VecNormalize at {steps}: {e}")
-            return True
-
-        steps = self.num_timesteps
-        if steps >= self.next_save_at:
-            norm_path = os.path.join(
-                self.save_dir, f"{self.prefix}_normalize_{steps}_steps.pkl"
-            )
-            try:
-                self.vecnorm_env.save(norm_path)
-                if self.verbose:
-                    print(f"💾 Saved VecNormalize at {steps} steps -> {norm_path}")
-            except Exception as e:
-                print(f"⚠️ Could not save VecNormalize at {steps}: {e}")
-            # programa el próximo guardado
-            self.next_save_at += self.save_freq
-        return True
-
-    def _on_rollout_end(self) -> None:
-        # Guardar cada X pasos (ajusta a tu frecuencia real de checkpoint)
-        pass
-        # steps = self.num_timesteps
-        # norm_path = os.path.join(self.save_dir, f"{self.prefix}_normalize_{steps}_steps.pkl")
-        # try:
-        #     self.vecnorm_env.save(norm_path)
-        # except Exception as e:
-        #     print(f"⚠️ No pude guardar VecNormalize en {steps}: {e}")
-
-class SaveSchedulerStateCallback(BaseCallback):
-    def __init__(self, save_freq:int, save_dir:str, prefix:str="ckpt", verbose=0):
-        super().__init__(verbose)
-        self.save_freq = int(save_freq)
-        self.save_dir = save_dir
-        self.prefix = prefix
-        os.makedirs(self.save_dir, exist_ok=True)
-
-    def _on_step(self) -> bool:
-        # Ejecuta en el proceso principal
-        if self.n_calls % self.save_freq == 0:
-            steps = self.num_timesteps
-            # lee el estado del reward desde UN solo worker (idx 0)
-            try:
-                states = self.training_env.env_method("get_scheduler_state", indices=[0])
-                if states and len(states) > 0:
-                    state = states[0]
-                    path = os.path.join(self.save_dir, f"{self.prefix}_scheduler_{steps:09d}.json")
-                    with open(path, "w") as f:
-                        json.dump(state, f)
-                    if self.verbose:
-                        print(f"💾 Saved scheduler state at {steps} -> {path}")
-            except Exception as e:
-                if self.verbose:
-                    print(f"⚠️ Could not save scheduler state: {e}")
-        return True
-
 
 class Simplified_Lift_Leg_Trainer:
     """
@@ -119,7 +45,7 @@ class Simplified_Lift_Leg_Trainer:
         
         # ===== CONFIGURACIÓN BÁSICA =====
         
-        self.env_type = "simplified_lift_legs"
+        self.env_type = "walking_3D"
         self.total_timesteps = total_timesteps
         self.n_envs = n_envs
         self.logger=logger
@@ -175,7 +101,7 @@ class Simplified_Lift_Leg_Trainer:
                 'clip_obs': 10.0,      
                 'clip_reward': 10.0,
                 'model_prefix': 'Walker_6DOF_3D',
-                'description': 'lift_legs with 12 PAMs'
+                'description': 'camino con 6DOF y 12 PAMS'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -187,9 +113,6 @@ class Simplified_Lift_Leg_Trainer:
             'lstm_hidden_size': 128,  # 128 Más Simplifico memoria, subir a 256 para mayor capacidad temporal
             'n_lstm_layers': 1,       # Capas simples
             'shared_lstm': False,     # LSTMs separados para policy y value
-            # 'net_arch': [256, 256],       # MLP antes/después del LSTM
-            # 'activation_fn': torch.nn.SiLU,
-            # 'ortho_init': False           # con SiLU suele ir mejor desactivarlo
         }
 
         # ===== INFORMACIÓN DE ENTRENAMIENTO =====
@@ -370,13 +293,7 @@ class Simplified_Lift_Leg_Trainer:
             render=False,
             verbose=1
         )
-        # extra_cb = SaveVecNormAlongCheckpoints(
-        #     vecnorm_env=self._last_train_env_ref,  # o pásalo como arg
-        #     save_dir=self.checkpoints_dir,
-        #     save_freq=checkpoint_freq*self.n_envs,
-        #     prefix=self.env_configs["model_prefix"],
-        #     verbose=1
-        # )
+
         callbacks = CallbackList([checkpoint_callback, eval_callback])
         
         
@@ -589,43 +506,6 @@ class Simplified_Lift_Leg_Trainer:
                              clip_reward=config['clip_reward'])
 
         return env
-    
-    # Ya que he creado clase sin RL para testing, también creo con este un modelo de entrenamiento sin RL
-
-def create_balance_leg_trainer_no_curriculum(total_timesteps=1000000, n_envs=4, learning_rate=3e-4, logger=None, csvlog=None):
-    """
-    Función para crear fácilmente un entrenador SIN curriculum
-    """
-    
-    trainer = Simplified_Lift_Leg_Trainer(
-        total_timesteps=total_timesteps,
-        n_envs=n_envs,
-        learning_rate=learning_rate,
-        logger=logger,
-        csvlog=csvlog
-    )
-    
-    print(f"✅ Trainer created (NO CURRICULUM)")
-    print(f"   Focus: Balance básico con RL puro")
-    print(f"   Accion personalizada (estirar hacia los lados)")
-    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
-    
-    return trainer
-
-# ===== Helpers para lanzar entrenos por modo =====
-#Ejemplos de uso, (No parece buena idea usarlos así, mejor creo versiones mias
-def create_march_in_place_trainer(total_timesteps=1_500_000, n_envs=4, learning_rate=3e-4, 
-                                  logger=None, csvlog=None, robot_name="2_legged_human_like_robot20DOF"):
-    trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, 
-                                          learning_rate=learning_rate, logger=logger, 
-                                          csvlog=csvlog, robot_name=robot_name,_simple_reward_mode='march_in_place',
-                                          _allow_hops=True, _vx_target=0.0)
-    print(f"✅ Trainer created (NO CURRICULUM)")
-    print(f"   Focus: Balance básico con RL puro")
-    print(f"   Expert help: 0% (assist=0 siempre)")
-    print(f"   Architecture: RecurrentPPO with {trainer.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
-    
-    return trainer
 
 
 def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-4, vx_target=0.6, 
