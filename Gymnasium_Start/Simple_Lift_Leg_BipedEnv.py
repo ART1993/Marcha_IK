@@ -131,7 +131,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         )
         
         # Observation space
-        obs_dim=20 + 2*len(self.joint_indices)
+        obs_dim=18 + 2*len(self.joint_indices)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -529,11 +529,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         left_contact=self.pie_tocando_suelo(self.robot_id, foot_link=self.left_foot_link_id, fz_min=5.0)
         right_contact=self.pie_tocando_suelo(self.robot_id, foot_link=self.right_foot_link_id, fz_min=5.0)
         obs.extend([float(left_contact), float(right_contact)])
-
-        m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
-        FzL = getattr(self, "Fz_left", 0.0)  / m_g
-        FzR = getattr(self, "Fz_right", 0.0) / m_g
-        obs.extend([FzL, FzR])
         
         # Alturas de pies
         l_foot = p.getLinkState(self.robot_id, self.left_foot_link_id)[0][2]
@@ -593,11 +588,6 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         left_contact=self.pie_tocando_suelo(self.robot_id,foot_link=self.left_foot_link_id, fz_min=5.0)
         right_contact=self.pie_tocando_suelo(self.robot_id,foot_link=self.right_foot_link_id, fz_min=5.0)
         obs.extend([float(left_contact), float(right_contact)])
-
-        m_g = max(1e-6, self.mass * 9.81) if hasattr(self, "mass") else 9.81
-        FzL = getattr(self, "Fz_left", 0.0)  / m_g
-        FzR = getattr(self, "Fz_right", 0.0) / m_g
-        obs.extend([FzL, FzR])
         
         # Alturas de pies
         # eleva si prefieres pies en lugar de rodilla
