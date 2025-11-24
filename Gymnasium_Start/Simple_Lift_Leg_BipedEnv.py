@@ -644,11 +644,11 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         if "blackbird" in self.robot_name:
             pos=[0, 0, 1.10]
             orientation=p.getQuaternionFromEuler([0, 0, np.pi/2])
-        elif "done" in self.robot_name:
-            pos=[0, 0, 1.21]
+        elif "12DOF" in self.robot_name and "_done" not in self.robot_name:
+            pos=[0, 0, 0.86]
             orientation=p.getQuaternionFromEuler([0, 0, 0])
         else:
-            pos=[0, 0, 0.86]
+            pos=[0, 0, 1.21]
             orientation=p.getQuaternionFromEuler([0, 0, 0])
         # Cargar entorno
         self.plane_id = p.loadURDF("plane.urdf")
