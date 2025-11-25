@@ -210,13 +210,13 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         normalized_pressures = np.clip(u_final, 0.0, 1.0) 
         
         # Aplicar fuerzas PAM normalizadas
-        joint_torques = self._apply_pam_forces(normalized_pressures)
+        self.joint_torques = self._apply_pam_forces(normalized_pressures)
         
         # ===== Paso 3: SIMULACIÓN FÍSICA =====
 
         # Aplicar torques
         # En el caso que quiera reducir los torques a usar y por tanto los joints no fijos #[:len(joint_torques)]
-        torque_mapping = {jid: joint_torques[i] for i, jid in enumerate(self.joint_indices)}
+        torque_mapping = {jid: self.joint_torques[i] for i, jid in enumerate(self.joint_indices)}
 
         #self.last_tau_cmd = {jid: float(tau) for jid, tau in torque_mapping}
         for joint_id, torque in torque_mapping.items():
@@ -985,7 +985,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                     for idx, (name, state) in enumerate(zip(self.dict_joints.keys(), self.joint_states_properties)):
                         row_pressure_PAM[f"Pressure_{name}_flexion"]=pam_pressures[idx*2]
                         row_pressure_PAM[f"Pressure_{name}_extension"]=pam_pressures[idx*2+1]
-                        row_pressure_PAM[f"τ_aplicado_{name}"]=round(self.joint_tau_max_force[self.joint_indices[idx]] ,2)
+                        row_pressure_PAM[f"τ_aplicado_{name}"]=round(self.joint_torques[idx] ,2)
                     row_com[f"COM_x"]=round(info["kpi"]['com_x'],3)
                     row_com[f"COM_y"]=round(info["kpi"]['com_y'],3)
                     row_com[f"COM_z"]=round(info["kpi"]['com_z'],3)

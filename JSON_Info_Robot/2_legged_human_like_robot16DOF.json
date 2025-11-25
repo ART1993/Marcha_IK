@@ -1,18 +1,18 @@
 {
     "0": {
         "index": 0,
-        "name": "left_hip_roll_joint",
+        "name": "left_hip_pitch_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.2,
         "friction": 0.0,
-        "lower_limit": -0.25,
-        "upper_limit": 0.25,
-        "max_force": 120.0,
-        "max_velocity": 6.0,
-        "link_name": "left_hip_roll_link",
+        "lower_limit": -1.2,
+        "upper_limit": 1.2,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
+        "link_name": "left_hip_pitch_link",
         "joint_axis": [
-            1.0,
             0.0,
+            1.0,
             0.0
         ],
         "parent_frame_pos": [
@@ -30,18 +30,18 @@
     },
     "1": {
         "index": 1,
-        "name": "left_hip_pitch_joint",
+        "name": "left_hip_roll_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.15,
         "friction": 0.0,
-        "lower_limit": -1.2,
-        "upper_limit": 1.2,
-        "max_force": 120.0,
-        "max_velocity": 6.0,
+        "lower_limit": -0.25,
+        "upper_limit": 0.25,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
         "link_name": "left_thigh_link",
         "joint_axis": [
-            0.0,
             1.0,
+            0.0,
             0.0
         ],
         "parent_frame_pos": [
@@ -61,12 +61,12 @@
         "index": 2,
         "name": "left_knee_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.1,
         "friction": 0.0,
         "lower_limit": 0.0,
         "upper_limit": 1.571,
-        "max_force": 60.0,
-        "max_velocity": 6.0,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
         "link_name": "left_shin_link",
         "joint_axis": [
             0.0,
@@ -88,18 +88,18 @@
     },
     "3": {
         "index": 3,
-        "name": "left_ankle_roll_joint",
+        "name": "left_ankle_pitch_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.1,
         "friction": 0.0,
-        "lower_limit": -0.35,
-        "upper_limit": 0.35,
-        "max_force": 35.0,
-        "max_velocity": 6.0,
-        "link_name": "left_foot_link",
+        "lower_limit": -0.5,
+        "upper_limit": 0.5,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
+        "link_name": "left_ankle_pitch_link",
         "joint_axis": [
-            1.0,
             0.0,
+            1.0,
             0.0
         ],
         "parent_frame_pos": [
@@ -117,18 +117,47 @@
     },
     "4": {
         "index": 4,
-        "name": "right_hip_roll_joint",
-        "type": 0,
-        "damping": 0.0,
+        "name": "left_ankle_roll_joint",
+        "type": 4,
+        "damping": 0.1,
         "friction": 0.0,
-        "lower_limit": -0.25,
-        "upper_limit": 0.25,
-        "max_force": 120.0,
-        "max_velocity": 6.0,
-        "link_name": "right_hip_roll_link",
+        "lower_limit": -0.35,
+        "upper_limit": 0.35,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
+        "link_name": "left_foot_link",
         "joint_axis": [
-            1.0,
             0.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 3
+    },
+    "5": {
+        "index": 5,
+        "name": "right_hip_pitch_joint",
+        "type": 0,
+        "damping": 0.2,
+        "friction": 0.0,
+        "lower_limit": -1.2,
+        "upper_limit": 1.2,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
+        "link_name": "right_hip_pitch_link",
+        "joint_axis": [
+            0.0,
+            1.0,
             0.0
         ],
         "parent_frame_pos": [
@@ -144,20 +173,20 @@
         ],
         "parent_index": -1
     },
-    "5": {
-        "index": 5,
-        "name": "right_hip_pitch_joint",
+    "6": {
+        "index": 6,
+        "name": "right_hip_roll_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.15,
         "friction": 0.0,
-        "lower_limit": -1.2,
-        "upper_limit": 1.2,
-        "max_force": 120.0,
-        "max_velocity": 6.0,
+        "lower_limit": -0.25,
+        "upper_limit": 0.25,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
         "link_name": "right_thigh_link",
         "joint_axis": [
+            1.0,
             0.0,
-            -1.0,
             0.0
         ],
         "parent_frame_pos": [
@@ -171,18 +200,18 @@
             0.0,
             1.0
         ],
-        "parent_index": 4
+        "parent_index": 5
     },
-    "6": {
-        "index": 6,
+    "7": {
+        "index": 7,
         "name": "right_knee_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.1,
         "friction": 0.0,
         "lower_limit": 0.0,
         "upper_limit": 1.571,
-        "max_force": 60.0,
-        "max_velocity": 6.0,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
         "link_name": "right_shin_link",
         "joint_axis": [
             0.0,
@@ -200,22 +229,22 @@
             0.0,
             1.0
         ],
-        "parent_index": 5
+        "parent_index": 6
     },
-    "7": {
-        "index": 7,
-        "name": "right_ankle_roll_joint",
+    "8": {
+        "index": 8,
+        "name": "right_ankle_pitch_joint",
         "type": 0,
-        "damping": 0.0,
+        "damping": 0.1,
         "friction": 0.0,
-        "lower_limit": -0.35,
-        "upper_limit": 0.35,
-        "max_force": 35.0,
-        "max_velocity": 6.0,
-        "link_name": "right_foot_link",
+        "lower_limit": -0.5,
+        "upper_limit": 0.5,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
+        "link_name": "right_ankle_pitch_link",
         "joint_axis": [
-            1.0,
             0.0,
+            1.0,
             0.0
         ],
         "parent_frame_pos": [
@@ -229,6 +258,35 @@
             0.0,
             1.0
         ],
-        "parent_index": 6
+        "parent_index": 7
+    },
+    "9": {
+        "index": 9,
+        "name": "right_ankle_roll_joint",
+        "type": 4,
+        "damping": 0.1,
+        "friction": 0.0,
+        "lower_limit": -0.35,
+        "upper_limit": 0.35,
+        "max_force": 240.0,
+        "max_velocity": 12.0,
+        "link_name": "right_foot_link",
+        "joint_axis": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "parent_frame_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "parent_index": 8
     }
 }

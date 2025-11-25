@@ -94,7 +94,7 @@ class SimpleProgressiveReward:
             return True
 
         # Tiempo máximo (crece con nivel)
-        max_steps =  2000
+        max_steps = 2000
         if step_count >= max_steps:
             self.last_done_reason = "time"
             if self.env.logger:
