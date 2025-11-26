@@ -8,7 +8,7 @@ from enum import Enum
 from os import listdir
 
 from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, \
-                                            Sistema_Musculos_blackbird, Sistema_Musculos_PAM_12_done
+                                            Sistema_Musculos_blackbird, Sistema_Musculos_PAM_12_done, Sistema_Musculos_PAM_24
 
 
 
@@ -131,6 +131,8 @@ def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_name
         return Sistema_Musculos_PAM_16(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot20DOF" in robot_name:
         return Sistema_Musculos_PAM_20(control_joint_names,max_pressure)
+    elif "2_legged_human_like_robot24DOF" in robot_name:
+        return Sistema_Musculos_PAM_24(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot12DOF_done" in robot_name:
         return Sistema_Musculos_PAM_12_done(control_joint_names)
     elif "2_legged_human_like_robot12DOF" in robot_name:
@@ -403,20 +405,116 @@ def calculate_robot_specific_joint_torques_20_pam(env, pam_pressures):
     f"{env.num_active_pams=} {env.action_space.shape=}"
     
     # ======= REEMPLAZO DE CLIP GLOBAL POR CLIP ANGULAR =======
-    if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
-        # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
-        for i, jid in enumerate(env.joint_indices):
-            th_i = float(joint_positions[i])
-            lims = env.tau_limit_interp.get(jid, None)
-            if lims is not None:
-                tau_flex_max = max(0.0, lims["flex"](th_i))
-                tau_ext_max  = max(0.0, lims["ext"](th_i))
-                joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
-            else:
-                joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
-    else:
-        # en caso de que tau_limit_interp
-        joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
+    # if hasattr(env, "tau_limit_interp") and isinstance(env.tau_limit_interp, dict) and len(env.tau_limit_interp) > 0:
+    #     # Usamos las posiciones articulares ya calculadas para interpolar τ_max(θ)
+    #     for i, jid in enumerate(env.joint_indices):
+    #         th_i = float(joint_positions[i])
+    #         lims = env.tau_limit_interp.get(jid, None)
+    #         if lims is not None:
+    #             tau_flex_max = max(0.0, lims["flex"](th_i))
+    #             tau_ext_max  = max(0.0, lims["ext"](th_i))
+    #             joint_torques[i] = float(np.clip(joint_torques[i], -tau_ext_max, +tau_flex_max))
+    #         else:
+    #             joint_torques[i] = float(np.clip(joint_torques[i], -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE))
+    # else:
+    #     # en caso de que tau_limit_interp
+    #     joint_torques = np.clip(joint_torques, -env.MAX_REASONABLE_TORQUE, env.MAX_REASONABLE_TORQUE)
+
+    # for i, max_torque in enumerate(env.joint_tau_max_force.values()):
+    #     joint_torques[i] = np.clip(joint_torques[i], -max_torque, max_torque)
+
+    # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
+    env.pam_states = {
+        'pressures': pam_pressures.copy(),
+        'forces': np.abs(pam_forces),
+        'raw_forces': pam_forces,
+        'joint_torques': joint_torques.copy(),
+        'moment_arms': {},
+        'inhibition_applied': False,
+        'robot_specific_params': True
+    }
+    
+    return joint_torques
+
+def calculate_robot_specific_joint_torques_24_pam(env, pam_pressures):
+    
+    """
+        Calcular torques básicos de articulaciones desde presiones PAM.
+        Se usa para robots de 20 PAMs
+    """
+    
+    # Obtener estados articulares (solo joints activos: caderas y rodillas)
+    joint_states = p.getJointStates(env.robot_id, env.joint_indices)  
+    joint_positions = [state[0] for state in joint_states]
+    
+    # Calcular fuerzas PAM reales
+    pam_forces = np.zeros(env.num_active_pams, dtype=float)
+    
+    P = np.array([env.pam_muscles[muscle_names].real_pressure_PAM(u) for muscle_names,u 
+                    in zip(env.muscle_names, pam_pressures)], dtype=float)
+    
+    # Convertir a torques articulares
+    joint_torques = np.zeros(len(joint_states))
+
+    # Cadera izquierda yaw
+    joint_torques[0]=obtener_pam_forces_flexor_extensor(env, joint_positions[0], P, 0, 1,
+                                                        env.hip_yaw_flexor_moment_arm,
+                                                        env.hip_yaw_extensor_moment_arm)
+    
+    # Cadera izquierda pitch
+    joint_torques[1]=obtener_pam_forces_flexor_extensor(env, joint_positions[1], P, 2, 3,
+                                                        env.hip_pitch_flexor_moment_arm,
+                                                        env.hip_pitch_extensor_moment_arm)
+    # Cadera izquierda roll
+    joint_torques[2]=obtener_pam_forces_flexor_extensor(env, joint_positions[2], P, 4, 5,
+                                                        env.hip_roll_flexor_moment_arm,
+                                                        env.hip_roll_extensor_moment_arm)
+    
+    # Rodilla izquierda 
+    joint_torques[3]=obtener_pam_forces_flexor_extensor(env, joint_positions[3], P, 6, 7,
+                                                        env.knee_flexor_moment_arm,
+                                                        env.knee_extensor_moment_arm)
+    
+    # Tobillo izquierdo pitch
+    joint_torques[4]=obtener_pam_forces_flexor_extensor(env, joint_positions[4], P, 8, 9,
+                                                        env.ankle_pitch_flexor_moment_arm,
+                                                        env.ankle_pitch_extensor_moment_arm)
+    
+    # Tobillo izquierdo roll
+    joint_torques[5]=obtener_pam_forces_flexor_extensor(env, joint_positions[5], P, 10, 11,
+                                                        env.ankle_roll_flexor_moment_arm,
+                                                        env.ankle_roll_extensor_moment_arm)
+    
+    # Cadera derecha yaw 
+    joint_torques[6]=obtener_pam_forces_flexor_extensor(env, joint_positions[6], P, 12, 13,
+                                                        env.hip_yaw_flexor_moment_arm,
+                                                        env.hip_yaw_extensor_moment_arm)
+
+    # Cadera derecha pitch 
+    joint_torques[7]=obtener_pam_forces_flexor_extensor(env, joint_positions[7], P, 14, 15,
+                                                        env.hip_pitch_flexor_moment_arm,
+                                                        env.hip_pitch_extensor_moment_arm)
+
+    # Cadera derecha roll
+    joint_torques[8]=obtener_pam_forces_flexor_extensor(env, joint_positions[8], P, 16, 17,
+                                                        env.hip_roll_flexor_moment_arm,
+                                                        env.hip_roll_extensor_moment_arm)
+    # Rodilla derecha
+    joint_torques[9]=obtener_pam_forces_flexor_extensor(env, joint_positions[9], P, 18, 19,
+                                                        env.knee_flexor_moment_arm,
+                                                        env.knee_extensor_moment_arm)
+    # Tobillo derecho pitch
+    joint_torques[10]=obtener_pam_forces_flexor_extensor(env, joint_positions[10], P, 20, 21,
+                                                        env.ankle_pitch_flexor_moment_arm,
+                                                        env.ankle_pitch_extensor_moment_arm)
+    
+    # Tobillo derecho roll
+    joint_torques[11]=obtener_pam_forces_flexor_extensor(env, joint_positions[11], P, 22, 23,
+                                                        env.ankle_roll_flexor_moment_arm,
+                                                        env.ankle_roll_extensor_moment_arm)
+    
+    assert env.num_active_pams == env.action_space.shape[0] == 24, \
+    f"{env.num_active_pams=} {env.action_space.shape=}"
 
     # ===== PASO 6: ACTUALIZAR ESTADOS PARA DEBUGGING =====
     env.pam_states = {
@@ -527,6 +625,8 @@ def seleccionar_funcion_calculo_torques(env, pam_pressures):
         return calculate_robot_specific_joint_torques_16_pam(env, pam_pressures)
     elif "20DOF" in env.robot_name:
         return calculate_robot_specific_joint_torques_20_pam(env, pam_pressures)
+    elif "24DOF" in env.robot_name:
+        return calculate_robot_specific_joint_torques_24_pam(env, pam_pressures)
     elif "12DOF" in env.robot_name:
         return calculate_robot_specific_joint_torques_12_pam(env, pam_pressures)
     elif "blackbird" in env.robot_name:

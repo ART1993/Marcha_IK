@@ -1,0 +1,331 @@
+{
+    "-1": {
+        "name": "base_link",
+        "mass": 0.0,
+        "index": -1
+    },
+    "0": {
+        "name": "left_hip_yaw_link",
+        "mass": 0.05,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            3.3333333333333334e-08,
+            3.3333333333333334e-08,
+            3.3333333333333334e-08
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 0
+    },
+    "1": {
+        "name": "left_hip_pitch_link",
+        "mass": 0.05,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            3.3333333333333334e-08,
+            3.3333333333333334e-08,
+            3.3333333333333334e-08
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 1
+    },
+    "2": {
+        "name": "left_thigh_link",
+        "mass": 3.0,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            0.09869799605208,
+            0.09869799605208,
+            0.013777999448880002
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            -0.3
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 2
+    },
+    "3": {
+        "name": "left_shin_link",
+        "mass": 3.0,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            0.06797799728088,
+            0.06797799728088,
+            0.00793799968248
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            -0.25
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 3
+    },
+    "4": {
+        "name": "left_ankle_pitch_link",
+        "mass": 0.05,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            3.3333333333333334e-08,
+            3.3333333333333334e-08,
+            3.3333333333333334e-08
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 4
+    },
+    "5": {
+        "name": "left_foot_link",
+        "mass": 0.4,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            0.001416666666666667,
+            0.0030833333333333333,
+            0.004333333333333333
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            -0.035
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 5
+    },
+    "6": {
+        "name": "right_hip_yaw_link",
+        "mass": 0.05,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            3.3333333333333334e-08,
+            3.3333333333333334e-08,
+            3.3333333333333334e-08
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 6
+    },
+    "7": {
+        "name": "right_hip_pitch_link",
+        "mass": 0.05,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            3.3333333333333334e-08,
+            3.3333333333333334e-08,
+            3.3333333333333334e-08
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 7
+    },
+    "8": {
+        "name": "right_thigh_link",
+        "mass": 3.0,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            0.09869799605208,
+            0.09869799605208,
+            0.013777999448880002
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            -0.3
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 8
+    },
+    "9": {
+        "name": "right_shin_link",
+        "mass": 3.0,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            0.06797799728088,
+            0.06797799728088,
+            0.00793799968248
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            -0.25
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 9
+    },
+    "10": {
+        "name": "right_ankle_pitch_link",
+        "mass": 0.05,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            3.3333333333333334e-08,
+            3.3333333333333334e-08,
+            3.3333333333333334e-08
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 10
+    },
+    "11": {
+        "name": "right_foot_link",
+        "mass": 0.4,
+        "lateral_friction": 0.5,
+        "local_inertia_diagonal": [
+            0.001416666666666667,
+            0.0030833333333333333,
+            0.004333333333333333
+        ],
+        "local_inertial_pos": [
+            0.0,
+            0.0,
+            -0.035
+        ],
+        "local_inertial_orn": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+        ],
+        "restitution": 0.0,
+        "rolling_friction": 0.0,
+        "spinning_friction": 0.0,
+        "contact_damping": -1.0,
+        "contact_stiffness": -1.0,
+        "index": 11
+    }
+}

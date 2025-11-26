@@ -687,6 +687,23 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                 self.joint_indices[8]: 0.0,   
                 self.joint_indices[9]: 0.0    
             }
+        if len(self.muscle_names)==24:
+            initial_positions = {
+                # Pierna izquierda
+                self.joint_indices[0]: 0.0,
+                self.joint_indices[1]: 0.0,   
+                self.joint_indices[2]: 0.0,   
+                self.joint_indices[3]: 0.0,   
+                self.joint_indices[4]: 0.0,
+                self.joint_indices[5]: 0.0,  
+                # pierna derecha
+                self.joint_indices[6]: 0.0,   
+                self.joint_indices[7]: 0.0,   
+                self.joint_indices[8]: 0.0,   
+                self.joint_indices[9]: 0.0,   
+                self.joint_indices[10]: 0.0,  
+                self.joint_indices[11]: 0.0   
+            }
         elif len(self.muscle_names)==12:
             initial_positions = {
                 # Pierna izquierda
