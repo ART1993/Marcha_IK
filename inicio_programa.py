@@ -14,7 +14,7 @@ def _setup_multiprocessing_simple():
 
 def train_balance_walk_3d(total_timesteps=1000000, n_envs=4, resume=True, 
                                  with_logger=True, robot_name="2_legged_human_like_robot12DOF_done",
-                                 simple_reward_mode="walk3d"):
+                                 simple_reward_mode="walk3d", vx_target=1.2):
     """
     Función principal para entrenar balance con RL PURO (sin ayuda experta)
     """
@@ -41,7 +41,8 @@ def train_balance_walk_3d(total_timesteps=1000000, n_envs=4, resume=True,
         logger=logger,
         csvlog=csvlog,
         robot_name=robot_name,
-        _simple_reward_mode=simple_reward_mode
+        _simple_reward_mode=simple_reward_mode,
+        vx_target=vx_target
     )
     
     model = trainer.train(resume=resume)
