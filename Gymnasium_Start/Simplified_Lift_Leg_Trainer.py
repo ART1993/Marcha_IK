@@ -234,8 +234,8 @@ class Simplified_Lift_Leg_Trainer:
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
             'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
-            'n_steps': 1024,             #Mantener constante de momento por n_envs
-            'batch_size': 512,     
+            'n_steps': 512,           # Mantener constante de momento por n_envs
+            'batch_size': 256,     
             'n_epochs': 4,             # Probar a ver que tal con n_epochs de 5,4,3 creo que con 5 más memoria
             'gae_lambda': 0.95,        # Estándar
             'clip_range': 0.15,         # Estándar

@@ -94,8 +94,8 @@ class SimpleProgressiveReward:
             return True
 
         # Tiempo máximo (crece con nivel)
-        max_steps = 2000
-        if step_count >= max_steps:
+        max_time = 10
+        if step_count/self.frequency_simulation >= max_time:
             self.last_done_reason = "time"
             if self.env.logger:
                 self.env.logger.log("main","⏰ Episode done: Max time reached")
@@ -118,12 +118,12 @@ class SimpleProgressiveReward:
         vcmd = float(getattr(self, "_vx_target",0.6))
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
         w_velocidad=0.8
-        w_altura=0.3
+        w_altura=0.2
 
-        w_lateral=0.2
-        w_smooth=0.3
+        w_lateral=0.1
+        w_smooth=0.2
         # Para indicar al modelo que más tiempo igual a más recompensa
-        supervivencia=0.8
+        supervivencia=0.4
 
         #Recompensas de ciclo del pie
 

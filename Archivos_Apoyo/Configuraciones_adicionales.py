@@ -8,7 +8,7 @@ from enum import Enum
 from os import listdir
 
 from Archivos_Apoyo.SIstemasPamRobot import Sistema_Musculos_PAM_16, Sistema_Musculos_PAM_20, Sistema_Musculos_PAM_12, \
-                                            Sistema_Musculos_blackbird, Sistema_Musculos_PAM_12_done, Sistema_Musculos_PAM_24
+                                            Sistema_Musculos_blackbird, Sistema_Musculos_PAM_12_done_2, Sistema_Musculos_PAM_24
 
 
 
@@ -134,7 +134,7 @@ def PAM_McKibben(robot_name="2_legged_human_like_robot16DOF", control_joint_name
     elif "2_legged_human_like_robot24DOF" in robot_name:
         return Sistema_Musculos_PAM_24(control_joint_names,max_pressure)
     elif "2_legged_human_like_robot12DOF_done" in robot_name:
-        return Sistema_Musculos_PAM_12_done(control_joint_names)
+        return Sistema_Musculos_PAM_12_done_2(control_joint_names)
     elif "2_legged_human_like_robot12DOF" in robot_name:
         return Sistema_Musculos_PAM_12(control_joint_names,max_pressure)
     elif "blackbird" in robot_name:
