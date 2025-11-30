@@ -56,6 +56,7 @@ class Simplified_Lift_Leg_Trainer:
         self.allow_hops = _allow_hops
         self.vx_target=_vx_target
         self.robot_name = robot_name
+        self.env_meta = {}
 
         # Configurar el entorno y modelo según el tipo de sistema
         self._configuracion_modelo_entrenamiento()
@@ -101,7 +102,7 @@ class Simplified_Lift_Leg_Trainer:
                 'clip_obs': 10.0,      
                 'clip_reward': 10.0,
                 'model_prefix': 'Walker_6DOF_3D',
-                'description': 'camino con 6DOF y 12 PAMS'
+                'description': 'camino con 6 DOF y 12 PAMS'
         }
         # También mantener el plural para compatibilidad interna
         self.env_configs = self.env_config
@@ -190,6 +191,8 @@ class Simplified_Lift_Leg_Trainer:
                                             robot_name=self.robot_name
 
                                             )  # Fase de evaluación es balance
+                if hasattr(env, "get_env_metadata") and not self.env_meta:
+                        self.env_meta = env.get_env_metadata()
                 env = Monitor(env, os.path.join(self.logs_dir, "eval"))
                 return env
             return _init
@@ -201,6 +204,16 @@ class Simplified_Lift_Leg_Trainer:
                                clip_obs=self.env_configs['clip_obs'],
                                clip_reward=self.env_configs['clip_reward'],
                                training=False)
+        try:
+            # VecNormalize -> DummyVecEnv -> Monitor -> Simple_Lift_Leg_BipedEnv
+            dummy_env = eval_env.venv               # VecNormalize.venv = DummyVecEnv
+            monitor_env = dummy_env.envs[0]         # Primer env envs[0] = Monitor
+            base_env = monitor_env.env              # Monitor.env = Simple_Lift_Leg_BipedEnv
+
+            if hasattr(base_env, "get_env_metadata"):
+                self.env_meta = base_env.get_env_metadata()
+        except Exception as e:
+            print(f"⚠️ No se pudo extraer env_metadata del eval_env: {e}")
         # NEW: cargar stats de normalización del train si existen
         norm_path = os.path.join(self.model_dir, f"{self.env_configs['model_prefix']}_normalize.pkl")
         if os.path.exists(norm_path):
@@ -229,19 +242,19 @@ class Simplified_Lift_Leg_Trainer:
 
         print(f"🧠 Creating new RecurrentPPO model for lift_leg...")
         # ===== CREACIÓN DEL MODELO =====
-        model_params = {
+        self.model_params = {
             'learning_rate': self.learning_rate,
             'gamma': 0.99,             # Estándar
             'max_grad_norm': 0.5,      # Estándar
             'ent_coef': 0.01,          # Exploración moderada subir a 0.02 para mayor exploración
-            'n_steps': 512,           # Mantener constante de momento por n_envs
-            'batch_size': 256,     
-            'n_epochs': 4,             # Probar a ver que tal con n_epochs de 5,4,3 creo que con 5 más memoria
+            'n_steps': 512,            # Mantener constante de momento por n_envs
+            'batch_size': 256,         # Tengo 2 minibatches por entorno
+            'n_epochs': 4,             # Al final 4 es un buen compromiso
             'gae_lambda': 0.95,        # Estándar
             'clip_range': 0.15,         # Estándar
             'vf_coef': 0.5,            # Estándar
         }
-        
+        self.model_params
         model = RecurrentPPO(
             "MlpLstmPolicy",
             env,
@@ -249,7 +262,7 @@ class Simplified_Lift_Leg_Trainer:
             verbose=1,
             tensorboard_log=self.logs_dir,
             device='auto',
-            **model_params
+            **self.model_params
         )
         
         print(f"✅ Model created with {self.policy_kwargs_lstm['lstm_hidden_size']} LSTM units")
@@ -281,7 +294,7 @@ class Simplified_Lift_Leg_Trainer:
         # ===== EVALUATION CALLBACK =====
         
         # Evaluación más frecuente para sistemas complejos
-        eval_freq = 50000 //self.n_envs
+        eval_freq = 100000 //self.n_envs
         
         eval_callback = EvalCallback(
             eval_env,
@@ -420,10 +433,14 @@ class Simplified_Lift_Leg_Trainer:
             'total_timesteps_target': self.total_timesteps,
             'training_start': self.training_info['training_start_time'],
             'n_envs': self.n_envs,
-            'learning_rate': self.learning_rate,
+            'model_params': self.model_params,
             'lstm_config': self.policy_kwargs_lstm,
+            'env_config': self.env_configs,
             'simplified_trainer': True
         }
+        # 👇 NUEVO
+        if getattr(self, "env_meta", None):
+            training_data['env_metadata'] = self.env_meta
         
         with open(info_path, 'w') as f:
             json.dump(training_data, f, indent=2)
@@ -508,7 +525,7 @@ class Simplified_Lift_Leg_Trainer:
         return env
 
 
-def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-4, vx_target=0.6, 
+def create_walk3d_trainer(total_timesteps=2_000_000, n_envs=4, learning_rate=3e-4, vx_target=1.2,
                           logger=None, csvlog=None, robot_name="2_legged_human_like_robot20DOF", _simple_reward_mode="walk3d"):
     trainer = Simplified_Lift_Leg_Trainer(total_timesteps=total_timesteps, n_envs=n_envs, 
                                           learning_rate=learning_rate, logger=logger, 

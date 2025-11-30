@@ -105,9 +105,10 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         
         self.muscle_names = list(self.pam_muscles.keys())
-        print(self.muscle_names)
         self.num_active_pams = len(self.muscle_names)
-        
+        self.muscle_init_values = {name: {"max_pressure":muscle.max_pressure,
+                                          "L0":muscle.L0,
+                                          "r0":muscle.r0} for name, muscle in self.pam_muscles.items()}
         self.frequency_simulation=400.0 # Pasar a 400 quizas ese sea el problema
         #Probar para ver si evita tembleques
         self.time_step = 1.0 / self.frequency_simulation
@@ -632,8 +633,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             numSubSteps=6,
             contactBreakingThreshold=0.001, #subo de 0.0005 a 0.001
             erp=0.2,                    # antes 0.9
-            contactERP=0.3,            # antes 0.95
-            frictionERP=0.2,            # antes  0.9
+            contactERP=0.3,            # Control de elasticidad de contacto
+            frictionERP=0.2,            # Aporta rigidez al entrenamiento
             enableConeFriction=1,        # Habilitar fricción cónica
             deterministicOverlappingPairs=1
         )
@@ -850,6 +851,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
 
         self.ankle_roll_EXTENSOR_BASE_ARM = 0.044
         self.ankle_roll_EXTENSOR_VARIATION = 0.0085
+        
 
     def hip_yaw_flexor_moment_arm(self, angle):
         """
@@ -1037,43 +1039,61 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             
             self.csvlog.write("rewards", row_rewards)
 
-    
-    def _moment_arm_funcs_for_joint(self, joint_name: str):
-        # Devuelve funciones (flexor, extensor) r(θ) según tipo de joint
-        if "hip_roll" in joint_name:
-            return self.hip_roll_flexor_moment_arm, self.hip_roll_extensor_moment_arm
-        elif "hip_pitch" in joint_name:
-            return self.hip_pitch_flexor_moment_arm, self.hip_pitch_extensor_moment_arm
-        elif "knee" in joint_name:
-            return self.knee_flexor_moment_arm, self.knee_extensor_moment_arm
-        elif "ankle_roll" in joint_name:
-            return self.ankle_roll_flexor_moment_arm, self.ankle_roll_extensor_moment_arm
-        elif "ankle_pitch" in joint_name:
-            return self.ankle_pitch_flexor_moment_arm, self.ankle_pitch_extensor_moment_arm
-        else:
-            # Fallback prudente
-            return (lambda th: 0.05), (lambda th: 0.05)
+    def get_env_metadata(self):
+        """
+        Devuelve un diccionario con la información inicial del entorno
+        para guardarla en el JSON del trainer.
+        """
+        brazos_torque = {
+        "HIP_ROLL_FLEXOR_BASE_ARM":self.HIP_ROLL_FLEXOR_BASE_ARM,
+        "HIP_ROLL_FLEXOR_VARIATION":self.HIP_ROLL_FLEXOR_VARIATION,
+        "HIP_ROLL_EXTENSOR_BASE_ARM":self.HIP_ROLL_EXTENSOR_BASE_ARM,
+        "HIP_ROLL_EXTENSOR_VARIATION":self.HIP_ROLL_EXTENSOR_VARIATION,
+        "HIP_PITCH_FLEXOR_BASE_ARM":self.HIP_PITCH_FLEXOR_BASE_ARM,
+        "HIP_PITCH_FLEXOR_VARIATION":self.HIP_PITCH_FLEXOR_VARIATION,
+        "HIP_PITCH_EXTENSOR_BASE_ARM":self.HIP_PITCH_EXTENSOR_BASE_ARM,
+        "HIP_PITCH_EXTENSOR_VARIATION":self.HIP_PITCH_EXTENSOR_VARIATION,
+        "HIP_YAW_FLEXOR_BASE_ARM":self.HIP_YAW_FLEXOR_BASE_ARM,
+        "HIP_YAW_FLEXOR_VARIATION":self.HIP_YAW_FLEXOR_VARIATION,
+        "HIP_YAW_EXTENSOR_BASE_ARM":self.HIP_YAW_EXTENSOR_BASE_ARM,
+        "HIP_YAW_EXTENSOR_VARIATION":self.HIP_YAW_EXTENSOR_VARIATION,
+        "KNEE_FLEXOR_BASE_ARM":self.KNEE_FLEXOR_BASE_ARM,
+        "KNEE_FLEXOR_VARIATION":self.KNEE_FLEXOR_VARIATION,
+        "KNEE_EXTENSOR_BASE_ARM":self.KNEE_EXTENSOR_BASE_ARM,
+        "KNEE_EXTENSOR_VARIATION":self.KNEE_EXTENSOR_VARIATION,
+        "ankle_pitch_FLEXOR_BASE_ARM":self.ankle_pitch_FLEXOR_BASE_ARM,
+        "ankle_pitch_FLEXOR_VARIATION":self.ankle_pitch_FLEXOR_VARIATION,
+        "ankle_pitch_EXTENSOR_BASE_ARM":self.ankle_pitch_EXTENSOR_BASE_ARM,
+        "ankle_pitch_EXTENSOR_VARIATION":self.ankle_pitch_EXTENSOR_VARIATION,
+        "ankle_roll_FLEXOR_BASE_ARM":self.ankle_roll_FLEXOR_BASE_ARM,
+        "ankle_roll_FLEXOR_VARIATION":self.ankle_roll_FLEXOR_VARIATION,
+        "ankle_roll_EXTENSOR_BASE_ARM":self.ankle_roll_EXTENSOR_BASE_ARM,
+        "ankle_roll_EXTENSOR_VARIATION":self.ankle_roll_EXTENSOR_VARIATION,
+        }
 
+        meta = {
+            "robot_name": self.robot_name,
+            "num_active_pams": int(self.num_active_pams),
+            "n_joints": int(len(self.joint_indices)),
+            "joint_indices": list(self.joint_indices),
+            "joint_names": list(self.control_joint_names),
+            "left_foot_link_id": int(self.left_foot_link_id),
+            "right_foot_link_id": int(self.right_foot_link_id),
+            "muscle_init_params": dict(self.muscle_init_values),
+            "brazos_torque": brazos_torque,
 
+            # Espacios
+            "obs_shape": tuple(self.observation_space.shape),
+            "act_shape": tuple(self.action_space.shape),
 
-#Se usa para dar un periodo al paso del pie durante recompensas
-class FootPhaseTimer:
-    def __init__(self, dt, f_swing_hz=1.5, z_mid=0.03, z_amp=0.04):
-        self.dt=dt; self.set_freq(f_swing_hz)
-        self.z_mid=z_mid; self.z_amp=z_amp
-        self.is_contact=True; self.prev_contact=True
-        self.phase=0.0; self.t_swing=0.0; self.air_time_last=0.0
-        self.touchdown_event=False; self.liftoff_event=False
-    def set_freq(self, f): self.f_swing_hz=float(np.clip(f,0.6,3.0)); self.omega=2*np.pi*self.f_swing_hz
-    def update(self, in_contact, cmd_speed=None):
-        if cmd_speed is not None: self.set_freq(0.8 + 1.5*abs(cmd_speed))
-        self.prev_contact=self.is_contact; self.is_contact=bool(in_contact)
-        self.touchdown_event=(not self.prev_contact) and self.is_contact
-        self.liftoff_event  = self.prev_contact and (not self.is_contact)
-        if not self.is_contact:
-            if self.liftoff_event: self.phase=0.0; self.t_swing=0.0
-            else: self.phase=(self.phase + self.omega*self.dt)%(2*np.pi); self.t_swing+=self.dt
-        elif self.touchdown_event:
-            self.air_time_last=self.t_swing; self.phase=0.0; self.t_swing=0.0
-    def z_ref(self):
-        return self.z_mid + 0.5*self.z_amp*(1 - np.cos(self.phase))
+            # Tiempo / simulación
+            "frequency_simulation": float(self.frequency_simulation),
+            "time_step": float(self.time_step),
+            "frame_skip": int(self.frame_skip),
+
+            # Configuración de recompensa / tarea
+            "simple_reward_mode": str(self.simple_reward_mode),
+            "allow_hops": bool(self.allow_hops),
+            "vx_target": float(self.vx_target)
+        }
+        return meta
