@@ -170,6 +170,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         self.episode_reward = 0
         #Parámetros constantes que se usan en el calculo de torques
         self.parametros_torque_pam()
+        self.parametros_pesos_recomensa()
 
         self.simple_reward_system = None
         self.print_env = print_env
@@ -812,6 +813,20 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             #'target_knee_height': self.target_knee_height,
             'episode_step': self.step_count
         }
+    
+    def parametros_pesos_recomensa(self):
+        w_velocidad=0.7
+        w_altura=0.1
+
+        w_lateral=0.3
+        w_smooth=0.1
+        # Para indicar al modelo que más tiempo igual a más recompensa
+        supervivencia=0.3
+        self.recompensa_peso={"w_velocidad":w_velocidad,
+                             "w_altura":w_altura,
+                             "w_lateral":w_lateral,
+                             "w_smooth":w_smooth,
+                             "supervivencia":supervivencia}
         
     def parametros_torque_pam(self):
         # Momentos de brazo calculados desde dimensiones reales
@@ -1094,6 +1109,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             # Configuración de recompensa / tarea
             "simple_reward_mode": str(self.simple_reward_mode),
             "allow_hops": bool(self.allow_hops),
-            "vx_target": float(self.vx_target)
+            "vx_target": float(self.vx_target),
+            "recompensa_peso": dict(self.recompensa_peso)
         }
         return meta

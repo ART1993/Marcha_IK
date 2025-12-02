@@ -117,13 +117,13 @@ class SimpleProgressiveReward:
         z_star = getattr(self, "init_com_z", 0.89)
         vcmd = float(getattr(self, "_vx_target",0.6))
         #self.env.torque_max_generation(torque_mapping=torque_mapping)
-        w_velocidad=0.7
-        w_altura=0.2
+        w_velocidad=self.env.recompensa_peso.get('w_velocidad',0.4)
+        w_altura=self.env.recompensa_peso.get('w_altura',0.3)
 
-        w_lateral=0.1
-        w_smooth=0.1
+        w_lateral=self.env.recompensa_peso.get('w_lateral',0.2)
+        w_smooth=self.env.recompensa_peso.get('w_smooth',0.1)
         # Para indicar al modelo que más tiempo igual a más recompensa
-        supervivencia=0.2
+        supervivencia=self.env.recompensa_peso.get('supervivencia',0.1)
 
         #Recompensas de ciclo del pie
 
