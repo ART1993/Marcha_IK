@@ -816,12 +816,12 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
     
     def parametros_pesos_recomensa(self):
         w_velocidad=0.7
-        w_altura=0.1
+        w_altura=0.05
 
         w_lateral=0.3
-        w_smooth=0.1
+        w_smooth=0.15
         # Para indicar al modelo que más tiempo igual a más recompensa
-        supervivencia=0.3
+        supervivencia=0.2
         self.recompensa_peso={"w_velocidad":w_velocidad,
                              "w_altura":w_altura,
                              "w_lateral":w_lateral,
