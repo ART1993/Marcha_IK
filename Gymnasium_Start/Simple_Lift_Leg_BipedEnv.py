@@ -335,7 +335,7 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
                                     "ep_len": int(self.step_count),
                                     "done_reason": getattr(self.simple_reward_system, "last_done_reason", None)
                                 }
-                self.n_episodes+=1
+                
         
         # === CSVLogger: volcado per-step (~10 Hz) ===
         if (self.step_count % (self.frame_skip) == 0 or done) and self.simple_reward_system:
@@ -353,6 +353,8 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
             #logger.log(f" {action_source} action, reward={reward:.2f}")
             if self.logger:
                 self.logger.log("main",f"🕒 Step {self.step_count} ({elapsed_time:.1f}s elapsed):")
+        if done:
+            self.n_episodes+=1
         return info, reward, done
     
 
@@ -819,9 +821,9 @@ class Simple_Lift_Leg_BipedEnv(gym.Env):
         w_altura=0.05
 
         w_lateral=0.3
-        w_smooth=0.15
+        w_smooth=0.1
         # Para indicar al modelo que más tiempo igual a más recompensa
-        supervivencia=0.2
+        supervivencia=0.3
         self.recompensa_peso={"w_velocidad":w_velocidad,
                              "w_altura":w_altura,
                              "w_lateral":w_lateral,

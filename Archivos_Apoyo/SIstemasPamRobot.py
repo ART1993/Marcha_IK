@@ -30,17 +30,17 @@ def Sistema_Musculos_PAM_20(control_joint_names=None, max_pressure=5):
             pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4, max_factor_pressure=max_pressure)
             pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4, max_factor_pressure=max_pressure)
         elif "hip_pitch" in joint:
-            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
-            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4, max_factor_pressure=max_pressure)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.6, r0=0.04, alpha0=np.pi/4, max_factor_pressure=max_pressure)
         elif "knee" in joint:
             pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.5, r0=0.055, alpha0=np.pi/4, max_factor_pressure=max_pressure)
             pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.5, r0=0.055, alpha0=np.pi/4, max_factor_pressure=max_pressure)
         elif "ankle_roll" in joint:
-            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.2, r0=0.040, alpha0=np.pi/4, max_factor_pressure=max_pressure)
-            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.2, r0=0.040, alpha0=np.pi/4, max_factor_pressure=max_pressure)
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
         elif "ankle_pitch" in joint:
-            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.2, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
-            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.2, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
+            pam_dict[f"{joint}_flexor"] = PAMMcKibben(L0=0.3, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
+            pam_dict[f"{joint}_extensor"] = PAMMcKibben(L0=0.3, r0=0.045, alpha0=np.pi/4, max_factor_pressure=max_pressure)
     return pam_dict
 
 def Sistema_Musculos_PAM_24(control_joint_names=None, max_pressure=5):

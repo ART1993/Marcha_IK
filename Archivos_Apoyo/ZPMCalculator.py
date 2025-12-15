@@ -4,7 +4,7 @@ import pybullet as p
 
 class ZMPCalculator:
     """
-        Calculador ZMP SIMPLIFICADO para balance y sentadillas.
+        Calculador ZMP SIMPLIFICADO
         
         OBJETIVO ESPECÍFICO:
         - Calcular ZMP básico usando ecuaciones físicas
@@ -20,7 +20,7 @@ class ZMPCalculator:
     
     def __init__(self, robot_id, left_foot_id, 
                  right_foot_id, 
-                 frequency_simulation=1500,
+                 frequency_simulation=400,
                  robot_data=None,
                  ground_id=None,
                  contact_state_fn=None):
